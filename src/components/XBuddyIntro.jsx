@@ -4,18 +4,17 @@ import { motion, AnimatePresence } from 'framer-motion'
 /**
  * XBuddyIntro
  * 
- * Cinematic 6-7s website intro animation.
+ * Cinematic website intro animation with clean, centered X geometry.
  * 
- * CORE REQUIREMENT:
- * - The two orange rounded bars animate from a separated running state into a clean, centered X.
- * - One shared logo container (position: relative).
- * - Both bars use: position: absolute; left: 50%; top: 50%; transform-origin: center center.
- * - Final transforms:
- *   Bar 1: translate(-50%, -50%) rotate(45deg)
- *   Bar 2: translate(-50%, -50%) rotate(-45deg)
+ * Exact requirements:
+ * - One shared logo container with position: relative.
+ * - Both bars: position: absolute; left: 50%; top: 50%; transform-origin: center center.
+ * - Final transforms equivalent to:
+ *     Bar 1: translate(-50%, -50%) rotate(45deg)
+ *     Bar 2: translate(-50%, -50%) rotate(-45deg)
  * - Identical length, thickness, rounded ends, symmetrical geometry.
- * - Preserves the small face/character detail on the left diagonal bar.
- * - Buddy text appears cleanly beside the completed X.
+ * - Preserves small face detail on the left diagonal bar.
+ * - Word "Buddy" settles beside the completed X.
  */
 export default function XBuddyIntro({ onComplete }) {
   const [phase, setPhase] = useState('scene1')
@@ -268,7 +267,7 @@ export default function XBuddyIntro({ onComplete }) {
                   <div className="relative flex items-center justify-center">
 
                     {/* SHARED LOGO CONTAINER (position: relative)
-                        Holds Bar 1 and Bar 2 sharing the exact center.
+                        Holds Bar 1 and Bar 2 with identical center points.
                         Shifts smoothly (-75px) when phase reaches 'shift'
                     */}
                     <motion.div
@@ -298,44 +297,45 @@ export default function XBuddyIntro({ onComplete }) {
                           top: '50%',
                           width: '28px',
                           height: '116px',
-                          marginLeft: '-14px',
-                          marginTop: '-58px',
                           transformOrigin: 'center center',
                         }}
-                        initial={{ x: -260, y: 0, opacity: 0, rotate: 24 }}
+                        transformTemplate={({ x, y, rotate }) =>
+                          `translate(-50%, -50%) translate(${x || '0px'}, ${y || '0px'}) rotate(${rotate || '0deg'})`
+                        }
+                        initial={{ x: '-260px', y: '0px', rotate: '24deg', opacity: 0 }}
                         animate={{
                           x:
                             phase === 'scene1'
-                              ? -110
+                              ? '-110px'
                               : phase === 'scene2'
-                              ? -110
+                              ? '-110px'
                               : phase === 'approach'
-                              ? -48
+                              ? '-48px'
                               : phase === 'anticipation'
-                              ? -42
+                              ? '-42px'
                               : isCrossing
-                              ? [-42, 6, 0] // Down-right diagonal pass through center
-                              : 0,          // EXACT CENTER (0 offset)
+                              ? ['-42px', '6px', '0px'] // Down-right diagonal pass through center
+                              : '0px',                 // EXACT OVERLAPPING CENTER
                           y:
                             phase === 'scene1'
-                              ? [0, -7, 0, -7, 0]
+                              ? ['0px', '-7px', '0px', '-7px', '0px']
                               : phase === 'scene2'
-                              ? [0, -5, 0, -5, 0]
+                              ? ['0px', '-5px', '0px', '-5px', '0px']
                               : phase === 'approach'
-                              ? [0, -5, 0]
+                              ? ['0px', '-5px', '0px']
                               : phase === 'anticipation'
-                              ? 3
+                              ? '3px'
                               : isCrossing
-                              ? [3, 4, 0]
-                              : 0,
+                              ? ['3px', '4px', '0px']
+                              : '0px',
                           rotate:
                             phase === 'scene1' || phase === 'scene2' || phase === 'approach'
-                              ? 24 // Natural "/" running slant
+                              ? '24deg' // Natural "/" running slant
                               : phase === 'anticipation'
-                              ? 20 // Crouch angle
+                              ? '20deg' // Crouch angle
                               : isCrossing
-                              ? [20, 35, 45] // Smoothly rotates into +45deg
-                              : 45,          // EXACT +45deg
+                              ? ['20deg', '35deg', '45deg'] // Smoothly rotates into +45deg
+                              : '45deg',                    // EXACT +45deg
                           scale:
                             isCrossing
                               ? [1.0, 1.15, 0.94, 1.03, 1.0] // Tiny squash and impact bounce
@@ -500,40 +500,41 @@ export default function XBuddyIntro({ onComplete }) {
                             top: '50%',
                             width: '28px',
                             height: '116px',
-                            marginLeft: '-14px',
-                            marginTop: '-58px',
                             transformOrigin: 'center center',
                           }}
-                          initial={{ x: 260, y: 0, opacity: 0, rotate: -24 }}
+                          transformTemplate={({ x, y, rotate }) =>
+                            `translate(-50%, -50%) translate(${x || '0px'}, ${y || '0px'}) rotate(${rotate || '0deg'})`
+                          }
+                          initial={{ x: '260px', y: '0px', rotate: '-24deg', opacity: 0 }}
                           animate={{
                             x:
                               phase === 'scene2'
-                                ? 110
+                                ? '110px'
                                 : phase === 'approach'
-                                ? 48
+                                ? '48px'
                                 : phase === 'anticipation'
-                                ? 42
+                                ? '42px'
                                 : isCrossing
-                                ? [42, -6, 0] // Down-left diagonal pass through center
-                                : 0,          // EXACT CENTER (0 offset)
+                                ? ['42px', '-6px', '0px'] // Down-left diagonal pass through center
+                                : '0px',                  // EXACT OVERLAPPING CENTER
                             y:
                               phase === 'scene2'
-                                ? [0, -5, 0, -5, 0]
+                                ? ['0px', '-5px', '0px', '-5px', '0px']
                                 : phase === 'approach'
-                                ? [0, -5, 0]
+                                ? ['0px', '-5px', '0px']
                                 : phase === 'anticipation'
-                                ? 3
+                                ? '3px'
                                 : isCrossing
-                                ? [3, 4, 0]
-                                : 0,
+                                ? ['3px', '4px', '0px']
+                                : '0px',
                             rotate:
                               phase === 'scene2' || phase === 'approach'
-                                ? -24 // Natural "\" running slant
+                                ? '-24deg' // Natural "\" running slant
                                 : phase === 'anticipation'
-                                ? -20 // Crouch angle
+                                ? '-20deg' // Crouch angle
                                 : isCrossing
-                                ? [-20, -35, -45] // Smoothly rotates into -45deg
-                                : -45,            // EXACT -45deg
+                                ? ['-20deg', '-35deg', '-45deg'] // Smoothly rotates into -45deg
+                                : '-45deg',                     // EXACT -45deg
                             scale:
                               isCrossing
                                 ? [1.0, 1.15, 0.94, 1.03, 1.0] // Tiny squash and impact bounce
