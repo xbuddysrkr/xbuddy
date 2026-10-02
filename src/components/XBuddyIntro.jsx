@@ -4,30 +4,26 @@ import { motion, AnimatePresence } from 'framer-motion'
 /**
  * XBuddyIntro
  * 
- * 6-7 second cinematic website intro built natively with Framer Motion and SVG.
+ * Cinematic 6-7s website intro animation.
  * 
- * Timeline:
- * - Scene 1 (0.0 - 1.2s): Character A ("/") enters from LEFT carrying printed papers.
- * - Scene 2 (1.2 - 2.4s): Character B ("\") enters from RIGHT carrying print package.
- * - Scene 3 (2.4 - 3.5s): Both approach center, slow down, glance at each other.
- * - Scene 4 (3.5 - 4.5s): Physical Crossing: "/" rotates CW (+45°), "\" rotates CCW (-45°).
- *                         They physically cross through the center to form the iconic "X" with impact pulse.
- * - Scene 5 (4.5 - 5.2s): The unified "X" settles into place with playful bounce and soft shadow.
- * - Scene 6 (5.2 - 6.1s): Reveal "Buddy" beside the X -> "XBuddy" lockup.
- * - Scene 7 (6.1 - 7.0s): Reveal "Upload • Pay • Print" tagline underneath.
- * - Final Transition: Smooth fade out (500ms) revealing the pre-rendered homepage.
+ * CORE STORYLINE:
+ * 1. Scene 1 (0.0 - 1.2s): Character A ("/") enters from LEFT carrying printed papers.
+ * 2. Scene 2 (1.2 - 2.4s): Character B ("\") enters from RIGHT carrying print package.
+ * 3. Step 1 Approach (2.4 - 3.2s): Both characters run toward the exact center (-48px & +48px).
+ * 4. Step 2 Center Alignment / Anticipation (3.2 - 3.45s): Pause forward movement for ~0.2s!
+ * 5. Step 3 & 4 Cross & Lock (3.45 - 4.0s):
+ *    - Left "/" character rotates clockwise & moves diagonally DOWN-RIGHT through the center -> becomes "\" diagonal.
+ *    - Right "\" character rotates counterclockwise & moves diagonally DOWN-LEFT through the center -> becomes "/" diagonal.
+ *    - Centers intersect at the EXACT SAME LOCATION (0, 0) with a 90° angle.
+ *    - Step 5 Snap: Snap together, tiny squash, impact bounce, orange flash, soft contact shadow.
+ * 6. Settled X (4.0 - 4.6s): Hold the completed perfect X!
+ * 7. X Shift (4.6 - 5.3s): X shifts smoothly leftward.
+ * 8. Buddy Reveal (5.3 - 6.2s): "Buddy" springs in beside the X -> XBuddy lockup.
+ * 9. Tagline Reveal (6.2 - 7.1s): "Upload • Pay • Print" floats up underneath.
+ * 10. Exit (7.1 - 7.6s): 500ms smooth fade-out into the homepage.
  */
 export default function XBuddyIntro({ onComplete }) {
-  // Animation phases:
-  // 1: Scene 1 (Char A enters)
-  // 2: Scene 2 (Char B enters)
-  // 3: Scene 3 (Approach & anticipation)
-  // 4: Scene 4 (Physical crossing / + \ -> X)
-  // 5: Scene 5 (X settles & shifts)
-  // 6: Scene 6 (Buddy appears beside X)
-  // 7: Scene 7 (Tagline appears)
-  // 8: Exit (fade out overlay)
-  const [phase, setPhase] = useState(1)
+  const [phase, setPhase] = useState('scene1')
   const [isVisible, setIsVisible] = useState(true)
   const [reducedMotion, setReducedMotion] = useState(false)
   const timerRefs = useRef([])
@@ -37,32 +33,28 @@ export default function XBuddyIntro({ onComplete }) {
     timerRefs.current = []
   }
 
-  // Handle immediate or natural transition out
   const handleTransitionOut = () => {
     if (!isVisible) return
     setIsVisible(false)
     clearAllTimers()
 
-    // Save session flag so internal navigation does not replay intro
     try {
       if (typeof window !== 'undefined') {
         window.sessionStorage.setItem('xbuddy_intro_seen', 'true')
       }
     } catch {}
 
-    // Allow 500ms exit fade before unmounting
     setTimeout(() => {
       onComplete?.()
     }, 550)
   }
 
   useEffect(() => {
-    // 1. Accessibility: Check prefers-reduced-motion
+    // 1. Accessibility: prefers-reduced-motion
     if (typeof window !== 'undefined') {
       const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
       if (mediaQuery.matches) {
         setReducedMotion(true)
-        // Show static logo briefly then fade out
         const t = setTimeout(() => {
           handleTransitionOut()
         }, 1400)
@@ -71,21 +63,23 @@ export default function XBuddyIntro({ onComplete }) {
       }
     }
 
-    // 2. Cinematic Timeline Orchestration
+    // 2. Exact Hero Timing Sequence
     const schedule = [
-      { p: 2, t: 1200 }, // 1.2s: Char B enters
-      { p: 3, t: 2400 }, // 2.4s: Both approach center
-      { p: 4, t: 3500 }, // 3.5s: Physical crossing into "X"
-      { p: 5, t: 4500 }, // 4.5s: X settles & shifts left
-      { p: 6, t: 5200 }, // 5.2s: "Buddy" appears
-      { p: 7, t: 6100 }, // 6.1s: Tagline appears
-      { p: 8, t: 7100 }, // 7.1s: Exit fade out
+      { p: 'scene2', t: 1200 },       // 1.2s: Character B enters from right
+      { p: 'approach', t: 2400 },     // 2.4s: Step 1: Both approach center
+      { p: 'anticipation', t: 3200 }, // 3.2s: Step 2: 0.25s pause & anticipation
+      { p: 'cross', t: 3450 },        // 3.45s: Step 3 & 4: Physical Crossing & Lock into X
+      { p: 'settled', t: 4000 },      // 4.0s: Step 5: Hold the completed perfect X
+      { p: 'shift', t: 4600 },        // 4.6s: X shifts left to make room for Buddy
+      { p: 'buddy', t: 5300 },        // 5.3s: "Buddy" appears beside X
+      { p: 'tagline', t: 6200 },      // 6.2s: "Upload • Pay • Print" tagline appears
+      { p: 'exit', t: 7150 },         // 7.15s: Smooth overlay fade-out
     ]
 
     schedule.forEach(({ p, t }) => {
       const timeout = setTimeout(() => {
         setPhase(p)
-        if (p === 8) {
+        if (p === 'exit') {
           handleTransitionOut()
         }
       }, t)
@@ -96,6 +90,15 @@ export default function XBuddyIntro({ onComplete }) {
       clearAllTimers()
     }
   }, [])
+
+  // State flags for clean styling logic
+  const isRunning = phase === 'scene1' || phase === 'scene2' || phase === 'approach'
+  const isAnticipation = phase === 'anticipation'
+  const isCrossing = phase === 'cross'
+  const isLockedIntoX = phase === 'cross' || phase === 'settled' || phase === 'shift' || phase === 'buddy' || phase === 'tagline' || phase === 'exit'
+  const isShifted = phase === 'shift' || phase === 'buddy' || phase === 'tagline' || phase === 'exit'
+  const isBuddyVisible = phase === 'buddy' || phase === 'tagline' || phase === 'exit'
+  const isTaglineVisible = phase === 'tagline' || phase === 'exit'
 
   return (
     <AnimatePresence>
@@ -109,13 +112,13 @@ export default function XBuddyIntro({ onComplete }) {
           className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-[#FAF8F5] select-none overflow-hidden"
           style={{ willChange: 'opacity' }}
         >
-          {/* Subtle Ambient Background Gradients & Grid */}
+          {/* Warm Cream Ambient Background */}
           <div className="absolute inset-0 bg-gradient-to-b from-[#FFFDF9] via-[#FAF6F0] to-[#F5EFE6] pointer-events-none" />
           
-          {/* Soft warm glow in center */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-gradient-to-tr from-orange-200/40 via-amber-100/30 to-transparent rounded-full blur-3xl pointer-events-none" />
+          {/* Soft Warm Radial Glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-orange-200/40 via-amber-100/30 to-transparent rounded-full blur-3xl pointer-events-none" />
           
-          {/* Subtle dot pattern */}
+          {/* Subtle Dot Grid Pattern */}
           <div
             className="absolute inset-0 opacity-25 pointer-events-none"
             style={{
@@ -156,60 +159,73 @@ export default function XBuddyIntro({ onComplete }) {
               </p>
             </motion.div>
           ) : (
-            /* FULL NATIVE FRAMER MOTION & SVG CINEMATIC INTRO */
+            /* FULL NATIVE FRAMER MOTION & SVG HERO INTRO */
             <div className="relative z-10 w-full max-w-2xl px-4 flex flex-col items-center justify-center">
               
-              {/* Dynamic Stage Canvas */}
+              {/* Main Stage Area */}
               <div className="relative w-full h-[320px] sm:h-[360px] flex items-center justify-center">
                 
-                {/* 1. Ground Shadow Container */}
+                {/* 1. Ground Shadows */}
                 <div className="absolute bottom-12 sm:bottom-14 left-1/2 -translate-x-1/2 w-full max-w-md h-6 pointer-events-none flex items-center justify-center">
-                  {/* Shadow for Character A */}
-                  {phase < 4 && (
+                  
+                  {/* Left Character Shadow (Phases before crossing) */}
+                  {!isLockedIntoX && (
                     <motion.div
                       animate={{
-                        x: phase === 1 ? [-220, -110] : phase === 2 ? -110 : -45,
-                        scaleX: [1, 1.25, 0.9, 1.15, 1],
-                        opacity: [0.15, 0.35, 0.25, 0.35],
+                        x:
+                          phase === 'scene1'
+                            ? [-240, -110]
+                            : phase === 'scene2'
+                            ? -110
+                            : phase === 'approach'
+                            ? -48
+                            : -42, // anticipation
+                        scaleX: isAnticipation ? 1.25 : [1, 1.25, 0.9, 1.15, 1],
+                        opacity: isAnticipation ? 0.4 : [0.15, 0.35, 0.25, 0.35],
                       }}
                       transition={{
-                        x: { duration: phase === 1 ? 1.1 : 0.8, ease: 'easeOut' },
-                        scaleX: { duration: 0.35, repeat: Infinity, ease: 'easeInOut' },
-                        opacity: { duration: 0.35, repeat: Infinity, ease: 'easeInOut' },
+                        x: { duration: phase === 'scene1' ? 1.1 : 0.75, ease: 'easeOut' },
+                        scaleX: { duration: 0.35, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' },
+                        opacity: { duration: 0.35, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' },
                       }}
                       className="w-20 h-4 bg-slate-900/20 rounded-full blur-xs"
                     />
                   )}
 
-                  {/* Shadow for Character B */}
-                  {phase >= 2 && phase < 4 && (
+                  {/* Right Character Shadow (Phases before crossing) */}
+                  {!isLockedIntoX && phase !== 'scene1' && (
                     <motion.div
-                      initial={{ x: 220, opacity: 0 }}
+                      initial={{ x: 240, opacity: 0 }}
                       animate={{
-                        x: phase === 2 ? [220, 110] : 45,
-                        scaleX: [1, 1.2, 0.95, 1.15, 1],
-                        opacity: [0.15, 0.35, 0.25, 0.35],
+                        x:
+                          phase === 'scene2'
+                            ? [240, 110]
+                            : phase === 'approach'
+                            ? 48
+                            : 42, // anticipation
+                        scaleX: isAnticipation ? 1.25 : [1, 1.2, 0.95, 1.15, 1],
+                        opacity: isAnticipation ? 0.4 : [0.15, 0.35, 0.25, 0.35],
                       }}
                       transition={{
-                        x: { duration: phase === 2 ? 1.1 : 0.8, ease: 'easeOut' },
-                        scaleX: { duration: 0.35, repeat: Infinity, ease: 'easeInOut' },
-                        opacity: { duration: 0.35, repeat: Infinity, ease: 'easeInOut' },
+                        x: { duration: phase === 'scene2' ? 1.1 : 0.75, ease: 'easeOut' },
+                        scaleX: { duration: 0.35, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' },
+                        opacity: { duration: 0.35, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' },
                       }}
                       className="w-20 h-4 bg-slate-900/20 rounded-full blur-xs"
                     />
                   )}
 
-                  {/* Unified Hero X Shadow (Phase 4+) */}
-                  {phase >= 4 && (
+                  {/* Unified Contact Shadow for the Formed X */}
+                  {isLockedIntoX && (
                     <motion.div
                       initial={{ scale: 0.2, opacity: 0 }}
                       animate={{
-                        scale: phase === 4 ? [0.4, 1.3, 1] : 1,
-                        x: phase >= 5 ? -78 : 0, // shifts with X in Phase 5+
-                        opacity: 0.3,
+                        scale: isCrossing ? [0.4, 1.35, 1] : 1,
+                        x: isShifted ? -75 : 0,
+                        opacity: 0.35,
                       }}
                       transition={{
-                        scale: { duration: 0.5, ease: 'backOut' },
+                        scale: { duration: 0.45, ease: 'backOut' },
                         x: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
                       }}
                       className="w-28 h-5 bg-orange-950/25 rounded-full blur-xs"
@@ -217,439 +233,156 @@ export default function XBuddyIntro({ onComplete }) {
                   )}
                 </div>
 
-                {/* 2. Hero Characters Stage */}
+                {/* 2. Hero Stage & Characters */}
                 <div className="relative flex items-center justify-center">
 
-                  {/* Impact Burst Ring on Physical Fusion (Phase 4) */}
-                  {phase >= 4 && (
+                  {/* Step 5: Subtle Orange Impact Flash Ring on Center Lock */}
+                  {isCrossing && (
                     <motion.div
                       initial={{ scale: 0.2, opacity: 1 }}
-                      animate={{ scale: [0.3, 2.4], opacity: [0.9, 0] }}
-                      transition={{ duration: 0.65, ease: 'easeOut' }}
-                      className="absolute w-28 h-28 rounded-full border-4 border-[#F7931E]/60 bg-gradient-to-tr from-[#F7931E]/20 to-amber-300/10 pointer-events-none z-0"
+                      animate={{ scale: [0.25, 2.5], opacity: [1, 0] }}
+                      transition={{ duration: 0.55, ease: 'easeOut' }}
+                      className="absolute w-24 h-24 rounded-full border-4 border-[#F7931E]/80 bg-gradient-to-tr from-[#F7931E]/30 to-amber-300/20 pointer-events-none z-0"
                     />
                   )}
 
-                  {/* Sparkle Confetti on Fusion */}
-                  {phase >= 4 && (
+                  {/* Subtle Crossing Motion Speed Streaks */}
+                  {isCrossing && (
+                    <div className="absolute pointer-events-none z-20">
+                      <motion.div
+                        initial={{ opacity: 1, scaleX: 0 }}
+                        animate={{ opacity: [1, 0], scaleX: [0, 2.5] }}
+                        transition={{ duration: 0.4 }}
+                        className="w-32 h-0.5 bg-gradient-to-r from-transparent via-[#F7931E] to-transparent rotate-45"
+                      />
+                      <motion.div
+                        initial={{ opacity: 1, scaleX: 0 }}
+                        animate={{ opacity: [1, 0], scaleX: [0, 2.5] }}
+                        transition={{ duration: 0.4, delay: 0.05 }}
+                        className="w-32 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent -rotate-45"
+                      />
+                    </div>
+                  )}
+
+                  {/* Micro Sparkles on Lock */}
+                  {isCrossing && (
                     <div className="absolute pointer-events-none z-20">
                       {[0, 60, 120, 180, 240, 300].map((deg, idx) => (
                         <motion.div
                           key={idx}
                           initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
                           animate={{
-                            x: Math.cos((deg * Math.PI) / 180) * 65,
-                            y: Math.sin((deg * Math.PI) / 180) * 65,
+                            x: Math.cos((deg * Math.PI) / 180) * 60,
+                            y: Math.sin((deg * Math.PI) / 180) * 60,
                             scale: [0, 1.2, 0],
                             opacity: [1, 0.8, 0],
                           }}
-                          transition={{ duration: 0.6, delay: idx * 0.03, ease: 'easeOut' }}
+                          transition={{ duration: 0.5, delay: idx * 0.02, ease: 'easeOut' }}
                           className="absolute w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-[#F7931E] to-amber-300 shadow-xs"
                         />
                       ))}
                     </div>
                   )}
 
-                  {/* MAIN BRAND LOCKUP CONTAINER */}
-                  <motion.div
-                    animate={{
-                      // In phase 5+, the whole lockup positions seamlessly
-                      x: 0,
-                    }}
-                    className="relative flex items-center justify-center"
-                  >
+                  {/* ==============================================================
+                      MAIN BRAND LOCKUP (Holds Hero X + "Buddy" Text)
+                      ============================================================== */}
+                  <div className="relative flex items-center justify-center">
 
-                    {/* CHARACTER A ("/" forward diagonal runner) */}
+                    {/* HERO X CONTAINER
+                        Holds Character A & Character B on the EXACT same coordinate origin (55px 80px)
+                        Shifts leftward smoothly when phase reaches 'shift'
+                    */}
                     <motion.div
-                      initial={{ x: -280, y: 0, opacity: 0 }}
                       animate={{
-                        // Coordinates over the scenes:
-                        // Scene 1: Enters from left to -110px
-                        // Scene 2: Idles at -110px with running bounce
-                        // Scene 3: Approaches to -45px
-                        // Scene 4: Physically crosses center into X (x: 0, rotate: 45°)
-                        // Scene 5+: Moves left to -78px alongside "Buddy"
-                        x:
-                          phase === 1
-                            ? -110
-                            : phase === 2
-                            ? -110
-                            : phase === 3
-                            ? -45
-                            : phase === 4
-                            ? 0
-                            : -78,
-                        y:
-                          phase === 1
-                            ? [0, -8, 0, -8, 0]
-                            : phase === 2
-                            ? [0, -5, 0, -5, 0]
-                            : phase === 3
-                            ? [0, -6, 0]
-                            : phase === 4
-                            ? [-10, 3, -1, 0]
-                            : 0,
-                        rotate:
-                          phase < 4
-                            ? 25 // Natural "/" running angle
-                            : 45, // Exact 45° angle for hero "X"
-                        scale:
-                          phase === 4
-                            ? [1.0, 1.18, 0.95, 1.05, 1.0]
-                            : phase === 5
-                            ? [1.0, 1.04, 1.0]
-                            : 1.0,
-                        opacity: 1,
+                        x: isShifted ? -75 : 0,
                       }}
                       transition={{
-                        x: {
-                          duration:
-                            phase === 1
-                              ? 1.05
-                              : phase === 3
-                              ? 0.85
-                              : phase === 4
-                              ? 0.5
-                              : 0.6,
-                          ease:
-                            phase === 4
-                              ? [0.34, 1.56, 0.64, 1] // Punchy spring connection
-                              : [0.16, 1, 0.3, 1],
-                        },
-                        y: {
-                          duration: phase < 4 ? 0.4 : 0.45,
-                          repeat: phase < 4 ? Infinity : 0,
-                          ease: 'easeInOut',
-                        },
-                        rotate: {
-                          duration: phase === 4 ? 0.45 : 0.3,
-                          ease: [0.34, 1.56, 0.64, 1],
-                        },
-                        scale: { duration: 0.5, ease: 'easeOut' },
-                        opacity: { duration: 0.3 },
+                        duration: 0.6,
+                        ease: [0.16, 1, 0.3, 1],
                       }}
-                      className="relative z-10 flex items-center justify-center cursor-default"
-                      style={{ transformOrigin: 'center center' }}
+                      className="relative w-[110px] h-[160px] flex items-center justify-center pointer-events-none"
                     >
-                      {/* Character A SVG Graphic */}
-                      <svg
-                        width="110"
-                        height="160"
-                        viewBox="0 0 110 160"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="overflow-visible"
-                      >
-                        <defs>
-                          {/* Rich 3D Gradient for Character A */}
-                          <linearGradient id="charAGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stopColor="#FFA439" />
-                            <stop offset="50%" stopColor="#F7931E" />
-                            <stop offset="100%" stopColor="#EA580C" />
-                          </linearGradient>
 
-                          {/* Top Gloss Highlight */}
-                          <linearGradient id="glossGradA" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
-                            <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.0" />
-                          </linearGradient>
-
-                          {/* Paper Drop Shadow */}
-                          <filter id="paperShadow" x="-20%" y="-20%" width="140%" height="140%">
-                            <feDropShadow dx="1" dy="2" stdDeviation="2" floodOpacity="0.18" />
-                          </filter>
-                        </defs>
-
-                        {/* Motion Wind Trail Lines (Scenes 1 - 3) */}
-                        {phase < 4 && (
-                          <g className="opacity-70">
-                            <motion.line
-                              x1="-24"
-                              y1="50"
-                              x2="-8"
-                              y2="50"
-                              stroke="#F7931E"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              animate={{ x1: [-26, -14, -26], opacity: [0.4, 0.9, 0.4] }}
-                              transition={{ duration: 0.35, repeat: Infinity }}
-                            />
-                            <motion.line
-                              x1="-30"
-                              y1="75"
-                              x2="-10"
-                              y2="75"
-                              stroke="#FBBF24"
-                              strokeWidth="2.5"
-                              strokeLinecap="round"
-                              animate={{ x1: [-32, -18, -32], opacity: [0.3, 0.8, 0.3] }}
-                              transition={{ duration: 0.3, repeat: Infinity, delay: 0.1 }}
-                            />
-                            <motion.line
-                              x1="-22"
-                              y1="100"
-                              x2="-6"
-                              y2="100"
-                              stroke="#F7931E"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              animate={{ x1: [-24, -12, -24], opacity: [0.2, 0.7, 0.2] }}
-                              transition={{ duration: 0.38, repeat: Infinity, delay: 0.15 }}
-                            />
-                          </g>
-                        )}
-
-                        {/* RUNNING LEGS FOR CHARACTER A (Scenes 1 - 3) */}
-                        {phase < 4 && (
-                          <g id="legs-a">
-                            {/* Left Leg */}
-                            <motion.g
-                              animate={{
-                                rotate: [-24, 28, -24],
-                                y: [0, -3, 0],
-                              }}
-                              transition={{
-                                duration: 0.32,
-                                repeat: Infinity,
-                                ease: 'easeInOut',
-                              }}
-                              style={{ transformOrigin: '46px 130px' }}
-                            >
-                              <line x1="46" y1="130" x2="42" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
-                              {/* Shoe */}
-                              <ellipse cx="40" cy="150" rx="7" ry="4" fill="#0F172A" />
-                              <ellipse cx="38" cy="151" rx="4" ry="2" fill="#F7931E" />
-                            </motion.g>
-
-                            {/* Right Leg */}
-                            <motion.g
-                              animate={{
-                                rotate: [28, -24, 28],
-                                y: [-3, 0, -3],
-                              }}
-                              transition={{
-                                duration: 0.32,
-                                repeat: Infinity,
-                                ease: 'easeInOut',
-                              }}
-                              style={{ transformOrigin: '64px 130px' }}
-                            >
-                              <line x1="64" y1="130" x2="68" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
-                              {/* Shoe */}
-                              <ellipse cx="70" cy="150" rx="7" ry="4" fill="#0F172A" />
-                              <ellipse cx="72" cy="151" rx="4" ry="2" fill="#F7931E" />
-                            </motion.g>
-                          </g>
-                        )}
-
-                        {/* MAIN DIAGONAL "/" CAPSULE BODY */}
-                        <g id="body-capsule-a">
-                          <rect
-                            x="40"
-                            y="14"
-                            width="30"
-                            height="126"
-                            rx="15"
-                            fill="url(#charAGradient)"
-                            className="shadow-md"
-                          />
-
-                          {/* 3D Gloss Highlight Stripe */}
-                          <rect
-                            x="43"
-                            y="17"
-                            width="10"
-                            height="118"
-                            rx="5"
-                            fill="url(#glossGradA)"
-                          />
-                        </g>
-
-                        {/* FRIENDLY FACE (Always cute and expressive) */}
-                        <g id="face-a">
-                          {/* Eyes */}
-                          <motion.g
-                            animate={{
-                              scaleY: [1, 1, 0.1, 1], // Cute blink
-                            }}
-                            transition={{
-                              duration: 2.2,
-                              repeat: Infinity,
-                              times: [0, 0.85, 0.9, 1],
-                            }}
-                            style={{ transformOrigin: '55px 50px' }}
-                          >
-                            {/* Left Eye */}
-                            <circle cx="50" cy="50" r="3.6" fill="#0F172A" />
-                            <circle cx="51.2" cy="48.8" r="1.3" fill="#FFFFFF" />
-
-                            {/* Right Eye */}
-                            <circle cx="61" cy="50" r="3.6" fill="#0F172A" />
-                            <circle cx="62.2" cy="48.8" r="1.3" fill="#FFFFFF" />
-                          </motion.g>
-
-                          {/* Happy Cheerful Smile */}
-                          <path
-                            d="M 50 58 Q 55.5 64 61 58"
-                            stroke="#0F172A"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            fill="none"
-                          />
-
-                          {/* Rosy Cheeks */}
-                          <circle cx="46" cy="56" r="2.2" fill="#EA580C" opacity="0.4" />
-                          <circle cx="65" cy="56" r="2.2" fill="#EA580C" opacity="0.4" />
-                        </g>
-
-                        {/* ARMS & CARRIED PRINTED PAPERS (Scenes 1 - 3) */}
-                        {phase < 4 && (
-                          <g id="arm-and-papers">
-                            {/* Back Arm Swinging */}
-                            <motion.path
-                              d="M 40 70 Q 28 80 32 94"
-                              stroke="#EA580C"
-                              strokeWidth="5"
-                              strokeLinecap="round"
-                              animate={{ d: ['M 40 70 Q 28 80 32 94', 'M 40 70 Q 26 65 30 55', 'M 40 70 Q 28 80 32 94'] }}
-                              transition={{ duration: 0.32, repeat: Infinity, ease: 'easeInOut' }}
-                            />
-
-                            {/* Front Arm holding stack of papers */}
-                            <motion.g
-                              animate={{
-                                y: [-1, 2, -1],
-                                rotate: [-2, 3, -2],
-                              }}
-                              transition={{ duration: 0.32, repeat: Infinity, ease: 'easeInOut' }}
-                              style={{ transformOrigin: '68px 74px' }}
-                            >
-                              {/* Arm */}
-                              <path
-                                d="M 68 74 Q 82 78 88 86"
-                                stroke="#EA580C"
-                                strokeWidth="5"
-                                strokeLinecap="round"
-                              />
-                              <circle cx="88" cy="86" r="3.5" fill="#FFA439" />
-
-                              {/* Stack of Printed Papers with Flutter */}
-                              <g filter="url(#paperShadow)" transform="translate(82, 70)">
-                                {/* Back Paper Sheet */}
-                                <rect
-                                  x="3"
-                                  y="-2"
-                                  width="22"
-                                  height="28"
-                                  rx="2"
-                                  fill="#E2E8F0"
-                                  transform="rotate(-6)"
-                                />
-                                {/* Middle Paper Sheet */}
-                                <rect
-                                  x="1"
-                                  y="0"
-                                  width="22"
-                                  height="28"
-                                  rx="2"
-                                  fill="#F1F5F9"
-                                  transform="rotate(3)"
-                                />
-                                {/* Front Main Printed Sheet */}
-                                <rect
-                                  x="0"
-                                  y="2"
-                                  width="22"
-                                  height="28"
-                                  rx="2"
-                                  fill="#FFFFFF"
-                                  stroke="#CBD5E1"
-                                  strokeWidth="0.8"
-                                />
-                                {/* Paper Content: Header bar & text lines */}
-                                <rect x="3" y="5" width="10" height="2.5" rx="1" fill="#F7931E" />
-                                <line x1="3" y1="11" x2="19" y2="11" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
-                                <line x1="3" y1="15" x2="17" y2="15" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
-                                <line x1="3" y1="19" x2="14" y2="19" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
-                                <line x1="3" y1="23" x2="18" y2="23" stroke="#CBD5E1" strokeWidth="1.2" strokeLinecap="round" />
-                              </g>
-                            </motion.g>
-                          </g>
-                        )}
-                      </svg>
-                    </motion.div>
-
-
-                    {/* CHARACTER B ("\" backward diagonal runner) */}
-                    {/* Appears starting at Scene 2 (Phase >= 2) */}
-                    {phase >= 2 && (
+                      {/* ==========================================================
+                          CHARACTER A (LEFT "/" CHARACTER)
+                          - Starts as "/" tilted at 24°
+                          - Carries printed papers
+                          - Runs to center (-48px)
+                          - Pauses at -42px for anticipation
+                          - Crosses: Rotates clockwise (+111°), moves diagonally DOWN-RIGHT through center
+                          - Locks onto the TOP-LEFT ↘ BOTTOM-RIGHT diagonal of the X (135° = "\")
+                          ========================================================== */}
                       <motion.div
-                        initial={{ x: 280, y: 0, opacity: 0 }}
+                        initial={{ x: -280, y: 0, opacity: 0, rotate: 24 }}
                         animate={{
-                          // Coordinates over the scenes:
-                          // Scene 2: Enters from right to +110px
-                          // Scene 3: Approaches to +45px
-                          // Scene 4: Physically crosses center into X (x: 0, rotate: -45°)
-                          // Scene 5+: Moves left to -78px alongside "Buddy"
                           x:
-                            phase === 2
-                              ? 110
-                              : phase === 3
-                              ? 45
-                              : phase === 4
-                              ? 0
-                              : -78,
+                            phase === 'scene1'
+                              ? -110
+                              : phase === 'scene2'
+                              ? -110
+                              : phase === 'approach'
+                              ? -48
+                              : phase === 'anticipation'
+                              ? -42
+                              : isCrossing
+                              ? [-42, 5, 0] // Down-right diagonal pass through center into 0
+                              : 0,
                           y:
-                            phase === 2
+                            phase === 'scene1'
+                              ? [0, -7, 0, -7, 0]
+                              : phase === 'scene2'
                               ? [0, -5, 0, -5, 0]
-                              : phase === 3
-                              ? [0, -6, 0]
-                              : phase === 4
-                              ? [-10, 3, -1, 0]
+                              : phase === 'approach'
+                              ? [0, -5, 0]
+                              : phase === 'anticipation'
+                              ? 3
+                              : isCrossing
+                              ? [3, 4, 0]
                               : 0,
                           rotate:
-                            phase < 4
-                              ? -25 // Natural "\" running angle
-                              : -45, // Exact -45° angle for hero "X"
+                            phase === 'scene1' || phase === 'scene2' || phase === 'approach'
+                              ? 24 // Natural "/" running slant
+                              : phase === 'anticipation'
+                              ? 20 // Crouch angle
+                              : isCrossing
+                              ? [20, 75, 135] // Clockwise rotation -> locks at 135° (\ stroke)
+                              : 135,
                           scale:
-                            phase === 4
-                              ? [1.0, 1.18, 0.95, 1.05, 1.0]
-                              : phase === 5
-                              ? [1.0, 1.04, 1.0]
+                            isCrossing
+                              ? [1.0, 1.15, 0.94, 1.03, 1.0] // Tiny squash and impact bounce
+                              : isAnticipation
+                              ? 0.97
                               : 1.0,
                           opacity: 1,
                         }}
                         transition={{
                           x: {
                             duration:
-                              phase === 2
+                              phase === 'scene1'
                                 ? 1.05
-                                : phase === 3
-                                ? 0.85
-                                : phase === 4
-                                ? 0.5
-                                : 0.6,
-                            ease:
-                              phase === 4
-                                ? [0.34, 1.56, 0.64, 1] // Punchy spring connection
-                                : [0.16, 1, 0.3, 1],
+                                : phase === 'approach'
+                                ? 0.75
+                                : phase === 'anticipation'
+                                ? 0.2
+                                : 0.45,
+                            ease: isCrossing ? [0.34, 1.56, 0.64, 1] : [0.16, 1, 0.3, 1],
                           },
                           y: {
-                            duration: phase < 4 ? 0.4 : 0.45,
-                            repeat: phase < 4 ? Infinity : 0,
+                            duration: isRunning ? 0.36 : 0.25,
+                            repeat: isRunning ? Infinity : 0,
                             ease: 'easeInOut',
                           },
                           rotate: {
-                            duration: phase === 4 ? 0.45 : 0.3,
-                            ease: [0.34, 1.56, 0.64, 1],
+                            duration: isCrossing ? 0.45 : 0.25,
+                            ease: isCrossing ? [0.34, 1.56, 0.64, 1] : 'easeOut',
                           },
-                          scale: { duration: 0.5, ease: 'easeOut' },
+                          scale: { duration: 0.45, ease: 'easeOut' },
                           opacity: { duration: 0.3 },
                         }}
-                        className="absolute z-10 flex items-center justify-center cursor-default"
-                        style={{ transformOrigin: 'center center' }}
+                        className="absolute inset-0 flex items-center justify-center cursor-default"
+                        style={{ transformOrigin: '55px 80px' }}
                       >
-                        {/* Character B SVG Graphic */}
                         <svg
                           width="110"
                           height="160"
@@ -659,233 +392,531 @@ export default function XBuddyIntro({ onComplete }) {
                           className="overflow-visible"
                         >
                           <defs>
-                            {/* Rich 3D Gradient for Character B */}
-                            <linearGradient id="charBGradient" x1="100%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="#FFBA3B" />
+                            {/* Rich 3D Gradient for Character A */}
+                            <linearGradient id="charAGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                              <stop offset="0%" stopColor="#FFA439" />
                               <stop offset="50%" stopColor="#F7931E" />
-                              <stop offset="100%" stopColor="#D97706" />
+                              <stop offset="100%" stopColor="#EA580C" />
                             </linearGradient>
 
                             {/* Top Gloss Highlight */}
-                            <linearGradient id="glossGradB" x1="0%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.55" />
+                            <linearGradient id="glossGradA" x1="0%" y1="0%" x2="0%" y2="100%">
+                              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
                               <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.0" />
                             </linearGradient>
 
-                            {/* Folder Drop Shadow */}
-                            <filter id="folderShadow" x="-20%" y="-20%" width="140%" height="140%">
-                              <feDropShadow dx="-1" dy="2" stdDeviation="2" floodOpacity="0.18" />
+                            {/* Paper Drop Shadow */}
+                            <filter id="paperShadow" x="-20%" y="-20%" width="140%" height="140%">
+                              <feDropShadow dx="1" dy="2" stdDeviation="2" floodOpacity="0.18" />
                             </filter>
                           </defs>
 
-                          {/* Motion Wind Trail Lines (Scenes 2 - 3) */}
-                          {phase < 4 && (
+                          {/* Motion Wind Trail Lines (Running Phases) */}
+                          {isRunning && (
                             <g className="opacity-70">
                               <motion.line
-                                x1="120"
+                                x1="-24"
                                 y1="50"
-                                x2="136"
+                                x2="-8"
                                 y2="50"
                                 stroke="#F7931E"
                                 strokeWidth="3"
                                 strokeLinecap="round"
-                                animate={{ x2: [136, 124, 136], opacity: [0.4, 0.9, 0.4] }}
+                                animate={{ x1: [-26, -14, -26], opacity: [0.4, 0.9, 0.4] }}
                                 transition={{ duration: 0.35, repeat: Infinity }}
                               />
                               <motion.line
-                                x1="118"
+                                x1="-30"
                                 y1="75"
-                                x2="138"
+                                x2="-10"
                                 y2="75"
                                 stroke="#FBBF24"
                                 strokeWidth="2.5"
                                 strokeLinecap="round"
-                                animate={{ x2: [138, 126, 138], opacity: [0.3, 0.8, 0.3] }}
+                                animate={{ x1: [-32, -18, -32], opacity: [0.3, 0.8, 0.3] }}
                                 transition={{ duration: 0.3, repeat: Infinity, delay: 0.1 }}
-                              />
-                              <motion.line
-                                x1="122"
-                                y1="100"
-                                x2="134"
-                                y2="100"
-                                stroke="#F7931E"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                animate={{ x2: [134, 122, 134], opacity: [0.2, 0.7, 0.2] }}
-                                transition={{ duration: 0.38, repeat: Infinity, delay: 0.15 }}
                               />
                             </g>
                           )}
 
-                          {/* RUNNING LEGS FOR CHARACTER B (Scenes 2 - 3) */}
-                          {phase < 4 && (
-                            <g id="legs-b">
+                          {/* RUNNING LEGS (Visible during run & anticipation; folds cleanly on lock) */}
+                          {!isLockedIntoX && (
+                            <motion.g
+                              id="legs-a"
+                              animate={{ opacity: isAnticipation ? 0.7 : 1 }}
+                              exit={{ opacity: 0 }}
+                            >
                               {/* Left Leg */}
                               <motion.g
                                 animate={{
-                                  rotate: [28, -24, 28],
-                                  y: [-3, 0, -3],
+                                  rotate: isAnticipation ? -10 : [-24, 28, -24],
+                                  y: isAnticipation ? 0 : [0, -3, 0],
                                 }}
                                 transition={{
                                   duration: 0.32,
-                                  repeat: Infinity,
+                                  repeat: isAnticipation ? 0 : Infinity,
                                   ease: 'easeInOut',
                                 }}
                                 style={{ transformOrigin: '46px 130px' }}
                               >
                                 <line x1="46" y1="130" x2="42" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
                                 <ellipse cx="40" cy="150" rx="7" ry="4" fill="#0F172A" />
-                                <ellipse cx="38" cy="151" rx="4" ry="2" fill="#FBBF24" />
+                                <ellipse cx="38" cy="151" rx="4" ry="2" fill="#F7931E" />
                               </motion.g>
 
                               {/* Right Leg */}
                               <motion.g
                                 animate={{
-                                  rotate: [-24, 28, -24],
-                                  y: [0, -3, 0],
+                                  rotate: isAnticipation ? 10 : [28, -24, 28],
+                                  y: isAnticipation ? 0 : [-3, 0, -3],
                                 }}
                                 transition={{
                                   duration: 0.32,
-                                  repeat: Infinity,
+                                  repeat: isAnticipation ? 0 : Infinity,
                                   ease: 'easeInOut',
                                 }}
                                 style={{ transformOrigin: '64px 130px' }}
                               >
                                 <line x1="64" y1="130" x2="68" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
                                 <ellipse cx="70" cy="150" rx="7" ry="4" fill="#0F172A" />
-                                <ellipse cx="72" cy="151" rx="4" ry="2" fill="#FBBF24" />
+                                <ellipse cx="72" cy="151" rx="4" ry="2" fill="#F7931E" />
                               </motion.g>
-                            </g>
+                            </motion.g>
                           )}
 
-                          {/* MAIN DIAGONAL "\" CAPSULE BODY */}
-                          <g id="body-capsule-b">
+                          {/* MAIN DIAGONAL CAPSULE BODY (Centered precisely at 55px, 80px) */}
+                          <g id="body-capsule-a">
                             <rect
                               x="40"
-                              y="14"
+                              y="17"
                               width="30"
                               height="126"
                               rx="15"
-                              fill="url(#charBGradient)"
+                              fill="url(#charAGradient)"
                               className="shadow-md"
                             />
-
                             {/* 3D Gloss Highlight Stripe */}
                             <rect
-                              x="57"
-                              y="17"
-                              width="10"
-                              height="118"
-                              rx="5"
-                              fill="url(#glossGradB)"
+                              x="43"
+                              y="20"
+                              width="9"
+                              height="120"
+                              rx="4.5"
+                              fill="url(#glossGradA)"
                             />
                           </g>
 
-                          {/* FRIENDLY FACE FOR CHARACTER B (Scenes 2 - 3) */}
-                          {phase < 4 && (
-                            <g id="face-b">
-                              {/* Eyes looking forward toward Character A */}
+                          {/* FRIENDLY FACE WHILE RUNNING */}
+                          {!isLockedIntoX && (
+                            <g id="face-a">
                               <motion.g
                                 animate={{
                                   scaleY: [1, 1, 0.1, 1],
                                 }}
                                 transition={{
-                                  duration: 2.4,
+                                  duration: 2.2,
                                   repeat: Infinity,
-                                  times: [0, 0.82, 0.88, 1],
+                                  times: [0, 0.85, 0.9, 1],
                                 }}
                                 style={{ transformOrigin: '55px 50px' }}
                               >
-                                <circle cx="49" cy="50" r="3.6" fill="#0F172A" />
-                                <circle cx="48" cy="48.8" r="1.3" fill="#FFFFFF" />
-
-                                <circle cx="60" cy="50" r="3.6" fill="#0F172A" />
-                                <circle cx="59" cy="48.8" r="1.3" fill="#FFFFFF" />
+                                <circle cx="50" cy="50" r="3.6" fill="#0F172A" />
+                                <circle cx="51.2" cy="48.8" r="1.3" fill="#FFFFFF" />
+                                <circle cx="61" cy="50" r="3.6" fill="#0F172A" />
+                                <circle cx="62.2" cy="48.8" r="1.3" fill="#FFFFFF" />
                               </motion.g>
-
-                              {/* Cheerful Smile */}
                               <path
-                                d="M 49 58 Q 54.5 64 60 58"
+                                d="M 50 58 Q 55.5 64 61 58"
                                 stroke="#0F172A"
                                 strokeWidth="2"
                                 strokeLinecap="round"
                                 fill="none"
                               />
-
-                              {/* Rosy Cheeks */}
-                              <circle cx="45" cy="56" r="2.2" fill="#D97706" opacity="0.4" />
-                              <circle cx="64" cy="56" r="2.2" fill="#D97706" opacity="0.4" />
+                              <circle cx="46" cy="56" r="2.2" fill="#EA580C" opacity="0.4" />
+                              <circle cx="65" cy="56" r="2.2" fill="#EA580C" opacity="0.4" />
                             </g>
                           )}
 
-                          {/* ARMS & PRINT ORDER PACKAGE (Scenes 2 - 3) */}
-                          {phase < 4 && (
-                            <g id="arm-and-package">
-                              {/* Back Arm */}
+                          {/* ARMS & CARRIED PRINTED PAPERS */}
+                          {!isLockedIntoX && (
+                            <g id="arm-and-papers">
                               <motion.path
-                                d="M 70 70 Q 82 80 78 94"
-                                stroke="#D97706"
+                                d="M 40 70 Q 28 80 32 94"
+                                stroke="#EA580C"
                                 strokeWidth="5"
                                 strokeLinecap="round"
-                                animate={{ d: ['M 70 70 Q 82 80 78 94', 'M 70 70 Q 84 65 80 55', 'M 70 70 Q 82 80 78 94'] }}
-                                transition={{ duration: 0.32, repeat: Infinity, ease: 'easeInOut' }}
+                                animate={{
+                                  d: isAnticipation
+                                    ? 'M 40 70 Q 32 75 35 88'
+                                    : ['M 40 70 Q 28 80 32 94', 'M 40 70 Q 26 65 30 55', 'M 40 70 Q 28 80 32 94'],
+                                }}
+                                transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
                               />
 
-                              {/* Front Arm holding Courier Print Folder/Package */}
                               <motion.g
                                 animate={{
-                                  y: [-1, 2, -1],
-                                  rotate: [2, -3, 2],
+                                  y: isAnticipation ? 0 : [-1, 2, -1],
+                                  rotate: isAnticipation ? 0 : [-2, 3, -2],
                                 }}
-                                transition={{ duration: 0.32, repeat: Infinity, ease: 'easeInOut' }}
-                                style={{ transformOrigin: '42px 74px' }}
+                                transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
+                                style={{ transformOrigin: '68px 74px' }}
                               >
-                                <path
-                                  d="M 42 74 Q 28 78 22 86"
-                                  stroke="#D97706"
-                                  strokeWidth="5"
-                                  strokeLinecap="round"
-                                />
-                                <circle cx="22" cy="86" r="3.5" fill="#FFBA3B" />
+                                <path d="M 68 74 Q 82 78 88 86" stroke="#EA580C" strokeWidth="5" strokeLinecap="round" />
+                                <circle cx="88" cy="86" r="3.5" fill="#FFA439" />
 
-                                {/* Print Order Package / Kraft Folder */}
-                                <g filter="url(#folderShadow)" transform="translate(2, 70)">
-                                  <rect
-                                    x="0"
-                                    y="0"
-                                    width="24"
-                                    height="28"
-                                    rx="3"
-                                    fill="#F59E0B"
-                                    stroke="#D97706"
-                                    strokeWidth="1"
-                                  />
-                                  {/* Folder flap & stamp */}
-                                  <polygon points="0,0 12,10 24,0" fill="#D97706" />
-                                  <circle cx="12" cy="16" r="4.5" fill="#FFFFFF" />
-                                  <path d="M 10 16 L 14 16 M 12 14 L 12 18" stroke="#F59E0B" strokeWidth="1.2" strokeLinecap="round" />
+                                {/* Stack of Fluttering Printed Papers */}
+                                <g filter="url(#paperShadow)" transform="translate(82, 70)">
+                                  <rect x="3" y="-2" width="22" height="28" rx="2" fill="#E2E8F0" transform="rotate(-6)" />
+                                  <rect x="1" y="0" width="22" height="28" rx="2" fill="#F1F5F9" transform="rotate(3)" />
+                                  <rect x="0" y="2" width="22" height="28" rx="2" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="0.8" />
+                                  <rect x="3" y="5" width="10" height="2.5" rx="1" fill="#F7931E" />
+                                  <line x1="3" y1="11" x2="19" y2="11" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
+                                  <line x1="3" y1="15" x2="17" y2="15" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
+                                  <line x1="3" y1="19" x2="14" y2="19" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
+                                  <line x1="3" y1="23" x2="18" y2="23" stroke="#CBD5E1" strokeWidth="1.2" strokeLinecap="round" />
                                 </g>
                               </motion.g>
                             </g>
                           )}
                         </svg>
                       </motion.div>
-                    )}
 
 
-                    {/* SCENE 6: "Buddy" REVEAL BESIDE THE HERO X */}
-                    {phase >= 6 && (
+                      {/* ==========================================================
+                          CHARACTER B (RIGHT "\" CHARACTER)
+                          - Enters starting at Scene 2
+                          - Starts as "\" tilted at -24°
+                          - Carries courier print folder/package
+                          - Runs to center (+48px)
+                          - Pauses at +42px for anticipation
+                          - Crosses: Rotates counterclockwise (-111°), moves diagonally DOWN-LEFT through center
+                          - Locks onto the BOTTOM-LEFT ↗ TOP-RIGHT diagonal of the X (-135° = "/")
+                          ========================================================== */}
+                      {phase !== 'scene1' && (
+                        <motion.div
+                          initial={{ x: 280, y: 0, opacity: 0, rotate: -24 }}
+                          animate={{
+                            x:
+                              phase === 'scene2'
+                                ? 110
+                                : phase === 'approach'
+                                ? 48
+                                : phase === 'anticipation'
+                                ? 42
+                                : isCrossing
+                                ? [42, -5, 0] // Down-left diagonal pass through center into 0
+                                : 0,
+                            y:
+                              phase === 'scene2'
+                                ? [0, -5, 0, -5, 0]
+                                : phase === 'approach'
+                                ? [0, -5, 0]
+                                : phase === 'anticipation'
+                                ? 3
+                                : isCrossing
+                                ? [3, 4, 0]
+                                : 0,
+                            rotate:
+                              phase === 'scene2' || phase === 'approach'
+                                ? -24 // Natural "\" running slant
+                                : phase === 'anticipation'
+                                ? -20 // Crouch angle
+                                : isCrossing
+                                ? [-20, -75, -135] // Counterclockwise rotation -> locks at -135° (/ stroke)
+                                : -135,
+                            scale:
+                              isCrossing
+                                ? [1.0, 1.15, 0.94, 1.03, 1.0] // Tiny squash and impact bounce
+                                : isAnticipation
+                                ? 0.97
+                                : 1.0,
+                            opacity: 1,
+                          }}
+                          transition={{
+                            x: {
+                              duration:
+                                phase === 'scene2'
+                                  ? 1.05
+                                  : phase === 'approach'
+                                  ? 0.75
+                                  : phase === 'anticipation'
+                                  ? 0.2
+                                  : 0.45,
+                              ease: isCrossing ? [0.34, 1.56, 0.64, 1] : [0.16, 1, 0.3, 1],
+                            },
+                            y: {
+                              duration: isRunning ? 0.36 : 0.25,
+                              repeat: isRunning ? Infinity : 0,
+                              ease: 'easeInOut',
+                            },
+                            rotate: {
+                              duration: isCrossing ? 0.45 : 0.25,
+                              ease: isCrossing ? [0.34, 1.56, 0.64, 1] : 'easeOut',
+                            },
+                            scale: { duration: 0.45, ease: 'easeOut' },
+                            opacity: { duration: 0.3 },
+                          }}
+                          className="absolute inset-0 flex items-center justify-center cursor-default"
+                          style={{ transformOrigin: '55px 80px' }}
+                        >
+                          <svg
+                            width="110"
+                            height="160"
+                            viewBox="0 0 110 160"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="overflow-visible"
+                          >
+                            <defs>
+                              {/* Rich 3D Gradient for Character B */}
+                              <linearGradient id="charBGradient" x1="100%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stopColor="#FFBA3B" />
+                                <stop offset="50%" stopColor="#F7931E" />
+                                <stop offset="100%" stopColor="#D97706" />
+                              </linearGradient>
+
+                              {/* Top Gloss Highlight */}
+                              <linearGradient id="glossGradB" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.55" />
+                                <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.0" />
+                              </linearGradient>
+
+                              {/* Folder Drop Shadow */}
+                              <filter id="folderShadow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feDropShadow dx="-1" dy="2" stdDeviation="2" floodOpacity="0.18" />
+                              </filter>
+                            </defs>
+
+                            {/* Motion Wind Trail Lines */}
+                            {isRunning && (
+                              <g className="opacity-70">
+                                <motion.line
+                                  x1="120"
+                                  y1="50"
+                                  x2="136"
+                                  y2="50"
+                                  stroke="#F7931E"
+                                  strokeWidth="3"
+                                  strokeLinecap="round"
+                                  animate={{ x2: [136, 124, 136], opacity: [0.4, 0.9, 0.4] }}
+                                  transition={{ duration: 0.35, repeat: Infinity }}
+                                />
+                                <motion.line
+                                  x1="118"
+                                  y1="75"
+                                  x2="138"
+                                  y2="75"
+                                  stroke="#FBBF24"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  animate={{ x2: [138, 126, 138], opacity: [0.3, 0.8, 0.3] }}
+                                  transition={{ duration: 0.3, repeat: Infinity, delay: 0.1 }}
+                                />
+                              </g>
+                            )}
+
+                            {/* RUNNING LEGS */}
+                            {!isLockedIntoX && (
+                              <motion.g
+                                id="legs-b"
+                                animate={{ opacity: isAnticipation ? 0.7 : 1 }}
+                                exit={{ opacity: 0 }}
+                              >
+                                <motion.g
+                                  animate={{
+                                    rotate: isAnticipation ? 10 : [28, -24, 28],
+                                    y: isAnticipation ? 0 : [-3, 0, -3],
+                                  }}
+                                  transition={{
+                                    duration: 0.32,
+                                    repeat: isAnticipation ? 0 : Infinity,
+                                    ease: 'easeInOut',
+                                  }}
+                                  style={{ transformOrigin: '46px 130px' }}
+                                >
+                                  <line x1="46" y1="130" x2="42" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
+                                  <ellipse cx="40" cy="150" rx="7" ry="4" fill="#0F172A" />
+                                  <ellipse cx="38" cy="151" rx="4" ry="2" fill="#FBBF24" />
+                                </motion.g>
+
+                                <motion.g
+                                  animate={{
+                                    rotate: isAnticipation ? -10 : [-24, 28, -24],
+                                    y: isAnticipation ? 0 : [0, -3, 0],
+                                  }}
+                                  transition={{
+                                    duration: 0.32,
+                                    repeat: isAnticipation ? 0 : Infinity,
+                                    ease: 'easeInOut',
+                                  }}
+                                  style={{ transformOrigin: '64px 130px' }}
+                                >
+                                  <line x1="64" y1="130" x2="68" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
+                                  <ellipse cx="70" cy="150" rx="7" ry="4" fill="#0F172A" />
+                                  <ellipse cx="72" cy="151" rx="4" ry="2" fill="#FBBF24" />
+                                </motion.g>
+                              </motion.g>
+                            )}
+
+                            {/* MAIN DIAGONAL CAPSULE BODY (Centered precisely at 55px, 80px) */}
+                            <g id="body-capsule-b">
+                              <rect
+                                x="40"
+                                y="17"
+                                width="30"
+                                height="126"
+                                rx="15"
+                                fill="url(#charBGradient)"
+                                className="shadow-md"
+                              />
+                              {/* 3D Gloss Highlight Stripe */}
+                              <rect
+                                x="57"
+                                y="20"
+                                width="9"
+                                height="120"
+                                rx="4.5"
+                                fill="url(#glossGradB)"
+                              />
+                            </g>
+
+                            {/* FRIENDLY FACE WHILE RUNNING */}
+                            {!isLockedIntoX && (
+                              <g id="face-b">
+                                <motion.g
+                                  animate={{
+                                    scaleY: [1, 1, 0.1, 1],
+                                  }}
+                                  transition={{
+                                    duration: 2.4,
+                                    repeat: Infinity,
+                                    times: [0, 0.82, 0.88, 1],
+                                  }}
+                                  style={{ transformOrigin: '55px 50px' }}
+                                >
+                                  <circle cx="49" cy="50" r="3.6" fill="#0F172A" />
+                                  <circle cx="48" cy="48.8" r="1.3" fill="#FFFFFF" />
+                                  <circle cx="60" cy="50" r="3.6" fill="#0F172A" />
+                                  <circle cx="59" cy="48.8" r="1.3" fill="#FFFFFF" />
+                                </motion.g>
+                                <path
+                                  d="M 49 58 Q 54.5 64 60 58"
+                                  stroke="#0F172A"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  fill="none"
+                                />
+                                <circle cx="45" cy="56" r="2.2" fill="#D97706" opacity="0.4" />
+                                <circle cx="64" cy="56" r="2.2" fill="#D97706" opacity="0.4" />
+                              </g>
+                            )}
+
+                            {/* ARMS & PRINT ORDER PACKAGE */}
+                            {!isLockedIntoX && (
+                              <g id="arm-and-package">
+                                <motion.path
+                                  d="M 70 70 Q 82 80 78 94"
+                                  stroke="#D97706"
+                                  strokeWidth="5"
+                                  strokeLinecap="round"
+                                  animate={{
+                                    d: isAnticipation
+                                      ? 'M 70 70 Q 78 75 75 88'
+                                      : ['M 70 70 Q 82 80 78 94', 'M 70 70 Q 84 65 80 55', 'M 70 70 Q 82 80 78 94'],
+                                  }}
+                                  transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
+                                />
+
+                                <motion.g
+                                  animate={{
+                                    y: isAnticipation ? 0 : [-1, 2, -1],
+                                    rotate: isAnticipation ? 0 : [2, -3, 2],
+                                  }}
+                                  transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
+                                  style={{ transformOrigin: '42px 74px' }}
+                                >
+                                  <path d="M 42 74 Q 28 78 22 86" stroke="#D97706" strokeWidth="5" strokeLinecap="round" />
+                                  <circle cx="22" cy="86" r="3.5" fill="#FFBA3B" />
+
+                                  {/* Print Package / Folder */}
+                                  <g filter="url(#folderShadow)" transform="translate(2, 70)">
+                                    <rect x="0" y="0" width="24" height="28" rx="3" fill="#F59E0B" stroke="#D97706" strokeWidth="1" />
+                                    <polygon points="0,0 12,10 24,0" fill="#D97706" />
+                                    <circle cx="12" cy="16" r="4.5" fill="#FFFFFF" />
+                                    <path d="M 10 16 L 14 16 M 12 14 L 12 18" stroke="#F59E0B" strokeWidth="1.2" strokeLinecap="round" />
+                                  </g>
+                                </motion.g>
+                              </g>
+                            )}
+                          </svg>
+                        </motion.div>
+                      )}
+
+                      {/* ==========================================================
+                          UPRIGHT FRIENDLY MASCOT FACE AT THE CENTER OF THE X
+                          - Appears seamlessly on contact
+                          - Always stays perfectly upright (not rotated)
+                          - Blinks playfully at the viewer
+                          ========================================================== */}
+                      {isLockedIntoX && (
+                        <motion.div
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{
+                            scale: [0, 1.25, 1],
+                            opacity: 1,
+                          }}
+                          transition={{ duration: 0.35, delay: 0.12, ease: 'backOut' }}
+                          className="absolute z-30 pointer-events-none flex items-center justify-center"
+                          style={{ top: '64px', left: '38px', width: '34px', height: '32px' }}
+                        >
+                          <svg width="34" height="32" viewBox="0 0 34 32" fill="none">
+                            {/* Blinking Eyes */}
+                            <motion.g
+                              animate={{ scaleY: [1, 1, 0.1, 1] }}
+                              transition={{ duration: 2.2, repeat: Infinity, times: [0, 0.85, 0.9, 1] }}
+                              style={{ transformOrigin: '17px 11px' }}
+                            >
+                              <circle cx="10" cy="11" r="3.5" fill="#0F172A" />
+                              <circle cx="11.2" cy="9.8" r="1.3" fill="#FFFFFF" />
+
+                              <circle cx="24" cy="11" r="3.5" fill="#0F172A" />
+                              <circle cx="25.2" cy="9.8" r="1.3" fill="#FFFFFF" />
+                            </motion.g>
+
+                            {/* Happy Smile Arc */}
+                            <path
+                              d="M 10 19 Q 17 25 24 19"
+                              stroke="#0F172A"
+                              strokeWidth="2.2"
+                              strokeLinecap="round"
+                              fill="none"
+                            />
+
+                            {/* Rosy Cheeks */}
+                            <circle cx="6" cy="17" r="2.2" fill="#EA580C" opacity="0.4" />
+                            <circle cx="28" cy="17" r="2.2" fill="#EA580C" opacity="0.4" />
+                          </svg>
+                        </motion.div>
+                      )}
+                    </motion.div>
+
+
+                    {/* ==============================================================
+                        SCENE 6: "Buddy" REVEAL BESIDE THE HERO X
+                        - ONLY revealed after the X is completely formed and settled!
+                        ============================================================== */}
+                    {isBuddyVisible && (
                       <motion.div
                         initial={{ opacity: 0, x: 45, scale: 0.9 }}
                         animate={{
                           opacity: 1,
-                          x: 20, // Places directly beside the X
+                          x: 18,
                           scale: 1,
                         }}
                         transition={{
                           type: 'spring',
                           stiffness: 280,
-                          damping: 18, // Clean overshoot bounce
+                          damping: 18,
                           mass: 0.8,
                         }}
                         className="flex items-center select-none"
@@ -895,12 +926,15 @@ export default function XBuddyIntro({ onComplete }) {
                         </span>
                       </motion.div>
                     )}
-                  </motion.div>
+                  </div>
                 </div>
               </div>
 
-              {/* SCENE 7: "Upload • Pay • Print" TAGLINE */}
-              {phase >= 7 && (
+              {/* ==============================================================
+                  SCENE 7: "Upload • Pay • Print" TAGLINE
+                  - ONLY revealed after the complete XBuddy logo is assembled!
+                  ============================================================== */}
+              {isTaglineVisible && (
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
