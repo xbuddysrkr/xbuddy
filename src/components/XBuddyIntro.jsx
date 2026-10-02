@@ -10,14 +10,14 @@ import { motion, AnimatePresence } from 'framer-motion'
  * 1. Scene 1 (0.0 - 1.2s): Character A ("/") enters from LEFT carrying printed papers.
  * 2. Scene 2 (1.2 - 2.4s): Character B ("\") enters from RIGHT carrying print package.
  * 3. Step 1 Approach (2.4 - 3.2s): Both characters run toward the exact center (-48px & +48px).
- * 4. Step 2 Center Alignment / Anticipation (3.2 - 3.45s): Pause forward movement for ~0.2s!
- * 5. Step 3 & 4 Cross & Lock (3.45 - 4.0s):
- *    - Left "/" character rotates clockwise & moves diagonally DOWN-RIGHT through the center -> becomes "\" diagonal.
- *    - Right "\" character rotates counterclockwise & moves diagonally DOWN-LEFT through the center -> becomes "/" diagonal.
- *    - Centers intersect at the EXACT SAME LOCATION (0, 0) with a 90° angle.
- *    - Step 5 Snap: Snap together, tiny squash, impact bounce, orange flash, soft contact shadow.
- * 6. Settled X (4.0 - 4.6s): Hold the completed perfect X!
- * 7. X Shift (4.6 - 5.3s): X shifts smoothly leftward.
+ * 4. Step 2 Anticipation (3.2 - 3.45s): Pause forward movement for ~0.25s right in front of crossing zone.
+ * 5. Step 3 & 4 Physical Crossing & Lock (3.45 - 4.0s):
+ *    - Left "/" character rotates clockwise & moves diagonally DOWN-RIGHT through the center -> becomes "\" stroke.
+ *    - Right "\" character rotates counterclockwise & moves diagonally DOWN-LEFT through the center -> becomes "/" stroke.
+ *    - Both share the EXACT same center origin (70px, 70px) and intersect at (0, 0) with a 90° angle.
+ *    - Step 5 Snap: Snap together, tiny squash, impact bounce, orange flash ring, soft contact shadow.
+ * 6. Settled X (4.0 - 4.6s): Hold the completed perfect X in glory!
+ * 7. X Shift (4.6 - 5.3s): X shifts smoothly leftward (-75px).
  * 8. Buddy Reveal (5.3 - 6.2s): "Buddy" springs in beside the X -> XBuddy lockup.
  * 9. Tagline Reveal (6.2 - 7.1s): "Upload • Pay • Print" floats up underneath.
  * 10. Exit (7.1 - 7.6s): 500ms smooth fade-out into the homepage.
@@ -285,13 +285,16 @@ export default function XBuddyIntro({ onComplete }) {
                   )}
 
                   {/* ==============================================================
-                      MAIN BRAND LOCKUP (Holds Hero X + "Buddy" Text)
+                      MAIN BRAND LOCKUP CONTAINER
+                      Holds Hero X + "Buddy" Text
                       ============================================================== */}
                   <div className="relative flex items-center justify-center">
 
                     {/* HERO X CONTAINER
-                        Holds Character A & Character B on the EXACT same coordinate origin (55px 80px)
-                        Shifts leftward smoothly when phase reaches 'shift'
+                        Both Character A & Character B are inside this 140x140 square
+                        with absolute inset-0 and transformOrigin: 70px 70px.
+                        When both are at x=0, y=0, their centers are mathematically IDENTICAL!
+                        Shifts leftward (-75px) when phase reaches 'shift'
                     */}
                     <motion.div
                       animate={{
@@ -301,7 +304,7 @@ export default function XBuddyIntro({ onComplete }) {
                         duration: 0.6,
                         ease: [0.16, 1, 0.3, 1],
                       }}
-                      className="relative w-[110px] h-[160px] flex items-center justify-center pointer-events-none"
+                      className="relative w-[140px] h-[140px] flex items-center justify-center pointer-events-none"
                     >
 
                       {/* ==========================================================
@@ -326,7 +329,7 @@ export default function XBuddyIntro({ onComplete }) {
                               : phase === 'anticipation'
                               ? -42
                               : isCrossing
-                              ? [-42, 5, 0] // Down-right diagonal pass through center into 0
+                              ? [-42, 6, 0] // Down-right diagonal pass through center into 0
                               : 0,
                           y:
                             phase === 'scene1'
@@ -381,12 +384,12 @@ export default function XBuddyIntro({ onComplete }) {
                           opacity: { duration: 0.3 },
                         }}
                         className="absolute inset-0 flex items-center justify-center cursor-default"
-                        style={{ transformOrigin: '55px 80px' }}
+                        style={{ transformOrigin: '70px 70px' }}
                       >
                         <svg
-                          width="110"
-                          height="160"
-                          viewBox="0 0 110 160"
+                          width="140"
+                          height="140"
+                          viewBox="0 0 140 140"
                           fill="none"
                           xmlns="http://www.w3.org/2000/svg"
                           className="overflow-visible"
@@ -415,25 +418,25 @@ export default function XBuddyIntro({ onComplete }) {
                           {isRunning && (
                             <g className="opacity-70">
                               <motion.line
-                                x1="-24"
-                                y1="50"
-                                x2="-8"
-                                y2="50"
+                                x1="-10"
+                                y1="45"
+                                x2="6"
+                                y2="45"
                                 stroke="#F7931E"
                                 strokeWidth="3"
                                 strokeLinecap="round"
-                                animate={{ x1: [-26, -14, -26], opacity: [0.4, 0.9, 0.4] }}
+                                animate={{ x1: [-12, 0, -12], opacity: [0.4, 0.9, 0.4] }}
                                 transition={{ duration: 0.35, repeat: Infinity }}
                               />
                               <motion.line
-                                x1="-30"
-                                y1="75"
-                                x2="-10"
-                                y2="75"
+                                x1="-16"
+                                y1="70"
+                                x2="4"
+                                y2="70"
                                 stroke="#FBBF24"
                                 strokeWidth="2.5"
                                 strokeLinecap="round"
-                                animate={{ x1: [-32, -18, -32], opacity: [0.3, 0.8, 0.3] }}
+                                animate={{ x1: [-18, -4, -18], opacity: [0.3, 0.8, 0.3] }}
                                 transition={{ duration: 0.3, repeat: Infinity, delay: 0.1 }}
                               />
                             </g>
@@ -457,11 +460,11 @@ export default function XBuddyIntro({ onComplete }) {
                                   repeat: isAnticipation ? 0 : Infinity,
                                   ease: 'easeInOut',
                                 }}
-                                style={{ transformOrigin: '46px 130px' }}
+                                style={{ transformOrigin: '61px 120px' }}
                               >
-                                <line x1="46" y1="130" x2="42" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
-                                <ellipse cx="40" cy="150" rx="7" ry="4" fill="#0F172A" />
-                                <ellipse cx="38" cy="151" rx="4" ry="2" fill="#F7931E" />
+                                <line x1="61" y1="120" x2="57" y2="138" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
+                                <ellipse cx="55" cy="140" rx="7" ry="4" fill="#0F172A" />
+                                <ellipse cx="53" cy="141" rx="4" ry="2" fill="#F7931E" />
                               </motion.g>
 
                               {/* Right Leg */}
@@ -475,33 +478,33 @@ export default function XBuddyIntro({ onComplete }) {
                                   repeat: isAnticipation ? 0 : Infinity,
                                   ease: 'easeInOut',
                                 }}
-                                style={{ transformOrigin: '64px 130px' }}
+                                style={{ transformOrigin: '79px 120px' }}
                               >
-                                <line x1="64" y1="130" x2="68" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
-                                <ellipse cx="70" cy="150" rx="7" ry="4" fill="#0F172A" />
-                                <ellipse cx="72" cy="151" rx="4" ry="2" fill="#F7931E" />
+                                <line x1="79" y1="120" x2="83" y2="138" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
+                                <ellipse cx="85" cy="140" rx="7" ry="4" fill="#0F172A" />
+                                <ellipse cx="87" cy="141" rx="4" ry="2" fill="#F7931E" />
                               </motion.g>
                             </motion.g>
                           )}
 
-                          {/* MAIN DIAGONAL CAPSULE BODY (Centered precisely at 55px, 80px) */}
+                          {/* MAIN DIAGONAL CAPSULE BODY (Centered exactly at 70px, 70px) */}
                           <g id="body-capsule-a">
                             <rect
-                              x="40"
-                              y="17"
-                              width="30"
+                              x="56"
+                              y="7"
+                              width="28"
                               height="126"
-                              rx="15"
+                              rx="14"
                               fill="url(#charAGradient)"
                               className="shadow-md"
                             />
                             {/* 3D Gloss Highlight Stripe */}
                             <rect
-                              x="43"
-                              y="20"
-                              width="9"
+                              x="59"
+                              y="10"
+                              width="8"
                               height="120"
-                              rx="4.5"
+                              rx="4"
                               fill="url(#glossGradA)"
                             />
                           </g>
@@ -518,22 +521,22 @@ export default function XBuddyIntro({ onComplete }) {
                                   repeat: Infinity,
                                   times: [0, 0.85, 0.9, 1],
                                 }}
-                                style={{ transformOrigin: '55px 50px' }}
+                                style={{ transformOrigin: '70px 42px' }}
                               >
-                                <circle cx="50" cy="50" r="3.6" fill="#0F172A" />
-                                <circle cx="51.2" cy="48.8" r="1.3" fill="#FFFFFF" />
-                                <circle cx="61" cy="50" r="3.6" fill="#0F172A" />
-                                <circle cx="62.2" cy="48.8" r="1.3" fill="#FFFFFF" />
+                                <circle cx="65" cy="42" r="3.6" fill="#0F172A" />
+                                <circle cx="66.2" cy="40.8" r="1.3" fill="#FFFFFF" />
+                                <circle cx="76" cy="42" r="3.6" fill="#0F172A" />
+                                <circle cx="77.2" cy="40.8" r="1.3" fill="#FFFFFF" />
                               </motion.g>
                               <path
-                                d="M 50 58 Q 55.5 64 61 58"
+                                d="M 65 50 Q 70.5 56 76 50"
                                 stroke="#0F172A"
                                 strokeWidth="2"
                                 strokeLinecap="round"
                                 fill="none"
                               />
-                              <circle cx="46" cy="56" r="2.2" fill="#EA580C" opacity="0.4" />
-                              <circle cx="65" cy="56" r="2.2" fill="#EA580C" opacity="0.4" />
+                              <circle cx="61" cy="48" r="2.2" fill="#EA580C" opacity="0.4" />
+                              <circle cx="80" cy="48" r="2.2" fill="#EA580C" opacity="0.4" />
                             </g>
                           )}
 
@@ -541,14 +544,14 @@ export default function XBuddyIntro({ onComplete }) {
                           {!isLockedIntoX && (
                             <g id="arm-and-papers">
                               <motion.path
-                                d="M 40 70 Q 28 80 32 94"
+                                d="M 56 62 Q 44 72 48 86"
                                 stroke="#EA580C"
                                 strokeWidth="5"
                                 strokeLinecap="round"
                                 animate={{
                                   d: isAnticipation
-                                    ? 'M 40 70 Q 32 75 35 88'
-                                    : ['M 40 70 Q 28 80 32 94', 'M 40 70 Q 26 65 30 55', 'M 40 70 Q 28 80 32 94'],
+                                    ? 'M 56 62 Q 48 67 51 80'
+                                    : ['M 56 62 Q 44 72 48 86', 'M 56 62 Q 42 57 46 47', 'M 56 62 Q 44 72 48 86'],
                                 }}
                                 transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
                               />
@@ -559,13 +562,13 @@ export default function XBuddyIntro({ onComplete }) {
                                   rotate: isAnticipation ? 0 : [-2, 3, -2],
                                 }}
                                 transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
-                                style={{ transformOrigin: '68px 74px' }}
+                                style={{ transformOrigin: '84px 66px' }}
                               >
-                                <path d="M 68 74 Q 82 78 88 86" stroke="#EA580C" strokeWidth="5" strokeLinecap="round" />
-                                <circle cx="88" cy="86" r="3.5" fill="#FFA439" />
+                                <path d="M 84 66 Q 98 70 104 78" stroke="#EA580C" strokeWidth="5" strokeLinecap="round" />
+                                <circle cx="104" cy="78" r="3.5" fill="#FFA439" />
 
                                 {/* Stack of Fluttering Printed Papers */}
-                                <g filter="url(#paperShadow)" transform="translate(82, 70)">
+                                <g filter="url(#paperShadow)" transform="translate(98, 62)">
                                   <rect x="3" y="-2" width="22" height="28" rx="2" fill="#E2E8F0" transform="rotate(-6)" />
                                   <rect x="1" y="0" width="22" height="28" rx="2" fill="#F1F5F9" transform="rotate(3)" />
                                   <rect x="0" y="2" width="22" height="28" rx="2" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="0.8" />
@@ -604,7 +607,7 @@ export default function XBuddyIntro({ onComplete }) {
                                 : phase === 'anticipation'
                                 ? 42
                                 : isCrossing
-                                ? [42, -5, 0] // Down-left diagonal pass through center into 0
+                                ? [42, -6, 0] // Down-left diagonal pass through center into 0
                                 : 0,
                             y:
                               phase === 'scene2'
@@ -657,12 +660,12 @@ export default function XBuddyIntro({ onComplete }) {
                             opacity: { duration: 0.3 },
                           }}
                           className="absolute inset-0 flex items-center justify-center cursor-default"
-                          style={{ transformOrigin: '55px 80px' }}
+                          style={{ transformOrigin: '70px 70px' }}
                         >
                           <svg
-                            width="110"
-                            height="160"
-                            viewBox="0 0 110 160"
+                            width="140"
+                            height="140"
+                            viewBox="0 0 140 140"
                             fill="none"
                             xmlns="http://www.w3.org/2000/svg"
                             className="overflow-visible"
@@ -691,25 +694,25 @@ export default function XBuddyIntro({ onComplete }) {
                             {isRunning && (
                               <g className="opacity-70">
                                 <motion.line
-                                  x1="120"
-                                  y1="50"
-                                  x2="136"
-                                  y2="50"
+                                  x1="134"
+                                  y1="45"
+                                  x2="150"
+                                  y2="45"
                                   stroke="#F7931E"
                                   strokeWidth="3"
                                   strokeLinecap="round"
-                                  animate={{ x2: [136, 124, 136], opacity: [0.4, 0.9, 0.4] }}
+                                  animate={{ x2: [150, 138, 150], opacity: [0.4, 0.9, 0.4] }}
                                   transition={{ duration: 0.35, repeat: Infinity }}
                                 />
                                 <motion.line
-                                  x1="118"
-                                  y1="75"
-                                  x2="138"
-                                  y2="75"
+                                  x1="132"
+                                  y1="70"
+                                  x2="152"
+                                  y2="70"
                                   stroke="#FBBF24"
                                   strokeWidth="2.5"
                                   strokeLinecap="round"
-                                  animate={{ x2: [138, 126, 138], opacity: [0.3, 0.8, 0.3] }}
+                                  animate={{ x2: [152, 140, 152], opacity: [0.3, 0.8, 0.3] }}
                                   transition={{ duration: 0.3, repeat: Infinity, delay: 0.1 }}
                                 />
                               </g>
@@ -732,11 +735,11 @@ export default function XBuddyIntro({ onComplete }) {
                                     repeat: isAnticipation ? 0 : Infinity,
                                     ease: 'easeInOut',
                                   }}
-                                  style={{ transformOrigin: '46px 130px' }}
+                                  style={{ transformOrigin: '61px 120px' }}
                                 >
-                                  <line x1="46" y1="130" x2="42" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
-                                  <ellipse cx="40" cy="150" rx="7" ry="4" fill="#0F172A" />
-                                  <ellipse cx="38" cy="151" rx="4" ry="2" fill="#FBBF24" />
+                                  <line x1="61" y1="120" x2="57" y2="138" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
+                                  <ellipse cx="55" cy="140" rx="7" ry="4" fill="#0F172A" />
+                                  <ellipse cx="53" cy="141" rx="4" ry="2" fill="#FBBF24" />
                                 </motion.g>
 
                                 <motion.g
@@ -749,33 +752,33 @@ export default function XBuddyIntro({ onComplete }) {
                                     repeat: isAnticipation ? 0 : Infinity,
                                     ease: 'easeInOut',
                                   }}
-                                  style={{ transformOrigin: '64px 130px' }}
+                                  style={{ transformOrigin: '79px 120px' }}
                                 >
-                                  <line x1="64" y1="130" x2="68" y2="148" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
-                                  <ellipse cx="70" cy="150" rx="7" ry="4" fill="#0F172A" />
-                                  <ellipse cx="72" cy="151" rx="4" ry="2" fill="#FBBF24" />
+                                  <line x1="79" y1="120" x2="83" y2="138" stroke="#1E293B" strokeWidth="5" strokeLinecap="round" />
+                                  <ellipse cx="85" cy="140" rx="7" ry="4" fill="#0F172A" />
+                                  <ellipse cx="87" cy="141" rx="4" ry="2" fill="#FBBF24" />
                                 </motion.g>
                               </motion.g>
                             )}
 
-                            {/* MAIN DIAGONAL CAPSULE BODY (Centered precisely at 55px, 80px) */}
+                            {/* MAIN DIAGONAL CAPSULE BODY (Centered exactly at 70px, 70px) */}
                             <g id="body-capsule-b">
                               <rect
-                                x="40"
-                                y="17"
-                                width="30"
+                                x="56"
+                                y="7"
+                                width="28"
                                 height="126"
-                                rx="15"
+                                rx="14"
                                 fill="url(#charBGradient)"
                                 className="shadow-md"
                               />
                               {/* 3D Gloss Highlight Stripe */}
                               <rect
-                                x="57"
-                                y="20"
-                                width="9"
+                                x="72"
+                                y="10"
+                                width="8"
                                 height="120"
-                                rx="4.5"
+                                rx="4"
                                 fill="url(#glossGradB)"
                               />
                             </g>
@@ -792,22 +795,22 @@ export default function XBuddyIntro({ onComplete }) {
                                     repeat: Infinity,
                                     times: [0, 0.82, 0.88, 1],
                                   }}
-                                  style={{ transformOrigin: '55px 50px' }}
+                                  style={{ transformOrigin: '70px 42px' }}
                                 >
-                                  <circle cx="49" cy="50" r="3.6" fill="#0F172A" />
-                                  <circle cx="48" cy="48.8" r="1.3" fill="#FFFFFF" />
-                                  <circle cx="60" cy="50" r="3.6" fill="#0F172A" />
-                                  <circle cx="59" cy="48.8" r="1.3" fill="#FFFFFF" />
+                                  <circle cx="64" cy="42" r="3.6" fill="#0F172A" />
+                                  <circle cx="63" cy="40.8" r="1.3" fill="#FFFFFF" />
+                                  <circle cx="75" cy="42" r="3.6" fill="#0F172A" />
+                                  <circle cx="74" cy="40.8" r="1.3" fill="#FFFFFF" />
                                 </motion.g>
                                 <path
-                                  d="M 49 58 Q 54.5 64 60 58"
+                                  d="M 64 50 Q 69.5 56 75 50"
                                   stroke="#0F172A"
                                   strokeWidth="2"
                                   strokeLinecap="round"
                                   fill="none"
                                 />
-                                <circle cx="45" cy="56" r="2.2" fill="#D97706" opacity="0.4" />
-                                <circle cx="64" cy="56" r="2.2" fill="#D97706" opacity="0.4" />
+                                <circle cx="60" cy="48" r="2.2" fill="#D97706" opacity="0.4" />
+                                <circle cx="79" cy="48" r="2.2" fill="#D97706" opacity="0.4" />
                               </g>
                             )}
 
@@ -815,14 +818,14 @@ export default function XBuddyIntro({ onComplete }) {
                             {!isLockedIntoX && (
                               <g id="arm-and-package">
                                 <motion.path
-                                  d="M 70 70 Q 82 80 78 94"
+                                  d="M 84 62 Q 96 72 92 86"
                                   stroke="#D97706"
                                   strokeWidth="5"
                                   strokeLinecap="round"
                                   animate={{
                                     d: isAnticipation
-                                      ? 'M 70 70 Q 78 75 75 88'
-                                      : ['M 70 70 Q 82 80 78 94', 'M 70 70 Q 84 65 80 55', 'M 70 70 Q 82 80 78 94'],
+                                      ? 'M 84 62 Q 92 67 89 80'
+                                      : ['M 84 62 Q 96 72 92 86', 'M 84 62 Q 98 57 94 47', 'M 84 62 Q 96 72 92 86'],
                                   }}
                                   transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
                                 />
@@ -833,13 +836,13 @@ export default function XBuddyIntro({ onComplete }) {
                                     rotate: isAnticipation ? 0 : [2, -3, 2],
                                   }}
                                   transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
-                                  style={{ transformOrigin: '42px 74px' }}
+                                  style={{ transformOrigin: '56px 66px' }}
                                 >
-                                  <path d="M 42 74 Q 28 78 22 86" stroke="#D97706" strokeWidth="5" strokeLinecap="round" />
-                                  <circle cx="22" cy="86" r="3.5" fill="#FFBA3B" />
+                                  <path d="M 56 66 Q 42 70 36 78" stroke="#D97706" strokeWidth="5" strokeLinecap="round" />
+                                  <circle cx="36" cy="78" r="3.5" fill="#FFBA3B" />
 
                                   {/* Print Package / Folder */}
-                                  <g filter="url(#folderShadow)" transform="translate(2, 70)">
+                                  <g filter="url(#folderShadow)" transform="translate(16, 62)">
                                     <rect x="0" y="0" width="24" height="28" rx="3" fill="#F59E0B" stroke="#D97706" strokeWidth="1" />
                                     <polygon points="0,0 12,10 24,0" fill="#D97706" />
                                     <circle cx="12" cy="16" r="4.5" fill="#FFFFFF" />
@@ -854,7 +857,7 @@ export default function XBuddyIntro({ onComplete }) {
 
                       {/* ==========================================================
                           UPRIGHT FRIENDLY MASCOT FACE AT THE CENTER OF THE X
-                          - Appears seamlessly on contact
+                          - Appears on physical contact
                           - Always stays perfectly upright (not rotated)
                           - Blinks playfully at the viewer
                           ========================================================== */}
@@ -866,35 +869,34 @@ export default function XBuddyIntro({ onComplete }) {
                             opacity: 1,
                           }}
                           transition={{ duration: 0.35, delay: 0.12, ease: 'backOut' }}
-                          className="absolute z-30 pointer-events-none flex items-center justify-center"
-                          style={{ top: '64px', left: '38px', width: '34px', height: '32px' }}
+                          className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
                         >
-                          <svg width="34" height="32" viewBox="0 0 34 32" fill="none">
+                          <svg width="36" height="34" viewBox="0 0 36 34" fill="none">
                             {/* Blinking Eyes */}
                             <motion.g
                               animate={{ scaleY: [1, 1, 0.1, 1] }}
                               transition={{ duration: 2.2, repeat: Infinity, times: [0, 0.85, 0.9, 1] }}
-                              style={{ transformOrigin: '17px 11px' }}
+                              style={{ transformOrigin: '18px 12px' }}
                             >
-                              <circle cx="10" cy="11" r="3.5" fill="#0F172A" />
-                              <circle cx="11.2" cy="9.8" r="1.3" fill="#FFFFFF" />
+                              <circle cx="11" cy="12" r="3.6" fill="#0F172A" />
+                              <circle cx="12.2" cy="10.8" r="1.3" fill="#FFFFFF" />
 
-                              <circle cx="24" cy="11" r="3.5" fill="#0F172A" />
-                              <circle cx="25.2" cy="9.8" r="1.3" fill="#FFFFFF" />
+                              <circle cx="25" cy="12" r="3.6" fill="#0F172A" />
+                              <circle cx="26.2" cy="10.8" r="1.3" fill="#FFFFFF" />
                             </motion.g>
 
                             {/* Happy Smile Arc */}
                             <path
-                              d="M 10 19 Q 17 25 24 19"
+                              d="M 11 20 Q 18 26.5 25 20"
                               stroke="#0F172A"
-                              strokeWidth="2.2"
+                              strokeWidth="2.4"
                               strokeLinecap="round"
                               fill="none"
                             />
 
                             {/* Rosy Cheeks */}
-                            <circle cx="6" cy="17" r="2.2" fill="#EA580C" opacity="0.4" />
-                            <circle cx="28" cy="17" r="2.2" fill="#EA580C" opacity="0.4" />
+                            <circle cx="7" cy="18" r="2.2" fill="#EA580C" opacity="0.4" />
+                            <circle cx="29" cy="18" r="2.2" fill="#EA580C" opacity="0.4" />
                           </svg>
                         </motion.div>
                       )}
@@ -903,6 +905,7 @@ export default function XBuddyIntro({ onComplete }) {
 
                     {/* ==============================================================
                         SCENE 6: "Buddy" REVEAL BESIDE THE HERO X
+                        - Positioned in absolute coordinates to the right of the shifted X
                         - ONLY revealed after the X is completely formed and settled!
                         ============================================================== */}
                     {isBuddyVisible && (
@@ -910,7 +913,7 @@ export default function XBuddyIntro({ onComplete }) {
                         initial={{ opacity: 0, x: 45, scale: 0.9 }}
                         animate={{
                           opacity: 1,
-                          x: 18,
+                          x: 14,
                           scale: 1,
                         }}
                         transition={{
@@ -919,7 +922,7 @@ export default function XBuddyIntro({ onComplete }) {
                           damping: 18,
                           mass: 0.8,
                         }}
-                        className="flex items-center select-none"
+                        className="absolute left-1/2 flex items-center select-none"
                       >
                         <span className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-slate-900 leading-none">
                           Buddy
