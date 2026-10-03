@@ -396,18 +396,14 @@ export default function App() {
             </button>
             <button
               onClick={handleReset}
-              className="flex items-center gap-2 sm:gap-2.5 group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.03] active:scale-[0.98]"
+              className="flex items-center group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
               aria-label="XBuddy Home"
             >
-              <XBuddyLogo className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 group-hover:scale-105 transition-transform shrink-0" />
-              <div className="hidden sm:flex flex-col">
-                <span className="text-slate-900 font-extrabold text-base sm:text-lg leading-none tracking-tight group-hover:text-[#F7931E] transition-colors">
-                  X Buddy
-                </span>
-                <span className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase mt-0.5">
-                  Smart Digital Printing
-                </span>
-              </div>
+              <img
+                src="/xbuddy-logo-transparent.png"
+                alt="XBuddy"
+                className="h-8 sm:h-9 md:h-10 w-auto object-contain shrink-0"
+              />
             </button>
           </div>
 
