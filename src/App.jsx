@@ -385,22 +385,26 @@ export default function App() {
       {/* Navigation Bar */}
       <nav className="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={openDrawer}
-              className="p-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-base transition-all border border-orange-200 shadow-xs"
+              className="p-2 sm:p-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-base transition-all border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
               aria-label="Open Navigation Menu"
             >
               ☰
             </button>
-            <button onClick={handleReset} className="flex items-center gap-2.5 group text-left cursor-pointer">
-              <XBuddyLogo className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-transform" />
-              <div className="flex flex-col">
-                <span className="text-slate-900 font-extrabold text-lg leading-none tracking-tight group-hover:text-[#F7931E] transition-colors">
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-2 sm:gap-2.5 group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.03] active:scale-[0.98]"
+              aria-label="XBuddy Home"
+            >
+              <XBuddyLogo className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 group-hover:scale-105 transition-transform shrink-0" />
+              <div className="hidden sm:flex flex-col">
+                <span className="text-slate-900 font-extrabold text-base sm:text-lg leading-none tracking-tight group-hover:text-[#F7931E] transition-colors">
                   X Buddy
                 </span>
-                <span className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">
+                <span className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase mt-0.5">
                   Smart Digital Printing
                 </span>
               </div>
