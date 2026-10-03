@@ -206,9 +206,9 @@ export default function XBuddyHeroMascot({
       title="Buddy"
       className="relative inline-flex items-center justify-center select-none cursor-pointer group"
       style={{
-        // Match proportional height of text-6xl/7xl/8xl
-        width: 'clamp(52px, 8.5vw, 92px)',
-        height: 'clamp(52px, 8.5vw, 92px)',
+        // Prominent, adorable size that looks great on mobile and desktop
+        width: 'clamp(84px, 20vw, 120px)',
+        height: 'clamp(84px, 20vw, 120px)',
         verticalAlign: 'middle',
       }}
     >

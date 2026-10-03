@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
+import XBuddyLogo from './XBuddyLogo'
 
 export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentStep }) {
   const menuItems = [
@@ -36,9 +37,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
               {/* Header */}
               <div className="p-5 border-b border-orange-100 flex items-center justify-between bg-white/60">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#F7931E] to-amber-400 flex items-center justify-center shadow-md shadow-orange-500/20">
-                    <span className="text-white font-extrabold text-base tracking-wider">X</span>
-                  </div>
+                  <XBuddyLogo className="w-9 h-9" />
                   <div className="flex flex-col">
                     <span className="text-slate-900 font-extrabold text-base leading-none tracking-tight">
                       X Buddy

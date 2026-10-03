@@ -51,7 +51,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
         </motion.div>
 
         {/* Hero Title with Interactive Living XBuddy Mascot + BlurText */}
-        <h1 className="text-6xl sm:text-7xl md:text-8xl font-extrabold tracking-tight leading-[1.05] mb-3 inline-flex items-center justify-center gap-2.5 sm:gap-4 md:gap-5 flex-wrap">
+        <h1 className="text-5xl sm:text-7xl md:text-8xl font-extrabold tracking-tight leading-[1.08] mb-3 inline-flex items-center justify-center gap-3 sm:gap-4 md:gap-5 flex-wrap">
           <XBuddyHeroMascot
             buttonRef={startBtnRef}
             isHovered={isBtnHovered}

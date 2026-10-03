@@ -24,6 +24,7 @@ import NavigationDrawer from './components/NavigationDrawer'
 import MyOrdersPage from './components/MyOrdersPage'
 import AdminDashboard from './components/AdminDashboard'
 import XBuddyIntro from './components/XBuddyIntro'
+import XBuddyLogo from './components/XBuddyLogo'
 
 const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin' }
 const DEFAULT_SETTINGS = {
@@ -393,10 +394,8 @@ export default function App() {
             >
               ☰
             </button>
-            <button onClick={handleReset} className="flex items-center gap-2.5 group text-left">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#F7931E] to-amber-400 flex items-center justify-center shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform">
-                <span className="text-white font-extrabold text-base tracking-wider">X</span>
-              </div>
+            <button onClick={handleReset} className="flex items-center gap-2.5 group text-left cursor-pointer">
+              <XBuddyLogo className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-transform" />
               <div className="flex flex-col">
                 <span className="text-slate-900 font-extrabold text-lg leading-none tracking-tight group-hover:text-[#F7931E] transition-colors">
                   X Buddy
