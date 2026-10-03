@@ -74,20 +74,20 @@ async function exportToPdf(text, filename, opts = {}) {
 // Extracted form panel to top-level to avoid remounts/resetting cursor
 function FormPanel({ fields, form, onChange, onGenerate }) {
   return (
-    <div className="h-full overflow-y-auto p-4 space-y-3 scrollbar-thin">
-      <p className="text-[#6B7280] text-xs font-medium uppercase tracking-wider mb-2">Document Details</p>
+    <div className="h-full overflow-y-auto p-4 space-y-3.5 scrollbar-thin">
+      <p className="text-slate-900 text-xs sm:text-sm font-extrabold uppercase tracking-wider mb-2.5">Document Details</p>
       {fields.map(field => {
         const meta = FIELD_META[field]
         return (
           <div key={field}>
-            <label className="text-[#6B7280] text-xs mb-1.5 block">{meta.label}</label>
+            <label className="text-slate-900 text-xs sm:text-sm font-bold mb-1.5 block">{meta.label}</label>
             {field === 'extra' ? (
               <textarea
                 value={form[field]}
                 onChange={e => onChange(field, e.target.value)}
                 placeholder={meta.placeholder}
                 rows={3}
-                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-lg px-3 py-2 text-[#222222] text-xs placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all resize-none"
+                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-xl px-3 py-2 text-slate-900 font-medium text-xs sm:text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all resize-none"
               />
             ) : (
               <input
@@ -95,7 +95,7 @@ function FormPanel({ fields, form, onChange, onGenerate }) {
                 value={form[field]}
                 onChange={e => onChange(field, e.target.value)}
                 placeholder={meta.placeholder}
-                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-lg px-3 py-2 text-[#222222] text-xs placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all"
+                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-xl px-3 py-2 text-slate-900 font-medium text-xs sm:text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all"
               />
             )}
           </div>
@@ -103,7 +103,7 @@ function FormPanel({ fields, form, onChange, onGenerate }) {
       })}
       <button
         onClick={onGenerate}
-        className="w-full py-2.5 bg-[#F78C25] hover:bg-[#e07010] text-white font-semibold text-sm rounded-xl transition-all mt-2"
+        className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-extrabold text-sm rounded-xl transition-all mt-3 shadow-md shadow-orange-500/20 active:scale-95 cursor-pointer"
       >
         Generate Document
       </button>
@@ -282,15 +282,15 @@ function DocModal({ docType, onClose, onPrint }) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-orange-100 flex-shrink-0 bg-white">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25]">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25] shrink-0">
               {ICONS[docType.id]}
             </div>
             <div>
-              <p className="text-[#222222] font-semibold text-sm">{docType.label}</p>
-              <p className="text-gray-400 text-xs hidden sm:block">{docType.desc}</p>
+              <p className="text-slate-900 font-extrabold text-base sm:text-lg leading-tight">{docType.label}</p>
+              <p className="text-slate-600 font-semibold text-xs sm:text-sm mt-0.5">{docType.desc}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-gray-400 transition-all">
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-slate-500 transition-all active:scale-95 cursor-pointer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
@@ -402,8 +402,8 @@ export default function AcademicToolkit({ onPrint }) {
                 </svg>
               </div>
             </div>
-            <p className="text-[#222222] font-semibold text-sm mb-1">{doc.label}</p>
-            <p className="text-gray-400 text-xs leading-relaxed">{doc.desc}</p>
+            <p className="text-slate-900 font-extrabold text-base mb-1">{doc.label}</p>
+            <p className="text-slate-600 text-xs sm:text-sm font-semibold leading-relaxed">{doc.desc}</p>
             <div className="mt-4 pt-4 border-t border-orange-100 flex items-center justify-between">
               <span className="text-gray-400 text-xs">Click to generate</span>
               <span className="text-[#F78C25] text-xs font-medium opacity-60 group-hover:opacity-100 transition-opacity">Generate →</span>
