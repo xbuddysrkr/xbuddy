@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import Hero from './components/Hero'
 import Workflow from './components/Workflow'
@@ -32,6 +32,25 @@ const DEFAULT_SETTINGS = {
   pageRange: 'all', customPages: '', imageFit: 'fit',
 }
 
+function getUrlForStep(stepName) {
+  switch (stepName) {
+    case STEP.UPLOAD:
+    case STEP.SETTINGS:
+      return '/print'
+    case STEP.MY_ORDERS:
+      return '/my-orders'
+    case STEP.ADMIN:
+      return '/admin'
+    case STEP.RESUME:
+      return '/resume'
+    case STEP.PRINTING:
+      return '/order-status'
+    case STEP.HERO:
+    default:
+      return '/'
+  }
+}
+
 async function getPageCountFromFile(file) {
   try {
     const result = await processFile(file)
@@ -54,11 +73,19 @@ async function getPageCountFromFile(file) {
 export default function App() {
   const [step, setStep]               = useState(() => {
     if (typeof window !== 'undefined') {
-      if (window.location.pathname.startsWith('/admin') || window.location.hash === '#admin') {
+      const path = window.location.pathname.toLowerCase()
+      const hash = window.location.hash.toLowerCase()
+      if (path.startsWith('/admin') || hash === '#admin') {
         return STEP.ADMIN
       }
-      if (window.location.pathname.startsWith('/my-orders') || window.location.hash === '#orders') {
+      if (path.startsWith('/my-orders') || hash === '#orders') {
         return STEP.MY_ORDERS
+      }
+      if (path.startsWith('/resume') || hash === '#resume') {
+        return STEP.RESUME
+      }
+      if (path.startsWith('/print') || hash === '#print') {
+        return STEP.UPLOAD
       }
     }
     return STEP.HERO
@@ -80,31 +107,186 @@ export default function App() {
     }
     return false
   })
+
   const settingsRef = useRef(null)
+  const isNavigatingRef = useRef(false)
+  const orderIdRef = useRef(null)
+
+  // 1. Initial history entry setup (use replaceState so initial load does NOT create duplicate history entry)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const currentPath = window.location.pathname.toLowerCase()
+    const currentHash = window.location.hash.toLowerCase()
+    let initialStep = STEP.HERO
+
+    if (currentPath.startsWith('/admin') || currentHash === '#admin') {
+      initialStep = STEP.ADMIN
+    } else if (currentPath.startsWith('/my-orders') || currentHash === '#orders') {
+      initialStep = STEP.MY_ORDERS
+    } else if (currentPath.startsWith('/resume') || currentHash === '#resume') {
+      initialStep = STEP.RESUME
+    } else if (currentPath.startsWith('/print') || currentHash === '#print') {
+      initialStep = STEP.UPLOAD
+    }
+
+    const state = window.history.state
+    if (!state || !state.step) {
+      try {
+        window.history.replaceState({
+          step: initialStep,
+          showPayment: false,
+          isDrawerOpen: false,
+          orderId: null,
+        }, '', window.location.href)
+      } catch {}
+    }
+  }, [])
+
+  // 2. Browser Back / Forward handler (popstate)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    function handlePopState(event) {
+      const state = event.state
+      isNavigatingRef.current = true
+
+      if (state && typeof state === 'object') {
+        setShowPayment(Boolean(state.showPayment))
+        setIsDrawerOpen(Boolean(state.isDrawerOpen))
+
+        if (state.step && Object.values(STEP).includes(state.step)) {
+          setStep(state.step)
+        } else {
+          setStep(STEP.HERO)
+        }
+
+        if (state.orderId !== undefined) {
+          setOrderId(state.orderId)
+          orderIdRef.current = state.orderId
+        }
+
+        if (state.step === STEP.HERO) {
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }
+      } else {
+        // Fallback for null history state (e.g. direct URL entry or edge cases)
+        setShowPayment(false)
+        setIsDrawerOpen(false)
+
+        const path = window.location.pathname.toLowerCase()
+        const hash = window.location.hash.toLowerCase()
+
+        if (path.startsWith('/admin') || hash === '#admin') {
+          setStep(STEP.ADMIN)
+        } else if (path.startsWith('/my-orders') || hash === '#orders') {
+          setStep(STEP.MY_ORDERS)
+        } else if (path.startsWith('/resume') || hash === '#resume') {
+          setStep(STEP.RESUME)
+        } else if (path.startsWith('/print') || hash === '#print') {
+          setStep(STEP.UPLOAD)
+        } else {
+          setStep(STEP.HERO)
+        }
+      }
+
+      isNavigatingRef.current = false
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
+  // 3. Central Navigation Controller: pushes or replaces history entry
+  function goToStep(nextStep, options = {}) {
+    if (isNavigatingRef.current) return
+    const { replace = false, preserveScroll = false } = options
+    const targetUrl = getUrlForStep(nextStep)
+    const nextState = {
+      step: nextStep,
+      showPayment: false,
+      isDrawerOpen: false,
+      orderId: orderIdRef.current,
+    }
+
+    try {
+      if (replace) {
+        window.history.replaceState(nextState, '', targetUrl)
+      } else {
+        window.history.pushState(nextState, '', targetUrl)
+      }
+    } catch {}
+
+    setStep(nextStep)
+    setShowPayment(false)
+    setIsDrawerOpen(false)
+
+    if (!preserveScroll) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  // 4. Modal Controls with History Integration
+  function openPayment() {
+    if (showPayment) return
+    const currentState = window.history.state || { step, showPayment: false, isDrawerOpen: false }
+    try {
+      window.history.pushState({ ...currentState, showPayment: true }, '', window.location.pathname + '#payment')
+    } catch {}
+    setShowPayment(true)
+  }
+
+  function closePayment() {
+    if (!showPayment) return
+    if (window.history.state?.showPayment) {
+      window.history.back()
+    } else {
+      setShowPayment(false)
+    }
+  }
+
+  function openDrawer() {
+    if (isDrawerOpen) return
+    const currentState = window.history.state || { step, showPayment: false, isDrawerOpen: false }
+    try {
+      window.history.pushState({ ...currentState, isDrawerOpen: true }, '', window.location.href)
+    } catch {}
+    setIsDrawerOpen(true)
+  }
+
+  function closeDrawer() {
+    if (!isDrawerOpen) return
+    if (window.history.state?.isDrawerOpen) {
+      window.history.back()
+    } else {
+      setIsDrawerOpen(false)
+    }
+  }
 
   function handleDrawerNavigate(target) {
     setIsDrawerOpen(false)
+    const replace = Boolean(window.history.state?.isDrawerOpen)
+
     if (target === 'home') {
-      setStep(STEP.HERO)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      goToStep(STEP.HERO, { replace })
     } else if (target === 'my_orders') {
-      setStep(STEP.MY_ORDERS)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      goToStep(STEP.MY_ORDERS, { replace })
     } else if (target === 'admin') {
-      setStep(STEP.ADMIN)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      goToStep(STEP.ADMIN, { replace })
     } else if (target === 'about') {
-      setStep(STEP.HERO)
+      goToStep(STEP.HERO, { replace })
       setTimeout(() => {
         const el = document.getElementById('why-x-buddy')
         if (el) el.scrollIntoView({ behavior: 'smooth' })
-      }, 100)
+      }, 150)
     } else if (target === 'help') {
-      setStep(STEP.HERO)
+      goToStep(STEP.HERO, { replace })
       setTimeout(() => {
         const el = document.getElementById('how-it-works')
         if (el) el.scrollIntoView({ behavior: 'smooth' })
-      }, 100)
+      }, 150)
     }
   }
 
@@ -154,7 +336,7 @@ export default function App() {
 
   async function handleFileReady(info) {
     setFileInfo(info)
-    setStep(STEP.SETTINGS)
+    goToStep(STEP.SETTINGS, { preserveScroll: true })
     setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
@@ -169,25 +351,24 @@ export default function App() {
     }
     const result = await processFile(file)
     setFileInfo({ file: result.pdfBlob, originalFile: file, name: file.name, size: '', totalPages: result.totalPages, thumbnail: result.thumbnail, typeInfo: { label: 'PDF', icon: '📄', category: 'document' }, requiresAgent: false })
-    setStep(STEP.SETTINGS)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    goToStep(STEP.SETTINGS)
     setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)
   }
 
   function handleOrderSuccess(id) {
     setOrderId(id)
+    orderIdRef.current = id
     setShowPayment(false)
-    setStep(STEP.PRINTING)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    goToStep(STEP.PRINTING, { replace: true })
   }
 
   function handleReset() {
-    setStep(STEP.HERO)
+    goToStep(STEP.HERO)
     setFileInfo(null)
     setSettings(DEFAULT_SETTINGS)
     setShowPayment(false)
     setOrderId(null)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    orderIdRef.current = null
   }
 
   return (
@@ -195,7 +376,7 @@ export default function App() {
       {/* Navigation Drawer */}
       <NavigationDrawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={closeDrawer}
         onNavigate={handleDrawerNavigate}
         currentStep={step}
       />
@@ -206,7 +387,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setIsDrawerOpen(true)}
+              onClick={openDrawer}
               className="p-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-base transition-all border border-orange-200 shadow-xs"
               aria-label="Open Navigation Menu"
             >
@@ -234,19 +415,19 @@ export default function App() {
                 <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors">Why X Buddy</a>
                 <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors">Who Is It For</a>
                 <a href="#academic-toolkit" className="hover:text-[#F7931E] transition-colors">Academic Toolkit</a>
-                <button onClick={() => setStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors">
+                <button onClick={() => goToStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors cursor-pointer">
                   Resume Builder
                 </button>
-                <button onClick={() => setStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1">
+                <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1 cursor-pointer">
                   📋 My Orders
                 </button>
-                <button onClick={() => setStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold">
+                <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
                   🏪 Shop Staff
                 </button>
               </div>
               <button
-                onClick={() => setStep(STEP.UPLOAD)}
-                className="px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all"
+                onClick={() => goToStep(STEP.UPLOAD)}
+                className="px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer"
               >
                 Print Now →
               </button>
@@ -254,7 +435,7 @@ export default function App() {
           ) : step === STEP.RESUME || step === STEP.MY_ORDERS || step === STEP.ADMIN ? (
             <button
               onClick={handleReset}
-              className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
+              className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
             >
               ← Back to Home
             </button>
@@ -284,11 +465,11 @@ export default function App() {
           {step === STEP.HERO && (
             <motion.div key="hero" exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.3 }}>
               {/* Hero Section */}
-              <Hero onGetStarted={() => setStep(STEP.UPLOAD)} onResumeBuilder={() => setStep(STEP.RESUME)} onMyOrders={() => setStep(STEP.MY_ORDERS)} />
+              <Hero onGetStarted={() => goToStep(STEP.UPLOAD)} onResumeBuilder={() => goToStep(STEP.RESUME)} onMyOrders={() => goToStep(STEP.MY_ORDERS)} />
               
               {/* Timeline Section */}
               <div id="how-it-works">
-                <Workflow onStartPrint={() => setStep(STEP.UPLOAD)} />
+                <Workflow onStartPrint={() => goToStep(STEP.UPLOAD)} />
               </div>
 
               {/* Feature Grid */}
@@ -319,7 +500,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4 text-xs text-slate-400">
-                    <button onClick={() => setStep(STEP.ADMIN)} className="text-slate-500 hover:text-[#F7931E] font-medium transition-colors cursor-pointer">
+                    <button onClick={() => goToStep(STEP.ADMIN)} className="text-slate-500 hover:text-[#F7931E] font-medium transition-colors cursor-pointer">
                       🏪 Xerox Shop Staff Dashboard
                     </button>
                     <span className="w-1 h-1 rounded-full bg-[#F7931E]" />
@@ -339,7 +520,7 @@ export default function App() {
                 {fileInfo && step === STEP.SETTINGS && (
                   <motion.div ref={settingsRef} key="settings" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                     <PrintSettings fileInfo={fileInfo} settings={settings} onChange={setSettings} />
-                    <PriceCard fileInfo={fileInfo} settings={settings} onPayAndPrint={() => setShowPayment(true)} />
+                    <PriceCard fileInfo={fileInfo} settings={settings} onPayAndPrint={openPayment} />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -354,7 +535,7 @@ export default function App() {
 
           {step === STEP.MY_ORDERS && (
             <motion.div key="my_orders" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <MyOrdersPage onStartPrinting={() => setStep(STEP.UPLOAD)} />
+              <MyOrdersPage onStartPrinting={() => goToStep(STEP.UPLOAD)} />
             </motion.div>
           )}
 
@@ -371,7 +552,7 @@ export default function App() {
                 settings={settings}
                 orderId={orderId}
                 onReset={handleReset}
-                onViewMyOrders={() => setStep(STEP.MY_ORDERS)}
+                onViewMyOrders={() => goToStep(STEP.MY_ORDERS)}
               />
             </motion.div>
           )}
@@ -379,7 +560,7 @@ export default function App() {
       </main>
 
       {showPayment && (
-        <PaymentModal total={total} orderMeta={orderMeta} onSuccess={handleOrderSuccess} onClose={() => setShowPayment(false)} />
+        <PaymentModal total={total} orderMeta={orderMeta} onSuccess={handleOrderSuccess} onClose={closePayment} />
       )}
 
       {/* Cinematic Brand Intro Native Animation Overlay */}
