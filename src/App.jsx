@@ -394,10 +394,10 @@ export default function App() {
             >
               ☰
             </button>
-            <button onClick={handleReset} className="flex items-center gap-2.5 group text-left cursor-pointer">
-              <XBuddyLogo className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-transform" />
+            <button onClick={handleReset} className="flex items-center gap-2.5 group text-left cursor-pointer transition-transform duration-200 hover:-translate-y-0.5">
+              <XBuddyLogo className="w-9 h-9 sm:w-10 sm:h-10 group-hover:scale-105 transition-transform duration-200" />
               <div className="flex flex-col">
-                <span className="text-slate-900 font-extrabold text-lg leading-none tracking-tight group-hover:text-[#F7931E] transition-colors">
+                <span className="text-slate-900 font-extrabold text-lg leading-none tracking-tight group-hover:text-[#F7931E] transition-colors duration-200">
                   X Buddy
                 </span>
                 <span className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">
@@ -410,25 +410,26 @@ export default function App() {
           {step === STEP.HERO ? (
             <div className="flex items-center gap-6">
               <div className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
-                <a href="#how-it-works" className="hover:text-[#F7931E] transition-colors">How It Works</a>
-                <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors">Why X Buddy</a>
-                <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors">Who Is It For</a>
-                <a href="#academic-toolkit" className="hover:text-[#F7931E] transition-colors">Academic Toolkit</a>
-                <button onClick={() => goToStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors cursor-pointer">
+                <a href="#how-it-works" className="hover:text-[#F7931E] transition-colors duration-200">How It Works</a>
+                <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors duration-200">Why X Buddy</a>
+                <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors duration-200">Who Is It For</a>
+                <a href="#academic-toolkit" className="hover:text-[#F7931E] transition-colors duration-200">Academic Toolkit</a>
+                <button onClick={() => goToStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors duration-200 cursor-pointer">
                   Resume Builder
                 </button>
-                <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1 cursor-pointer">
+                <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors duration-200 flex items-center gap-1 cursor-pointer">
                   📋 My Orders
                 </button>
-                <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
+                <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 hover:border-orange-300 rounded-lg hover:shadow-xs hover:shadow-orange-500/25 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center gap-1 text-xs font-bold cursor-pointer">
                   🏪 Shop Staff
                 </button>
               </div>
               <button
                 onClick={() => goToStep(STEP.UPLOAD)}
-                className="px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer"
+                className="group px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 cursor-pointer flex items-center gap-1"
               >
-                Print Now →
+                <span>Print Now</span>
+                <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
               </button>
             </div>
           ) : step === STEP.RESUME || step === STEP.MY_ORDERS || step === STEP.ADMIN ? (
