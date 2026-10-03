@@ -6,6 +6,8 @@ import { detectPlatform, directLaunchUPI, buildUpiQuery, openPhonePeAppOnly } fr
 
 const UPI_ID = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
 const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
+const GPAY_UPI_ID = import.meta.env.VITE_GPAY_UPI_ID || 'sreekarthota2007@okaxis'
+const GPAY_PAYEE_NAME = import.meta.env.VITE_GPAY_PAYEE_NAME || 'Sreekar Thota'
 
 const PAYMENT_APPS = [
   {
@@ -92,10 +94,14 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const launchingTimeoutRef = useRef(null)
   const isLaunchingRef = useRef(false)
 
+  // Active UPI ID & Payee Name (uses custom GPay UPI ID when GPay is selected)
+  const activeUpiId = selectedApp?.id === 'gpay' ? GPAY_UPI_ID : UPI_ID
+  const activePayeeName = selectedApp?.id === 'gpay' ? GPAY_PAYEE_NAME : PAYEE_NAME
+
   // Build standard UPI URI for QR code and generic fallback (exact matching merchant VPA, 2-decimals amount, and refId)
   const note = `XBuddy Print ${orderMeta?.fileName ? orderMeta.fileName.slice(0, 15) : 'Order'}`
   const refId = orderMeta?.orderId || orderMeta?.fileId || ''
-  const upiQuery = buildUpiQuery({ upiId: UPI_ID, payeeName: PAYEE_NAME, amount: total, note, refId })
+  const upiQuery = buildUpiQuery({ upiId: activeUpiId, payeeName: activePayeeName, amount: total, note, refId })
   const genericUpiUri = `upi://pay?${upiQuery}`
   const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(genericUpiUri)}&size=220x220&margin=4`
 
@@ -138,11 +144,15 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       return
     }
 
+    // Custom UPI ID for Google Pay (sreekarthota2007@okaxis)
+    const targetUpiId = app.id === 'gpay' ? GPAY_UPI_ID : UPI_ID
+    const targetPayeeName = app.id === 'gpay' ? GPAY_PAYEE_NAME : PAYEE_NAME
+
     // Synchronous direct top-level navigation inside the user's tap gesture for other UPI apps
     const { genericFallbackUrl } = directLaunchUPI({
       appId: app.id,
-      upiId: UPI_ID,
-      payeeName: PAYEE_NAME,
+      upiId: targetUpiId,
+      payeeName: targetPayeeName,
       amount: total,
       note,
       refId,
@@ -160,7 +170,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
   function copyUpiId() {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(UPI_ID)
+      navigator.clipboard.writeText(activeUpiId)
       setCopiedUpi(true)
       setTimeout(() => setCopiedUpi(false), 2000)
     }
@@ -315,7 +325,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
                     <div className="text-left">
                       <span className="text-slate-400 text-[10px] block">UPI ID</span>
-                      <span className="font-mono font-bold text-slate-700">{UPI_ID}</span>
+                      <span className="font-mono font-bold text-slate-700">{activeUpiId}</span>
                     </div>
                     <button
                       type="button"
