@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PaymentProofForm from './PaymentProofForm'
 import { Smartphone, QrCode, Copy, Check, ArrowRight, RotateCcw, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import { detectPlatform, launchUPIPayment } from '../utils/upiLauncher'
 
 const UPI_ID = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
 const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
@@ -11,8 +12,6 @@ const PAYMENT_APPS = [
     id: 'phonepe',
     name: 'PhonePe',
     description: 'Tap to open PhonePe app',
-    androidIntent: 'intent://#Intent;scheme=phonepe;package=com.phonepe.app;action=android.intent.action.VIEW;end',
-    directScheme: 'phonepe://',
     iconBg: '#5f259f',
     textColor: '#5f259f',
     borderColor: 'border-purple-200',
@@ -27,8 +26,6 @@ const PAYMENT_APPS = [
     id: 'gpay',
     name: 'Google Pay',
     description: 'Tap to open Google Pay app',
-    androidIntent: 'intent://#Intent;scheme=tez;package=com.google.android.apps.nbu.paisa.user;action=android.intent.action.VIEW;end',
-    directScheme: 'tez://',
     iconBg: '#ffffff',
     textColor: '#1a73e8',
     borderColor: 'border-blue-200',
@@ -43,8 +40,6 @@ const PAYMENT_APPS = [
     id: 'paytm',
     name: 'Paytm',
     description: 'Tap to open Paytm app',
-    androidIntent: 'intent://#Intent;scheme=paytmmp;package=net.one97.paytm;action=android.intent.action.VIEW;end',
-    directScheme: 'paytmmp://',
     iconBg: '#002970',
     textColor: '#00b9f5',
     borderColor: 'border-sky-200',
@@ -57,10 +52,8 @@ const PAYMENT_APPS = [
   },
   {
     id: 'bhim',
-    name: 'BHIM',
+    name: 'BHIM UPI',
     description: 'Tap to open BHIM app',
-    androidIntent: 'intent://#Intent;scheme=bhim;package=in.org.npci.upiapp;action=android.intent.action.VIEW;end',
-    directScheme: 'bhim://',
     iconBg: '#007849',
     textColor: '#007849',
     borderColor: 'border-emerald-200',
@@ -68,6 +61,20 @@ const PAYMENT_APPS = [
     icon: (
       <div className="w-8 h-8 rounded-xl bg-[#007849] text-white flex items-center justify-center font-black text-[10px] shadow-xs">
         BHIM
+      </div>
+    ),
+  },
+  {
+    id: 'any',
+    name: 'Any UPI App',
+    description: 'Cred, Amazon Pay, WhatsApp, etc.',
+    iconBg: '#F7931E',
+    textColor: '#F7931E',
+    borderColor: 'border-orange-200',
+    bgGradient: 'from-orange-50 to-white hover:from-orange-100/70',
+    icon: (
+      <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#EA580C] to-[#F7931E] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+        UPI
       </div>
     ),
   },
@@ -80,6 +87,8 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [copiedUpi, setCopiedUpi] = useState(false)
   const [viewMode, setViewMode] = useState('apps') // 'apps' | 'qr'
   const [desktopNotice, setDesktopNotice] = useState('')
+  const [fallbackNotice, setFallbackNotice] = useState('')
+  const launchingTimeoutRef = useRef(null)
 
   // Build dynamic standard UPI URI strictly for the QR code display only
   const note = `XBuddy Print ${orderMeta?.fileName ? orderMeta.fileName.slice(0, 15) : 'Order'}`
@@ -87,61 +96,65 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const genericUpiUri = `upi://pay?${upiQuery}`
   const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(genericUpiUri)}&size=220x220&margin=4`
 
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (launchingTimeoutRef.current) {
+        clearTimeout(launchingTimeoutRef.current)
+      }
+    }
+  }, [])
+
   function handleSelectApp(app) {
-    const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent || '')
-    const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '')
-    const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent || '')
+    const platform = detectPlatform()
 
     // Debug logging
-    console.log('[X Buddy App Launcher] Selected App:', app.name)
-    console.log('[X Buddy App Launcher] Device:', isMobile ? (isAndroid ? 'Android' : (isIOS ? 'iOS' : 'Mobile')) : 'Desktop')
+    console.log('[X Buddy App Launcher] Selected App:', app.name, '| Platform:', platform)
 
-    if (!isMobile) {
-      // Desktop / laptop: do not attempt to launch mobile apps
-      console.log('[X Buddy App Launcher] Desktop detected.')
+    if (platform === 'desktop') {
+      console.log('[X Buddy App Launcher] Desktop detected — showing QR code and copy UPI fallback.')
       setSelectedApp(app)
       setViewMode('qr')
       setDesktopNotice('Please use your mobile device to open the payment app, or scan the QR code below.')
+      setFallbackNotice('')
       return
     }
 
     setDesktopNotice('')
+    setFallbackNotice('')
     setSelectedApp(app)
-    setStep('LAUNCHING')
 
-    if (isAndroid && app.androidIntent) {
-      console.log(`[X Buddy App Launcher] Launching ${app.name} via Android Intent:`, app.androidIntent)
-      try {
-        const a = document.createElement('a')
-        a.href = app.androidIntent
-        a.rel = 'noopener noreferrer'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      } catch (err) {
-        console.warn(`[X Buddy App Launcher] Intent launch failed, falling back to direct scheme:`, err)
-        window.location.href = app.directScheme
-      }
-    } else if (isIOS && app.directScheme) {
-      console.log(`[X Buddy App Launcher] Launching ${app.name} via iOS scheme:`, app.directScheme)
-      try {
-        const a = document.createElement('a')
-        a.href = app.directScheme
-        a.rel = 'noopener noreferrer'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      } catch (err) {
-        window.location.href = app.directScheme
-      }
-    } else {
-      window.location.href = app.directScheme
-    }
-
-    // After 2.5 seconds, present the completion verification step
-    setTimeout(() => {
-      setStep('DID_YOU_PAY')
-    }, 2500)
+    launchUPIPayment({
+      appId: app.id,
+      upiId: UPI_ID,
+      payeeName: PAYEE_NAME,
+      amount: total,
+      note,
+      refId: orderMeta?.orderId || orderMeta?.fileId || '',
+      onLaunching: () => {
+        setStep('LAUNCHING')
+        // Automatically transition to DID_YOU_PAY verification after generous window
+        if (launchingTimeoutRef.current) clearTimeout(launchingTimeoutRef.current)
+        launchingTimeoutRef.current = setTimeout(() => {
+          setStep((currentStep) => (currentStep === 'LAUNCHING' ? 'DID_YOU_PAY' : currentStep))
+        }, 3200)
+      },
+      onAppOpened: () => {
+        // App launched! When user returns to browser, show completion prompt
+        setStep('DID_YOU_PAY')
+      },
+      onFailure: (reason) => {
+        if (reason === 'desktop') {
+          setViewMode('qr')
+          setStep('SELECT')
+          setDesktopNotice('Please use your mobile device to open the payment app, or scan the QR code below.')
+        } else {
+          setFallbackNotice(reason || 'Couldn’t open the app. You can pay using UPI QR instead.')
+          setViewMode('qr')
+          setStep('SELECT')
+        }
+      },
+    })
   }
 
   function copyUpiId() {
@@ -230,6 +243,19 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               {/* View: 1-Tap UPI Apps */}
               {viewMode === 'apps' && (
                 <div className="space-y-2.5 mb-4">
+                  {fallbackNotice && (
+                    <div className="mb-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium flex items-center justify-between shadow-2xs">
+                      <span>💡 {fallbackNotice}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFallbackNotice('')}
+                        className="text-amber-700 hover:text-amber-900 text-xs font-bold ml-2 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+
                   <p className="text-[11px] font-semibold text-slate-500 mb-1 flex items-center justify-between">
                     <span>Select app to open:</span>
                     <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">Direct Launcher</span>
@@ -262,7 +288,11 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               {/* View: QR Code */}
               {viewMode === 'qr' && (
                 <div className="mb-4 text-center">
-                  {desktopNotice ? (
+                  {fallbackNotice ? (
+                    <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium">
+                      💡 {fallbackNotice}
+                    </div>
+                  ) : desktopNotice ? (
                     <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium">
                       📱 {desktopNotice}
                     </div>
