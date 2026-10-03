@@ -24,16 +24,23 @@ export default function EditableText({
   // Synchronize canvas text from state when not actively being edited by user
   useEffect(() => {
     if (!isEditingRef.current && ref.current) {
-      const current = ref.current.innerText
-      const expected = value || ''
-      if (current !== expected && !(current === placeholder && !value)) {
-        ref.current.innerText = expected || placeholder
+      const current = (ref.current.innerText || '').trim()
+      const expected = (value || '').trim()
+      const fallback = (placeholder || '').trim()
+      if (expected) {
+        if (current !== expected) {
+          ref.current.innerText = value
+        }
+      } else {
+        if (current !== fallback) {
+          ref.current.innerText = placeholder
+        }
       }
     }
   }, [value, placeholder])
 
   const handleInput = (e) => {
-    const text = e.currentTarget.innerText
+    const text = (e.currentTarget.innerText || '').replace(/\r?\n+$/, '')
     if (onChange) {
       onChange(text)
     }
@@ -41,14 +48,11 @@ export default function EditableText({
 
   const handleFocus = () => {
     isEditingRef.current = true
-    if (ref.current && ref.current.innerText === placeholder && !value) {
-      ref.current.innerText = ''
-    }
   }
 
   const handleBlur = (e) => {
     isEditingRef.current = false
-    const text = e.currentTarget.innerText.trim()
+    const text = (e.currentTarget.innerText || '').trim()
     if (!text && placeholder && ref.current) {
       ref.current.innerText = placeholder
     }

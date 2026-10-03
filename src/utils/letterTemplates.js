@@ -21,8 +21,10 @@ export function generateDocument({ type, name, receiver, reason, days, weeks, ex
   const clg   = college    || '[College Name]'
   const nm    = name       || '[Your Name]'
 
+  const yrFmt = yr.toLowerCase().includes('year') ? yr : (yr === '[Year]' ? '[Year] Year' : `${yr} Year`)
+
   const letterHeader = `Date: ${date}\n\nTo,\n${to},\nDepartment of ${dept},\n${clg}\n\n`
-  const letterClose  = `\n\nThank you for your kind consideration.\n\nYours obediently,\n\n${nm}\nRoll No: ${roll}\n${yr} Year — ${dept}\n${clg}`
+  const letterClose  = `\n\nThank you for your kind consideration.\n\nYours obediently,\n\n${nm}\nRoll No: ${roll}\n${yrFmt} — ${dept}\n${clg}`
 
   const docs = {
     leave: {

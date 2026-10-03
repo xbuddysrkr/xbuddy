@@ -140,7 +140,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
           <div>
             <EditableText
               value={form.receiver}
-              placeholder="The HOD / Principal"
+              placeholder={['bonafide', 'scholarship'].includes(docType.id) ? 'The Principal' : 'The HOD'}
               onChange={v => onChange('receiver', v)}
             />,
           </div>
@@ -148,14 +148,14 @@ function AcademicDocCanvas({ docType, form, onChange }) {
             Department of{' '}
             <EditableText
               value={form.department}
-              placeholder="Computer Science"
+              placeholder="[Department]"
               onChange={v => onChange('department', v)}
             />,
           </div>
           <div>
             <EditableText
               value={form.college}
-              placeholder="ABC Engineering College"
+              placeholder="[College Name]"
               onChange={v => onChange('college', v)}
             />
           </div>
@@ -168,7 +168,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
               Sub: Application for Leave —{' '}
               <EditableText
                 value={form.days}
-                placeholder="3"
+                placeholder="N"
                 onChange={v => onChange('days', v)}
               />{' '}
               Day(s)
@@ -182,7 +182,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
               Sub: Request for Permission to Attend Internship —{' '}
               <EditableText
                 value={form.weeks || form.days}
-                placeholder="4"
+                placeholder="N"
                 onChange={v => onChange('weeks', v)}
               />{' '}
               Week(s)
@@ -193,7 +193,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
               Sub: Request for Permission —{' '}
               <EditableText
                 value={form.reason}
-                placeholder="Campus Technical Symposium"
+                placeholder="[Event/Purpose]"
                 onChange={v => onChange('reason', v)}
               />
             </span>
@@ -203,13 +203,13 @@ function AcademicDocCanvas({ docType, form, onChange }) {
               Sub: Apology Letter —{' '}
               <EditableText
                 value={form.reason}
-                placeholder="Late arrival to laboratory session"
+                placeholder="[Incident]"
                 onChange={v => onChange('reason', v)}
               />
             </span>
           )}
           {docType.id === 'scholarship' && (
-            <span>Sub: Application for Merit / Need-Based Scholarship</span>
+            <span>Sub: Application for Scholarship</span>
           )}
         </div>
 
@@ -223,40 +223,40 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am{' '}
                 <EditableText
                   value={form.name}
-                  placeholder="Rahul Sharma"
+                  placeholder="[Your Name]"
                   onChange={v => onChange('name', v)}
                 />
                 , a student of{' '}
                 <EditableText
                   value={form.year}
-                  placeholder="II Year / 3rd Sem"
+                  placeholder="[Year]"
                   onChange={v => onChange('year', v)}
-                />
-                , Department of{' '}
+                />{' '}
+                Year, Department of{' '}
                 <EditableText
                   value={form.department}
-                  placeholder="Computer Science"
+                  placeholder="[Department]"
                   onChange={v => onChange('department', v)}
                 />{' '}
                 (Roll No:{' '}
                 <EditableText
                   value={form.rollNo}
-                  placeholder="21CS045"
+                  placeholder="______"
                   onChange={v => onChange('rollNo', v)}
                 />
                 ). I am writing to respectfully request leave for{' '}
                 <EditableText
                   value={form.days}
-                  placeholder="3"
+                  placeholder="N"
                   onChange={v => onChange('days', v)}
                 />{' '}
-                day(s).
+                day(s) from [Start Date] to [End Date].
               </p>
               <p>
                 Reason:{' '}
                 <EditableText
                   value={form.reason}
-                  placeholder="Medical emergency and doctor's prescribed rest"
+                  placeholder="[State your reason]"
                   multiline
                   onChange={v => onChange('reason', v)}
                 />
@@ -285,25 +285,25 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am{' '}
                 <EditableText
                   value={form.name}
-                  placeholder="Rahul Sharma"
+                  placeholder="[Your Name]"
                   onChange={v => onChange('name', v)}
                 />
                 , a student of{' '}
                 <EditableText
                   value={form.year}
-                  placeholder="II Year / 3rd Sem"
+                  placeholder="[Year]"
                   onChange={v => onChange('year', v)}
-                />
-                , Department of{' '}
+                />{' '}
+                Year, Department of{' '}
                 <EditableText
                   value={form.department}
-                  placeholder="Computer Science"
+                  placeholder="[Department]"
                   onChange={v => onChange('department', v)}
                 />{' '}
                 (Roll No:{' '}
                 <EditableText
                   value={form.rollNo}
-                  placeholder="21CS045"
+                  placeholder="______"
                   onChange={v => onChange('rollNo', v)}
                 />
                 ).
@@ -312,7 +312,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am writing to request a Bonafide Certificate for the purpose of:{' '}
                 <EditableText
                   value={form.reason}
-                  placeholder="applying for education loan and passport verification"
+                  placeholder="[State purpose]"
                   multiline
                   onChange={v => onChange('reason', v)}
                 />
@@ -341,43 +341,43 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am{' '}
                 <EditableText
                   value={form.name}
-                  placeholder="Rahul Sharma"
+                  placeholder="[Your Name]"
                   onChange={v => onChange('name', v)}
                 />
                 , a student of{' '}
                 <EditableText
                   value={form.year}
-                  placeholder="II Year / 3rd Sem"
+                  placeholder="[Year]"
                   onChange={v => onChange('year', v)}
-                />
-                , Department of{' '}
+                />{' '}
+                Year, Department of{' '}
                 <EditableText
                   value={form.department}
-                  placeholder="Computer Science"
+                  placeholder="[Department]"
                   onChange={v => onChange('department', v)}
                 />{' '}
                 (Roll No:{' '}
                 <EditableText
                   value={form.rollNo}
-                  placeholder="21CS045"
+                  placeholder="______"
                   onChange={v => onChange('rollNo', v)}
                 />
                 ).
               </p>
               <p>
-                I have been offered an internship opportunity for a duration of{' '}
+                I have been offered an internship opportunity at [Company Name] for a duration of{' '}
                 <EditableText
                   value={form.weeks || form.days}
-                  placeholder="4"
+                  placeholder="N"
                   onChange={v => onChange('weeks', v)}
                 />{' '}
                 week(s).
               </p>
               <p>
-                Company / Details:{' '}
+                Purpose:{' '}
                 <EditableText
                   value={form.reason}
-                  placeholder="Software Development Intern at TechCorp Solutions"
+                  placeholder="[Describe the internship]"
                   multiline
                   onChange={v => onChange('reason', v)}
                 />
@@ -395,7 +395,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 </p>
               ) : null}
               <p>
-                I humbly request your permission and necessary NOC to attend this internship, which will greatly contribute to my professional development.
+                I humbly request your permission and necessary leave to attend this internship, which will greatly contribute to my professional development.
               </p>
             </>
           )}
@@ -406,38 +406,38 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am{' '}
                 <EditableText
                   value={form.name}
-                  placeholder="Rahul Sharma"
+                  placeholder="[Your Name]"
                   onChange={v => onChange('name', v)}
                 />
                 , a student of{' '}
                 <EditableText
                   value={form.year}
-                  placeholder="II Year / 3rd Sem"
+                  placeholder="[Year]"
                   onChange={v => onChange('year', v)}
-                />
-                , Department of{' '}
+                />{' '}
+                Year, Department of{' '}
                 <EditableText
                   value={form.department}
-                  placeholder="Computer Science"
+                  placeholder="[Department]"
                   onChange={v => onChange('department', v)}
                 />{' '}
                 (Roll No:{' '}
                 <EditableText
                   value={form.rollNo}
-                  placeholder="21CS045"
+                  placeholder="______"
                   onChange={v => onChange('rollNo', v)}
                 />
                 ).
               </p>
               <p>
-                I am writing to seek your kind permission for:{' '}
+                I am writing to seek your kind permission for{' '}
                 <EditableText
                   value={form.reason}
-                  placeholder="organizing the inter-college hackathon event"
+                  placeholder="[State reason]"
                   multiline
                   onChange={v => onChange('reason', v)}
-                />
-                .
+                />{' '}
+                on [Date].
               </p>
               {form.extra ? (
                 <p>
@@ -451,7 +451,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 </p>
               ) : null}
               <p>
-                I assure you that this will not affect my academic commitments. I kindly request you to grant permission and oblige.
+                I assure you that this will not affect my academic performance. I kindly request you to grant permission and oblige.
               </p>
             </>
           )}
@@ -462,25 +462,25 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am{' '}
                 <EditableText
                   value={form.name}
-                  placeholder="Rahul Sharma"
+                  placeholder="[Your Name]"
                   onChange={v => onChange('name', v)}
                 />
                 , a student of{' '}
                 <EditableText
                   value={form.year}
-                  placeholder="II Year / 3rd Sem"
+                  placeholder="[Year]"
                   onChange={v => onChange('year', v)}
-                />
-                , Department of{' '}
+                />{' '}
+                Year, Department of{' '}
                 <EditableText
                   value={form.department}
-                  placeholder="Computer Science"
+                  placeholder="[Department]"
                   onChange={v => onChange('department', v)}
                 />{' '}
                 (Roll No:{' '}
                 <EditableText
                   value={form.rollNo}
-                  placeholder="21CS045"
+                  placeholder="______"
                   onChange={v => onChange('rollNo', v)}
                 />
                 ).
@@ -489,7 +489,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am writing this letter to sincerely apologize for{' '}
                 <EditableText
                   value={form.reason}
-                  placeholder="my unintentional absence from the internal examination"
+                  placeholder="[describe the incident]"
                   multiline
                   onChange={v => onChange('reason', v)}
                 />
@@ -507,7 +507,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 ) : null}
               </p>
               <p>
-                I assure you that such an incident will not recur in the future. I humbly request you to kindly forgive me and provide an opportunity to prove myself.
+                I assure you that such an incident will not recur in the future. I humbly request you to kindly forgive me and give me another opportunity to prove myself.
               </p>
             </>
           )}
@@ -518,25 +518,25 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am{' '}
                 <EditableText
                   value={form.name}
-                  placeholder="Rahul Sharma"
+                  placeholder="[Your Name]"
                   onChange={v => onChange('name', v)}
                 />
                 , a student of{' '}
                 <EditableText
                   value={form.year}
-                  placeholder="II Year / 3rd Sem"
+                  placeholder="[Year]"
                   onChange={v => onChange('year', v)}
-                />
-                , Department of{' '}
+                />{' '}
+                Year, Department of{' '}
                 <EditableText
                   value={form.department}
-                  placeholder="Computer Science"
+                  placeholder="[Department]"
                   onChange={v => onChange('department', v)}
                 />{' '}
                 (Roll No:{' '}
                 <EditableText
                   value={form.rollNo}
-                  placeholder="21CS045"
+                  placeholder="______"
                   onChange={v => onChange('rollNo', v)}
                 />
                 ).
@@ -545,10 +545,10 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 I am writing to formally apply for the scholarship offered by your institution.
               </p>
               <p>
-                Reason & Eligibility:{' '}
+                Reason / Eligibility:{' '}
                 <EditableText
                   value={form.reason}
-                  placeholder="Consistent 9.0+ CGPA and proven academic excellence"
+                  placeholder="[State your reason and eligibility]"
                   multiline
                   onChange={v => onChange('reason', v)}
                 />
@@ -566,7 +566,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
                 </p>
               ) : null}
               <p>
-                I am a dedicated student and this scholarship will greatly support my academic journey. I kindly request you to consider my application favorably.
+                I am a sincere and dedicated student and this scholarship will greatly support my academic journey. I kindly request you to consider my application favorably.
               </p>
             </>
           )}
@@ -579,7 +579,7 @@ function AcademicDocCanvas({ docType, form, onChange }) {
           <div className="mt-6 font-bold text-slate-900">
             <EditableText
               value={form.name}
-              placeholder="Rahul Sharma"
+              placeholder="[Your Name]"
               onChange={v => onChange('name', v)}
             />
           </div>
@@ -587,27 +587,27 @@ function AcademicDocCanvas({ docType, form, onChange }) {
             Roll No:{' '}
             <EditableText
               value={form.rollNo}
-              placeholder="21CS045"
+              placeholder="______"
               onChange={v => onChange('rollNo', v)}
             />
           </div>
           <div>
             <EditableText
               value={form.year}
-              placeholder="II Year / 3rd Sem"
+              placeholder="[Year]"
               onChange={v => onChange('year', v)}
             />{' '}
-            —{' '}
+            Year —{' '}
             <EditableText
               value={form.department}
-              placeholder="Computer Science"
+              placeholder="[Department]"
               onChange={v => onChange('department', v)}
             />
           </div>
           <div>
             <EditableText
               value={form.college}
-              placeholder="ABC Engineering College"
+              placeholder="[College Name]"
               onChange={v => onChange('college', v)}
             />
           </div>
@@ -622,10 +622,10 @@ function AcademicDocCanvas({ docType, form, onChange }) {
       <div className="text-center space-y-6">
         <div className="border-b-2 border-slate-900 pb-4">
           <h2 className="text-xl font-bold uppercase tracking-wider text-slate-900">
-            <EditableText value={form.college} placeholder="ABC Engineering College" onChange={v => onChange('college', v)} />
+            <EditableText value={form.college} placeholder="[COLLEGE NAME]" onChange={v => onChange('college', v)} />
           </h2>
           <div className="text-sm font-semibold text-slate-700 mt-1">
-            Department of <EditableText value={form.department} placeholder="Computer Science & Engineering" onChange={v => onChange('department', v)} />
+            Department of <EditableText value={form.department} placeholder="[Department]" onChange={v => onChange('department', v)} />
           </div>
         </div>
 
@@ -638,17 +638,17 @@ function AcademicDocCanvas({ docType, form, onChange }) {
         <div className="max-w-md mx-auto text-left space-y-4 text-sm bg-slate-50/60 p-6 rounded-xl border border-slate-200">
           <div>
             <strong>Topic / Subject: </strong>
-            <EditableText value={form.reason} placeholder="Data Structures & Algorithms" onChange={v => onChange('reason', v)} />
+            <EditableText value={form.reason} placeholder="[Assignment Topic]" onChange={v => onChange('reason', v)} />
           </div>
           <div className="pt-3 border-t border-slate-200">
             <div className="font-bold text-slate-900 mb-1">Submitted by:</div>
-            <div>Name: <EditableText value={form.name} placeholder="Rahul Sharma" onChange={v => onChange('name', v)} /></div>
-            <div>Roll No: <EditableText value={form.rollNo} placeholder="21CS045" onChange={v => onChange('rollNo', v)} /></div>
-            <div>Year / Sem: <EditableText value={form.year} placeholder="II Year / 3rd Sem" onChange={v => onChange('year', v)} /></div>
+            <div>Name: <EditableText value={form.name} placeholder="[Your Name]" onChange={v => onChange('name', v)} /></div>
+            <div>Roll No: <EditableText value={form.rollNo} placeholder="______" onChange={v => onChange('rollNo', v)} /></div>
+            <div>Year & Sec: <EditableText value={form.year} placeholder="[Year]" onChange={v => onChange('year', v)} /> Year</div>
           </div>
           <div className="pt-3 border-t border-slate-200">
             <div className="font-bold text-slate-900 mb-1">Submitted to:</div>
-            <div>Faculty: <EditableText value={form.receiver} placeholder="Dr. S. K. Verma" onChange={v => onChange('receiver', v)} /></div>
+            <div>Faculty Name: <EditableText value={form.receiver} placeholder="The Faculty / HOD" onChange={v => onChange('receiver', v)} /></div>
           </div>
         </div>
 
@@ -666,10 +666,10 @@ function AcademicDocCanvas({ docType, form, onChange }) {
       <div className="text-center space-y-6">
         <div className="border-b-2 border-slate-900 pb-4">
           <h2 className="text-xl font-bold uppercase tracking-wider text-slate-900">
-            <EditableText value={form.college} placeholder="ABC Engineering College" onChange={v => onChange('college', v)} />
+            <EditableText value={form.college} placeholder="[COLLEGE NAME]" onChange={v => onChange('college', v)} />
           </h2>
           <div className="text-sm font-semibold text-slate-700 mt-1">
-            Department of <EditableText value={form.department} placeholder="Computer Science & Engineering" onChange={v => onChange('department', v)} />
+            Department of <EditableText value={form.department} placeholder="[Department]" onChange={v => onChange('department', v)} />
           </div>
         </div>
 
@@ -682,23 +682,121 @@ function AcademicDocCanvas({ docType, form, onChange }) {
         <div className="max-w-md mx-auto text-left space-y-4 text-sm bg-slate-50/60 p-6 rounded-xl border border-slate-200">
           <div>
             <strong>Subject / Lab: </strong>
-            <EditableText value={form.reason} placeholder="Operating Systems Laboratory" onChange={v => onChange('reason', v)} />
+            <EditableText value={form.reason} placeholder="[Subject Name]" onChange={v => onChange('reason', v)} />
           </div>
           <div className="pt-3 border-t border-slate-200">
             <div className="font-bold text-slate-900 mb-1">Student Record:</div>
-            <div>Name: <EditableText value={form.name} placeholder="Rahul Sharma" onChange={v => onChange('name', v)} /></div>
-            <div>Roll Number: <EditableText value={form.rollNo} placeholder="21CS045" onChange={v => onChange('rollNo', v)} /></div>
-            <div>Year / Branch: <EditableText value={form.year} placeholder="II Year / 3rd Sem" onChange={v => onChange('year', v)} /> — <EditableText value={form.department} placeholder="Computer Science" onChange={v => onChange('department', v)} /></div>
+            <div>Name: <EditableText value={form.name} placeholder="[Your Name]" onChange={v => onChange('name', v)} /></div>
+            <div>Roll Number: <EditableText value={form.rollNo} placeholder="______" onChange={v => onChange('rollNo', v)} /></div>
+            <div>Year & Branch: <EditableText value={form.year} placeholder="[Year]" onChange={v => onChange('year', v)} /> Year — <EditableText value={form.department} placeholder="[Department]" onChange={v => onChange('department', v)} /></div>
           </div>
           <div className="pt-3 border-t border-slate-200">
             <div className="font-bold text-slate-900 mb-1">Faculty In-charge:</div>
-            <div>Faculty: <EditableText value={form.receiver} placeholder="Prof. A. R. Rao" onChange={v => onChange('receiver', v)} /></div>
+            <div>Faculty: <EditableText value={form.receiver} placeholder="The Faculty / In-charge" onChange={v => onChange('receiver', v)} /></div>
           </div>
         </div>
 
         <div className="pt-8 border-t-2 border-slate-900 text-xs text-slate-600 flex justify-between">
           <span>Date: {date}</span>
           <span>Lab In-charge Signature: ___________________</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Student Resume Format
+  if (docType.id === 'resume') {
+    return (
+      <div className="space-y-4 text-sm">
+        <div className="border-b-2 border-slate-900 pb-3">
+          <h1 className="text-2xl font-extrabold uppercase tracking-wide text-slate-900">
+            <EditableText value={form.name} placeholder="[Your Name]" onChange={v => onChange('name', v)} />
+          </h1>
+          <p className="text-xs text-slate-600 mt-1">
+            Email: [your@email.com] &bull; Phone: [+91 XXXXX XXXXX] &bull; City, State
+          </p>
+        </div>
+
+        <div>
+          <h3 className="font-extrabold uppercase text-xs tracking-wider text-slate-900 border-b border-slate-300 pb-1 mb-1.5">
+            Objective
+          </h3>
+          <p className="leading-relaxed">
+            <EditableText
+              value={form.reason}
+              placeholder="A motivated student seeking opportunities to apply academic knowledge and develop professional skills."
+              multiline
+              onChange={v => onChange('reason', v)}
+            />
+          </p>
+        </div>
+
+        <div>
+          <h3 className="font-extrabold uppercase text-xs tracking-wider text-slate-900 border-b border-slate-300 pb-1 mb-1.5">
+            Education
+          </h3>
+          <p className="font-bold text-slate-900">
+            B.Tech / B.E. in <EditableText value={form.department} placeholder="[Department]" onChange={v => onChange('department', v)} /> — <EditableText value={form.college} placeholder="[College Name]" onChange={v => onChange('college', v)} />
+          </p>
+          <p className="text-xs text-slate-600">
+            <EditableText value={form.year} placeholder="[Year]" onChange={v => onChange('year', v)} /> Year | CGPA: [X.X / 10]
+          </p>
+        </div>
+
+        <div>
+          <h3 className="font-extrabold uppercase text-xs tracking-wider text-slate-900 border-b border-slate-300 pb-1 mb-1.5">
+            Skills
+          </h3>
+          <p className="text-xs text-slate-700">
+            <strong>Technical:</strong> [Skill 1], [Skill 2], [Skill 3]<br />
+            <strong>Soft Skills:</strong> Communication, Teamwork, Problem Solving
+          </p>
+        </div>
+
+        <div>
+          <h3 className="font-extrabold uppercase text-xs tracking-wider text-slate-900 border-b border-slate-300 pb-1 mb-1.5">
+            Projects
+          </h3>
+          <p className="text-xs text-slate-700">
+            <strong>[Project Name]</strong> — [Tech Stack]<br />
+            [Brief description of the project and your role]
+          </p>
+        </div>
+
+        <div>
+          <h3 className="font-extrabold uppercase text-xs tracking-wider text-slate-900 border-b border-slate-300 pb-1 mb-1.5">
+            Internships / Experience
+          </h3>
+          <p className="text-xs text-slate-700">
+            <strong>[Company Name]</strong> — [Role] | [Duration]<br />
+            [Description of work done]
+          </p>
+        </div>
+
+        <div>
+          <h3 className="font-extrabold uppercase text-xs tracking-wider text-slate-900 border-b border-slate-300 pb-1 mb-1.5">
+            Achievements
+          </h3>
+          <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5">
+            <li>[Achievement / Certification 1]</li>
+            <li>[Achievement / Certification 2]</li>
+          </ul>
+        </div>
+
+        {form.extra ? (
+          <div>
+            <h3 className="font-extrabold uppercase text-xs tracking-wider text-slate-900 border-b border-slate-300 pb-1 mb-1.5">
+              Additional Details
+            </h3>
+            <p className="text-xs text-slate-700 leading-relaxed">
+              <EditableText value={form.extra} placeholder="Additional certifications or activities" multiline onChange={v => onChange('extra', v)} />
+            </p>
+          </div>
+        ) : null}
+
+        <div className="pt-4 border-t border-slate-200 text-xs text-slate-600 flex justify-between">
+          <span>Date: {date}</span>
+          <span>Signature: ___________________</span>
         </div>
       </div>
     )
@@ -830,6 +928,9 @@ function DocModal({ docType, onClose, onPrint }) {
 
   // ONE SINGLE SOURCE OF TRUTH FOR THE DOCUMENT
   const [form, setForm] = useState(EMPTY)
+  const formRef = useRef(form)
+  formRef.current = form
+
   const [mobileTab, setMobileTab] = useState('form')
   const [fontSize, setFontSize] = useState(11) // pt
   const [exporting, setExporting] = useState(false)
@@ -844,7 +945,9 @@ function DocModal({ docType, onClose, onPrint }) {
 
   // Two-way synchronization handler:
   // Called by FormPanel inputs AND by AcademicDocCanvas EditableText elements!
+  // Updates synchronously in formRef so any export immediately sees latest edits.
   function handleChange(field, value) {
+    formRef.current = { ...formRef.current, [field]: value }
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
@@ -856,7 +959,9 @@ function DocModal({ docType, onClose, onPrint }) {
   async function handleDownload() {
     setExporting(true)
     try {
-      const fullText = generateDocument({ type: docType.id, ...form })
+      // Always export the latest synchronized document data (including direct Canvas edits)
+      const currentData = { ...form, ...formRef.current }
+      const fullText = generateDocument({ type: docType.id, ...currentData })
       const pdf = await exportToPdf(fullText, docType.id, { fontSize })
       pdf.save(`${docType.id}.pdf`)
       showToast('PDF downloaded successfully!')
@@ -870,7 +975,9 @@ function DocModal({ docType, onClose, onPrint }) {
   async function handlePrint() {
     setExporting(true)
     try {
-      const fullText = generateDocument({ type: docType.id, ...form })
+      // Always export the latest synchronized document data (including direct Canvas edits)
+      const currentData = { ...form, ...formRef.current }
+      const fullText = generateDocument({ type: docType.id, ...currentData })
       const pdf = await exportToPdf(fullText, docType.id, { fontSize })
       const blob = pdf.output('blob')
       const file = new File([blob], `${docType.id}.pdf`, { type: 'application/pdf' })
