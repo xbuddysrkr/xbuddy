@@ -86,76 +86,61 @@ export default function XBuddyHeroMascot({
     }
   }, [animateGaze, shouldReduceMotion])
 
-  // 3. Pointer Tracking & Start Printing Targeting
+  // 3. Pointer Proximity & Direction Tracking
   useEffect(() => {
     if (shouldReduceMotion) return
 
     const handlePointerMove = (e) => {
-      // Skip on mobile touch moves to maintain instant touch response
+      // Skip on mobile touch moves to avoid unnatural jumps
       if (e.pointerType === 'touch') return
       if (!buttonRef?.current || !mascotRef?.current) return
 
-      const mascotRect = mascotRef.current.getBoundingClientRect()
       const btnRect = buttonRef.current.getBoundingClientRect()
-
-      const mascotCenterX = mascotRect.left + mascotRect.width / 2
-      const mascotCenterY = mascotRect.top + mascotRect.height / 2
+      const mascotRect = mascotRef.current.getBoundingClientRect()
 
       const btnCenterX = btnRect.left + btnRect.width / 2
       const btnCenterY = btnRect.top + btnRect.height / 2
 
-      // 1. General ambient pointer tracking (very small subtle range: max 1.5px)
-      const pdx = e.clientX - mascotCenterX
-      const pdy = e.clientY - mascotCenterY
-      const pDist = Math.hypot(pdx, pdy) || 1
-      const pNormX = pdx / pDist
-      const pNormY = pdy / pDist
-      const generalGazeX = pNormX * Math.min(1.5, pDist * 0.004)
-      const generalGazeY = pNormY * Math.min(1.5, pDist * 0.004)
-
-      // 2. Vector toward Start Printing button
-      const bdx = btnCenterX - mascotCenterX
-      const bdy = btnCenterY - mascotCenterY
-      const bDist = Math.hypot(bdx, bdy) || 1
-      const bNormX = bdx / bDist
-      const bNormY = bdy / bDist
+      const mascotCenterX = mascotRect.left + mascotRect.width / 2
+      const mascotCenterY = mascotRect.top + mascotRect.height / 2
 
       // Distance from pointer to button center
-      const distToPointerToBtn = Math.hypot(e.clientX - btnCenterX, e.clientY - btnCenterY)
-      const maxRadius = 450
-      const btnProximity = Math.max(0, Math.min(1, 1 - distToPointerToBtn / maxRadius))
+      const distToPointer = Math.hypot(e.clientX - btnCenterX, e.clientY - btnCenterY)
+      // Radius of detection: 520px
+      const maxRadius = 520
+      const rawProximity = Math.max(0, Math.min(1, 1 - distToPointer / maxRadius))
+
+      // Direction vector from mascot to button
+      const dx = btnCenterX - mascotCenterX
+      const dy = btnCenterY - mascotCenterY
+      const distToBtn = Math.hypot(dx, dy) || 1
+
+      const normX = dx / distToBtn
+      const normY = dy / distToBtn
 
       if (isHovered) {
-        // Direct focused gaze at button
+        // Button hovered: lock direct gaze at button with max eagerness
         targetGaze.current = {
-          x: bNormX * 2.8,
-          y: bNormY * 2.8,
-          tilt: bNormX * 2.6,
+          x: normX * 3.4,
+          y: normY * 3.4,
+          tilt: normX * 4,
           prox: 1,
         }
-      } else if (btnProximity > 0) {
-        // Smooth blend from general ambient gaze to button targeting as pointer nears button
-        const weight = btnProximity * btnProximity
-        targetGaze.current = {
-          x: generalGazeX * (1 - weight) + (bNormX * 2.8) * weight,
-          y: generalGazeY * (1 - weight) + (bNormY * 2.8) * weight,
-          tilt: bNormX * (btnProximity * 2.2),
-          prox: btnProximity,
-        }
       } else {
-        // Subtle ambient cursor tracking
+        // Dynamic gaze as pointer approaches
+        const gazeMagnitude = 0.5 + rawProximity * 2.7 // subtle gaze even when afar, stronger when close
         targetGaze.current = {
-          x: generalGazeX,
-          y: generalGazeY,
-          tilt: 0,
-          prox: 0,
+          x: normX * gazeMagnitude * (0.3 + rawProximity * 0.7),
+          y: normY * gazeMagnitude * (0.3 + rawProximity * 0.7),
+          tilt: normX * (rawProximity * 3.5),
+          prox: rawProximity,
         }
       }
     }
 
     const handlePointerLeave = () => {
       if (isHovered) return
-      targetGaze.current = { x: 0, y: 0.3, tilt: 0, prox: 0 }
+      targetGaze.current = { x: 0, y: 0.5, tilt: 0, prox: 0 }
     }
 
     window.addEventListener('pointermove', handlePointerMove, { passive: true })
@@ -178,13 +163,13 @@ export default function XBuddyHeroMascot({
       const dist = Math.hypot(dx, dy) || 1
 
       targetGaze.current = {
-        x: (dx / dist) * 2.8,
-        y: (dy / dist) * 2.8,
-        tilt: (dx / dist) * 2.6,
+        x: (dx / dist) * 3.4,
+        y: (dy / dist) * 3.4,
+        tilt: (dx / dist) * 4.5,
         prox: 1,
       }
     } else if (!isHovered) {
-      targetGaze.current = { x: 0, y: 0.3, tilt: 0, prox: 0 }
+      targetGaze.current = { x: 0, y: 0.5, tilt: 0, prox: 0 }
     }
   }, [isHovered, buttonRef, shouldReduceMotion])
 
@@ -204,7 +189,7 @@ export default function XBuddyHeroMascot({
     }
     if (isHovered || proximity > 0.65) {
       // Cheerful wide grin
-      return 'M 40 52 Q 50 62.5 60 52'
+      return 'M 40 52 Q 50 63 60 52'
     }
     if (proximity > 0.25) {
       // Noticing / welcoming smile
@@ -215,11 +200,8 @@ export default function XBuddyHeroMascot({
   }
 
   return (
-    <motion.div
+    <div
       ref={mascotRef}
-      initial={shouldReduceMotion ? false : { opacity: 0, y: 16, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
       onClick={handleMascotDirectClick}
       title="Buddy"
       className="relative inline-flex items-center justify-center select-none cursor-pointer group"
@@ -236,58 +218,58 @@ export default function XBuddyHeroMascot({
           shouldReduceMotion
             ? { opacity: 0.25 }
             : {
-                scale: isCelebrating ? [1, 0.85, 1.15, 1] : isHovered ? 1.12 : [1, 1.05, 1],
-                opacity: isCelebrating ? [0.2, 0.1, 0.3, 0.25] : isHovered ? 0.32 : [0.2, 0.28, 0.2],
+                scale: isCelebrating ? [1, 0.8, 1.2, 1] : isHovered ? 1.15 : [1, 1.06, 1],
+                opacity: isCelebrating ? [0.2, 0.1, 0.35, 0.25] : isHovered ? 0.35 : [0.2, 0.3, 0.2],
               }
         }
         transition={{
-          scale: { duration: isCelebrating ? 0.4 : isHovered ? 0.2 : 3.8, repeat: isCelebrating || isHovered ? 0 : Infinity, ease: 'easeInOut' },
-          opacity: { duration: isCelebrating ? 0.4 : isHovered ? 0.2 : 3.8, repeat: isCelebrating || isHovered ? 0 : Infinity, ease: 'easeInOut' },
+          scale: { duration: isCelebrating ? 0.45 : isHovered ? 0.25 : 3.2, repeat: isCelebrating || isHovered ? 0 : Infinity, ease: 'easeInOut' },
+          opacity: { duration: isCelebrating ? 0.45 : isHovered ? 0.25 : 3.2, repeat: isCelebrating || isHovered ? 0 : Infinity, ease: 'easeInOut' },
         }}
         className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-4/5 h-2.5 bg-orange-950/20 rounded-full blur-xs pointer-events-none"
       />
 
-      {/* 2. Celebratory Orange & Golden Spark Accents */}
+      {/* 2. Celebratory Orange & Golden Spark Particles */}
       {isCelebrating && !shouldReduceMotion && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-          {[30, 90, 150, 210, 270, 330].map((deg, idx) => (
+          {[0, 60, 120, 180, 240, 300].map((deg, idx) => (
             <motion.div
               key={idx}
               initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
               animate={{
-                x: Math.cos((deg * Math.PI) / 180) * 38,
-                y: Math.sin((deg * Math.PI) / 180) * 38,
-                scale: [0, 1.2, 0],
-                opacity: [1, 0.9, 0],
+                x: Math.cos((deg * Math.PI) / 180) * 44,
+                y: Math.sin((deg * Math.PI) / 180) * 44,
+                scale: [0, 1.3, 0],
+                opacity: [1, 0.95, 0],
               }}
-              transition={{ duration: 0.38, delay: idx * 0.015, ease: 'easeOut' }}
+              transition={{ duration: 0.45, delay: idx * 0.02, ease: 'easeOut' }}
               className="absolute w-2 h-2 rounded-full bg-gradient-to-tr from-[#F7931E] to-amber-300 shadow-xs"
             />
           ))}
         </div>
       )}
 
-      {/* 3. Main Mascot Body with 3.8s Idle Breathing + Hover Lean + Celebratory Hop */}
+      {/* 3. Main Mascot Body with Idle Breathing + Spring Hover + Celebratory Hop */}
       <motion.div
         animate={
           shouldReduceMotion
             ? {}
             : isCelebrating
             ? {
-                y: [0, -10, 2, -2, 0],
-                scale: [1, 1.09, 0.97, 1.02, 1],
-                rotate: [headTilt, headTilt - 4, headTilt + 4, headTilt],
+                y: [0, -14, 2, -4, 0],
+                scale: [1, 1.14, 0.96, 1.04, 1],
+                rotate: [headTilt, headTilt - 6, headTilt + 6, headTilt],
               }
             : isHovered
             ? {
-                y: -3,
-                scale: 1.04,
-                rotate: headTilt * 1.1,
+                y: -4,
+                scale: 1.06,
+                rotate: headTilt * 1.2,
               }
             : {
-                y: [0, -3, 0],
+                y: [0, -3.5, 0],
                 scaleX: [1, 0.99, 1],
-                scaleY: [1, 1.02, 1],
+                scaleY: [1, 1.025, 1],
                 rotate: headTilt,
               }
         }
@@ -295,13 +277,13 @@ export default function XBuddyHeroMascot({
           shouldReduceMotion
             ? { duration: 0 }
             : isCelebrating
-            ? { duration: 0.38, ease: 'easeOut' }
+            ? { duration: 0.45, ease: 'easeOut' }
             : isHovered
             ? { type: 'spring', stiffness: 380, damping: 22 }
             : {
-                y: { duration: 3.8, repeat: Infinity, ease: 'easeInOut' },
-                scaleX: { duration: 3.8, repeat: Infinity, ease: 'easeInOut' },
-                scaleY: { duration: 3.8, repeat: Infinity, ease: 'easeInOut' },
+                y: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' },
+                scaleX: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' },
+                scaleY: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' },
                 rotate: { type: 'spring', stiffness: 240, damping: 20 },
               }
         }
@@ -549,6 +531,6 @@ export default function XBuddyHeroMascot({
           </g>
         </svg>
       </motion.div>
-    </motion.div>
+    </div>
   )
 }
