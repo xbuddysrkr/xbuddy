@@ -25,6 +25,7 @@ import MyOrdersPage from './components/MyOrdersPage'
 import AdminDashboard from './components/AdminDashboard'
 import XBuddyIntro from './components/XBuddyIntro'
 import XBuddyLogo from './components/XBuddyLogo'
+import Footer from './components/Footer'
 
 const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin' }
 const DEFAULT_SETTINGS = {
@@ -489,28 +490,12 @@ export default function App() {
               </div>
 
               {/* Premium Footer */}
-              <footer className="border-t border-orange-100 bg-white py-12 px-4">
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-[#F7931E] flex items-center justify-center text-white font-bold text-sm">
-                      X
-                    </div>
-                    <div>
-                      <p className="text-slate-900 font-bold text-sm">X Buddy</p>
-                      <p className="text-slate-400 text-xs">Digital Print Ordering Platform for Campus Xerox Shops</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-slate-400">
-                    <button onClick={() => goToStep(STEP.ADMIN)} className="text-slate-500 hover:text-[#F7931E] font-medium transition-colors cursor-pointer">
-                      🏪 Xerox Shop Staff Dashboard
-                    </button>
-                    <span className="w-1 h-1 rounded-full bg-[#F7931E]" />
-                    <span>Powered by <strong className="text-slate-700 font-semibold">NextGen Labs</strong></span>
-                    <span className="w-1 h-1 rounded-full bg-[#F7931E]" />
-                    <span>© {new Date().getFullYear()} All Rights Reserved.</span>
-                  </div>
-                </div>
-              </footer>
+              <Footer
+                onStartPrinting={() => goToStep(STEP.UPLOAD)}
+                onMyOrders={() => goToStep(STEP.MY_ORDERS)}
+                onResumeBuilder={() => goToStep(STEP.RESUME)}
+                onShopStaff={() => goToStep(STEP.ADMIN)}
+              />
             </motion.div>
           )}
 
