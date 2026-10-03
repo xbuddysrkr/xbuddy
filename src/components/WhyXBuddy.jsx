@@ -5,6 +5,11 @@ import { Clock, ShieldCheck, Wallet, Store, Layers, CheckCircle2 } from 'lucide-
 export default function WhyXBuddy() {
   const features = [
     {
+      icon: Layers,
+      title: 'Academic Toolkit',
+      description: 'Generate resumes, leave letters, bonafide requests, and format lab manuals in seconds.',
+    },
+    {
       icon: Clock,
       title: 'Zero Waiting Lines',
       description: 'Order prints directly from your classroom or hostel and skip the crowd at the Xerox shop.',
@@ -28,11 +33,6 @@ export default function WhyXBuddy() {
       icon: CheckCircle2,
       title: 'Custom Page Selection',
       description: 'Print only specific pages or ranges with automated accurate page-level pricing calculations.',
-    },
-    {
-      icon: Layers,
-      title: 'Academic Toolkit',
-      description: 'Generate resumes, leave letters, bonafide requests, and format lab manuals in seconds.',
     },
   ]
 

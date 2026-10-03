@@ -6,8 +6,8 @@ export default function TrustStats() {
   const stats = [
     {
       icon: Sparkles,
-      title: 'Smart',
-      label: 'Campus Services',
+      title: 'Academic',
+      label: 'Toolkit',
       description: 'Academic toolkit, form generation & utilities',
       tag: 'Coming Soon',
     },
