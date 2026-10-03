@@ -80,6 +80,9 @@ body {
   background: linear-gradient(135deg, #F7931E 0%, #E06000 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* Custom Floating Keyframes */

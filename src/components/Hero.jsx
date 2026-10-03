@@ -51,7 +51,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
         </motion.div>
 
         {/* Hero Title with Interactive Living XBuddy Mascot + BlurText */}
-        <h1 className="text-5xl sm:text-7xl md:text-8xl font-extrabold tracking-tight leading-[1.08] mb-3 inline-flex items-center justify-center gap-3 sm:gap-4 md:gap-5 flex-wrap">
+        <h1 className="text-5xl sm:text-7xl md:text-8xl font-extrabold tracking-tight leading-[1.16] sm:leading-[1.18] md:leading-[1.2] mb-3 inline-flex items-center justify-center gap-3 sm:gap-4 md:gap-5 flex-wrap overflow-visible">
           <XBuddyHeroMascot
             buttonRef={startBtnRef}
             isHovered={isBtnHovered}
@@ -62,7 +62,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
             delay={100}
             animateBy="words"
             direction="top"
-            className="gradient-text-orange"
+            className="gradient-text-orange overflow-visible py-1.5 px-2 -my-1.5 -mx-2"
             as="span"
           />
         </h1>
