@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/((?!assets/|booth.html|qr-code.png|favicon.ico).*)", "destination": "/index.html" }
+    { "source": "/((?!assets/|booth.html|qr-code.png|favicon.ico|manifest.json|xbuddy-icon-.*\\.png).*)", "destination": "/index.html" }
   ]
 }
