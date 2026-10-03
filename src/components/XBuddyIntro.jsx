@@ -71,7 +71,8 @@ export default function XBuddyIntro({ onComplete }) {
       { p: 'shift', t: 5100 },        // 5.1s: X shifts left to make room for Buddy
       { p: 'buddy', t: 5300 },        // 5.3s: "Buddy" appears beside X
       { p: 'tagline', t: 6200 },      // 6.2s: "Upload • Pay • Print" tagline appears
-      { p: 'exit', t: 7200 },         // 7.2s: Smooth overlay fade-out
+      { p: 'credits', t: 6900 },      // 6.9s: Creator credit appears
+      { p: 'exit', t: 8000 },         // 8.0s: Smooth overlay fade-out (hold ~1.1s)
     ]
 
     schedule.forEach(({ p, t }) => {
@@ -93,10 +94,11 @@ export default function XBuddyIntro({ onComplete }) {
   const isRunning = phase === 'scene1' || phase === 'scene2' || phase === 'approach'
   const isAnticipation = phase === 'anticipation'
   const isCrossing = phase === 'cross'
-  const isLockedIntoX = phase === 'cross' || phase === 'settled' || phase === 'shift' || phase === 'buddy' || phase === 'tagline' || phase === 'exit'
-  const isShifted = phase === 'shift' || phase === 'buddy' || phase === 'tagline' || phase === 'exit'
-  const isBuddyVisible = phase === 'buddy' || phase === 'tagline' || phase === 'exit'
-  const isTaglineVisible = phase === 'tagline' || phase === 'exit'
+  const isLockedIntoX = phase === 'cross' || phase === 'settled' || phase === 'shift' || phase === 'buddy' || phase === 'tagline' || phase === 'credits' || phase === 'exit'
+  const isShifted = phase === 'shift' || phase === 'buddy' || phase === 'tagline' || phase === 'credits' || phase === 'exit'
+  const isBuddyVisible = phase === 'buddy' || phase === 'tagline' || phase === 'credits' || phase === 'exit'
+  const isTaglineVisible = phase === 'tagline' || phase === 'credits' || phase === 'exit'
+  const isCreditsVisible = phase === 'credits' || phase === 'exit'
 
   return (
     <AnimatePresence>
@@ -155,6 +157,10 @@ export default function XBuddyIntro({ onComplete }) {
               <p className="mt-4 text-sm font-semibold tracking-widest text-slate-500 uppercase">
                 Upload <span className="text-[#F7931E]">•</span> Pay <span className="text-[#F7931E]">•</span> Print
               </p>
+              <div className="mt-5 text-center">
+                <p className="text-[11px] font-medium text-slate-400">Designed &amp; Developed by</p>
+                <p className="text-xs font-bold text-slate-800 mt-0.5">Lokesh Thanala &amp; Jagadeesh Illa</p>
+              </div>
             </motion.div>
           ) : (
             /* FULL NATIVE FRAMER MOTION HERO INTRO */
@@ -752,6 +758,30 @@ export default function XBuddyIntro({ onComplete }) {
                   <span className="hover:text-slate-900 transition-colors">Pay</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-[#F7931E] shadow-xs" />
                   <span className="hover:text-slate-900 transition-colors">Print</span>
+                </motion.div>
+              )}
+
+              {/* ==============================================================
+                  SCENE 8: CREATOR CREDIT
+                  - Fades in smoothly after the tagline during the final hold
+                  - Centered directly below tagline
+                  ============================================================== */}
+              {isCreditsVisible && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.45,
+                    ease: [0.22, 1, 0.36, 1],
+                  }}
+                  className="mt-6 sm:mt-7 text-center flex flex-col items-center justify-center pointer-events-none select-none px-4"
+                >
+                  <p className="text-[11px] sm:text-xs font-medium text-slate-400 tracking-wider">
+                    Designed &amp; Developed by
+                  </p>
+                  <p className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight mt-0.5 leading-snug">
+                    Lokesh Thanala <span className="text-slate-400 font-normal">&amp;</span> Jagadeesh Illa
+                  </p>
                 </motion.div>
               )}
             </div>
