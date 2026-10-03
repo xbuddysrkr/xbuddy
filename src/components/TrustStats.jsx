@@ -5,6 +5,13 @@ import { Zap, GraduationCap, ShieldCheck, Sun, CreditCard, Sparkles } from 'luci
 export default function TrustStats() {
   const stats = [
     {
+      icon: Sparkles,
+      title: 'Smart',
+      label: 'Campus Services',
+      description: 'Academic toolkit, form generation & utilities',
+      tag: 'Coming Soon',
+    },
+    {
       icon: Zap,
       title: '30 sec',
       label: 'Average Print',
@@ -38,13 +45,6 @@ export default function TrustStats() {
       label: 'Digital Payments',
       description: 'Unified UPI, Cards & Wallet payment checkout',
       tag: null,
-    },
-    {
-      icon: Sparkles,
-      title: 'Smart',
-      label: 'Campus Services',
-      description: 'Academic toolkit, form generation & utilities',
-      tag: 'Coming Soon',
     },
   ]
 
