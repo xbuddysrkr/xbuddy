@@ -382,84 +382,86 @@ export default function App() {
         currentStep={step}
       />
 
-      {/* Navigation Bar */}
-      <nav className="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={openDrawer}
-              className="p-2 sm:p-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-base transition-all border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
-              aria-label="Open Navigation Menu"
-            >
-              ☰
-            </button>
-            <button
-              onClick={handleReset}
-              className="flex items-center group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] shrink-0"
-              aria-label="XBuddy Home"
-            >
-              <img
-                src="/xbuddy-logo-transparent.png"
-                alt="XBuddy"
-                className="h-[42px] min-[360px]:h-[46px] min-[390px]:h-[48px] min-[412px]:h-[50px] min-[430px]:h-[52px] sm:h-10 md:h-10 w-auto object-contain shrink-0"
-              />
-            </button>
-          </div>
-
-          {step === STEP.HERO ? (
-            <div className="flex items-center gap-6">
-              <div className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
-                <a href="#how-it-works" className="hover:text-[#F7931E] transition-colors">How It Works</a>
-                <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors">Why X Buddy</a>
-                <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors">Who Is It For</a>
-                <a href="#academic-toolkit" className="hover:text-[#F7931E] transition-colors">Academic Toolkit</a>
-                <button onClick={() => goToStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors cursor-pointer">
-                  Resume Builder
-                </button>
-                <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1 cursor-pointer">
-                  📋 My Orders
-                </button>
-                <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
-                  🏪 Shop Staff
-                </button>
-              </div>
+      {/* Navigation Bar - Hidden only on Resume Builder route */}
+      {step !== STEP.RESUME && (
+        <nav className="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300">
+          <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <button
-                onClick={() => goToStep(STEP.UPLOAD)}
-                className="px-4 sm:px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer shrink-0"
+                type="button"
+                onClick={openDrawer}
+                className="p-2 sm:p-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-base transition-all border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
+                aria-label="Open Navigation Menu"
               >
-                Print Now →
+                ☰
+              </button>
+              <button
+                onClick={handleReset}
+                className="flex items-center group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                aria-label="XBuddy Home"
+              >
+                <img
+                  src="/xbuddy-logo-transparent.png"
+                  alt="XBuddy"
+                  className="h-[42px] min-[360px]:h-[46px] min-[390px]:h-[48px] min-[412px]:h-[50px] min-[430px]:h-[52px] sm:h-10 md:h-10 w-auto object-contain shrink-0"
+                />
               </button>
             </div>
-          ) : step === STEP.RESUME || step === STEP.MY_ORDERS || step === STEP.ADMIN ? (
-            <button
-              onClick={handleReset}
-              className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-            >
-              ← Back to Home
-            </button>
-          ) : (
-            <div className="flex items-center gap-3 text-xs font-semibold">
-              {['Upload', 'Settings', 'Pay & Print'].map((label, i) => {
-                const stepKeys = [STEP.UPLOAD, STEP.SETTINGS, STEP.PRINTING]
-                const isPast   = step === STEP.PRINTING && i < 2
-                const isActive = step === stepKeys[i]
-                return (
-                  <div key={label} className="flex items-center gap-2">
-                    <span className={`px-2.5 py-1 rounded-lg ${isPast ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : isActive ? 'bg-orange-50 text-[#F7931E] border border-orange-200' : 'text-slate-400'}`}>
-                      {isPast ? '✓' : `${i + 1}.`} {label}
-                    </span>
-                    {i < 2 && <span className="text-slate-300">›</span>}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </nav>
+
+            {step === STEP.HERO ? (
+              <div className="flex items-center gap-6">
+                <div className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
+                  <a href="#how-it-works" className="hover:text-[#F7931E] transition-colors">How It Works</a>
+                  <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors">Why X Buddy</a>
+                  <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors">Who Is It For</a>
+                  <a href="#academic-toolkit" className="hover:text-[#F7931E] transition-colors">Academic Toolkit</a>
+                  <button onClick={() => goToStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors cursor-pointer">
+                    Resume Builder
+                  </button>
+                  <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1 cursor-pointer">
+                    📋 My Orders
+                  </button>
+                  <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
+                    🏪 Shop Staff
+                  </button>
+                </div>
+                <button
+                  onClick={() => goToStep(STEP.UPLOAD)}
+                  className="px-4 sm:px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer shrink-0"
+                >
+                  Print Now →
+                </button>
+              </div>
+            ) : step === STEP.MY_ORDERS || step === STEP.ADMIN ? (
+              <button
+                onClick={handleReset}
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+              >
+                ← Back to Home
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 text-xs font-semibold">
+                {['Upload', 'Settings', 'Pay & Print'].map((label, i) => {
+                  const stepKeys = [STEP.UPLOAD, STEP.SETTINGS, STEP.PRINTING]
+                  const isPast   = step === STEP.PRINTING && i < 2
+                  const isActive = step === stepKeys[i]
+                  return (
+                    <div key={label} className="flex items-center gap-2">
+                      <span className={`px-2.5 py-1 rounded-lg ${isPast ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : isActive ? 'bg-orange-50 text-[#F7931E] border border-orange-200' : 'text-slate-400'}`}>
+                        {isPast ? '✓' : `${i + 1}.`} {label}
+                      </span>
+                      {i < 2 && <span className="text-slate-300">›</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </nav>
+      )}
 
       {/* Main Content */}
-      <main className="pt-16">
+      <main className={step === STEP.RESUME ? '' : 'pt-16'}>
         <AnimatePresence mode="wait">
           {step === STEP.HERO && (
             <motion.div key="hero" exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.3 }}>
@@ -527,7 +529,7 @@ export default function App() {
           )}
 
           {step === STEP.RESUME && (
-            <motion.div key="resume" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ height: 'calc(100vh - 4rem)' }}>
+            <motion.div key="resume" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-screen h-[100dvh] w-full overflow-hidden">
               <ResumeBuilder onPrint={handleExternalPrint} onBack={handleReset} />
             </motion.div>
           )}
