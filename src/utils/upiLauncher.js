@@ -11,6 +11,23 @@
  */
 
 /**
+ * Returns the exact URL to launch PhonePe app with ZERO payment data.
+ * Android: intent://#Intent;package=com.phonepe.app;end
+ * iOS: phonepe://
+ * Desktop: null
+ */
+export function getPhonePeLaunchUrl() {
+  const platform = detectPlatform()
+  if (platform === 'android') {
+    return 'intent://#Intent;package=com.phonepe.app;end'
+  }
+  if (platform === 'ios') {
+    return 'phonepe://'
+  }
+  return null
+}
+
+/**
  * Opens PhonePe application without ANY payment parameters or UPI queries.
  * Pure app launch only — no merchant, no amount, no recipient, no prefilled screen.
  * 
@@ -26,9 +43,8 @@ export function openPhonePeAppOnly() {
   }
 
   // Pure app launch - strictly NO pa, pn, am, cu, tn, tr or upi query
-  const targetUrl = platform === 'android'
-    ? 'intent://#Intent;package=com.phonepe.app;end'
-    : 'phonepe://'
+  const targetUrl = getPhonePeLaunchUrl()
+  if (!targetUrl) return { platform, success: false, url: null }
 
   if (import.meta.env.DEV) {
     console.group('[X Buddy PhonePe App Launcher] Pure App Launch (No Payment Data)')

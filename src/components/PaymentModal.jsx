@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PaymentProofForm from './PaymentProofForm'
 import { Smartphone, QrCode, Copy, Check, ArrowRight, RotateCcw, ShieldCheck, CheckCircle2 } from 'lucide-react'
-import { detectPlatform, directLaunchUPI, buildUpiQuery, openPhonePeAppOnly } from '../utils/upiLauncher'
+import { detectPlatform, directLaunchUPI, buildUpiQuery, openPhonePeAppOnly, getPhonePeLaunchUrl } from '../utils/upiLauncher'
 
 const UPI_ID = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
 const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
@@ -93,6 +93,9 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [genericFallbackUri, setGenericFallbackUri] = useState('')
   const launchingTimeoutRef = useRef(null)
   const isLaunchingRef = useRef(false)
+
+  const platform = detectPlatform()
+  const phonePeLaunchUrl = getPhonePeLaunchUrl()
 
   // Active UPI ID & Payee Name (uses custom GPay UPI ID when GPay is selected)
   const activeUpiId = selectedApp?.id === 'gpay' ? GPAY_UPI_ID : UPI_ID
@@ -272,27 +275,58 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                     <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">Direct Launcher</span>
                   </p>
 
-                  {PAYMENT_APPS.map((app) => (
-                    <button
-                      key={app.id}
-                      type="button"
-                      onClick={() => handleSelectApp(app)}
-                      className={`w-full py-2.5 px-3 rounded-2xl border ${app.borderColor} bg-gradient-to-r ${app.bgGradient} text-slate-900 font-semibold text-xs flex items-center justify-between shadow-xs hover:shadow-md transition-all cursor-pointer group`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {app.icon}
-                        <div className="text-left">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-slate-900 text-xs">{app.name}</span>
+                  {PAYMENT_APPS.map((app) => {
+                    const isPhonePeMobile = app.id === 'phonepe' && platform !== 'desktop' && phonePeLaunchUrl
+
+                    if (isPhonePeMobile) {
+                      return (
+                        <a
+                          key={app.id}
+                          href={phonePeLaunchUrl}
+                          onClick={() => {
+                            setSelectedApp(app)
+                            setStep('PHONEPE_MANUAL')
+                          }}
+                          className={`w-full py-2.5 px-3 rounded-2xl border ${app.borderColor} bg-gradient-to-r ${app.bgGradient} text-slate-900 font-semibold text-xs flex items-center justify-between shadow-xs hover:shadow-md transition-all cursor-pointer group no-underline`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {app.icon}
+                            <div className="text-left">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-900 text-xs">{app.name}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-400">{app.description}</p>
+                            </div>
                           </div>
-                          <p className="text-[10px] text-slate-400">{app.description}</p>
+                          <span className="font-bold text-xs flex items-center gap-1 group-hover:translate-x-0.5 transition-transform" style={{ color: app.textColor }}>
+                            Open {app.name} <ArrowRight className="w-3 h-3" />
+                          </span>
+                        </a>
+                      )
+                    }
+
+                    return (
+                      <button
+                        key={app.id}
+                        type="button"
+                        onClick={() => handleSelectApp(app)}
+                        className={`w-full py-2.5 px-3 rounded-2xl border ${app.borderColor} bg-gradient-to-r ${app.bgGradient} text-slate-900 font-semibold text-xs flex items-center justify-between shadow-xs hover:shadow-md transition-all cursor-pointer group`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {app.icon}
+                          <div className="text-left">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 text-xs">{app.name}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400">{app.description}</p>
+                          </div>
                         </div>
-                      </div>
-                      <span className="font-bold text-xs flex items-center gap-1 group-hover:translate-x-0.5 transition-transform" style={{ color: app.textColor }}>
-                        Open {app.name} <ArrowRight className="w-3 h-3" />
-                      </span>
-                    </button>
-                  ))}
+                        <span className="font-bold text-xs flex items-center gap-1 group-hover:translate-x-0.5 transition-transform" style={{ color: app.textColor }}>
+                          Open {app.name} <ArrowRight className="w-3 h-3" />
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
 
@@ -395,13 +429,22 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
               {/* Action Buttons */}
               <div className="space-y-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => openPhonePeAppOnly()}
-                  className="w-full py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" /> Retry Opening PhonePe
-                </button>
+                {phonePeLaunchUrl ? (
+                  <a
+                    href={phonePeLaunchUrl}
+                    className="w-full py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer no-underline"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Retry Opening PhonePe
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openPhonePeAppOnly()}
+                    className="w-full py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Retry Opening PhonePe
+                  </button>
+                )}
 
                 <button
                   type="button"
