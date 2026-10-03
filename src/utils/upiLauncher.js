@@ -4,13 +4,48 @@
  * Simplified, reliable UPI intent and deep-link launcher for X Buddy.
  * 
  * Key Principles:
- * 1. Synchronous launch on direct user gesture (no setTimeout / promise delays before navigation).
- * 2. Amount strictly formatted to two decimal places (e.g. "15.00" instead of "15").
+ * 1. PhonePe Button: Pure app launch ONLY (zero payment data, no pa, pn, am, cu, tn, tr).
+ * 2. Generic UPI buttons: Synchronous launch on direct user gesture with exact formatted amount.
  * 3. Exact merchant UPI ID and payee name preserved from existing configuration.
- * 4. Android: targeted package intent with clean generic upi://pay fallback.
- * 5. iOS: app schemes with clean upi://pay and QR fallback.
- * 6. Desktop: instant QR / copy UPI ID fallback without broken protocol prompts.
+ * 4. Desktop: instant QR / copy UPI ID fallback.
  */
+
+/**
+ * Opens PhonePe application without ANY payment parameters or UPI queries.
+ * Pure app launch only — no merchant, no amount, no recipient, no prefilled screen.
+ * 
+ * Android: Official Chrome Intent syntax targeting com.phonepe.app package
+ * iOS: Registered PhonePe URL scheme phonepe:// (no intent:// on iOS)
+ * Desktop: Returns false so UI can show desktop QR
+ */
+export function openPhonePeAppOnly() {
+  const platform = detectPlatform()
+
+  if (platform === 'desktop' || typeof window === 'undefined') {
+    return { platform, success: false, url: null }
+  }
+
+  // Pure app launch - strictly NO pa, pn, am, cu, tn, tr or upi query
+  const targetUrl = platform === 'android'
+    ? 'intent://#Intent;package=com.phonepe.app;end'
+    : 'phonepe://'
+
+  if (import.meta.env.DEV) {
+    console.group('[X Buddy PhonePe App Launcher] Pure App Launch (No Payment Data)')
+    console.log('Platform:', platform)
+    console.log('Target URL:', targetUrl)
+    console.groupEnd()
+  }
+
+  // Synchronous direct top-level navigation from user tap gesture
+  window.location.href = targetUrl
+
+  return {
+    platform,
+    success: true,
+    url: targetUrl,
+  }
+}
 
 /**
  * Platform detection for Android, iOS/iPadOS, and Desktop.
@@ -171,6 +206,15 @@ function validateUpiUrlDev(url, appId) {
 
 // Dev-only diagnostic helper attached to window in dev mode
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  window.__XBUDDY_PHONEPE_DIAGNOSTIC__ = function () {
+    const platform = detectPlatform()
+    const targetUrl = platform === 'android'
+      ? 'intent://#Intent;package=com.phonepe.app;end'
+      : 'phonepe://'
+    console.log('[X Buddy PhonePe Diagnostic] Pure App Launch Target URL:', targetUrl)
+    return { platform, targetUrl }
+  }
+
   window.__XBUDDY_UPI_DIAGNOSTIC__ = function (testAmount = 15) {
     const upiId = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
     const payeeName = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'

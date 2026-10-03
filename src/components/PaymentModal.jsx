@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PaymentProofForm from './PaymentProofForm'
 import { Smartphone, QrCode, Copy, Check, ArrowRight, RotateCcw, ShieldCheck, CheckCircle2 } from 'lucide-react'
-import { detectPlatform, directLaunchUPI, buildUpiQuery } from '../utils/upiLauncher'
+import { detectPlatform, directLaunchUPI, buildUpiQuery, openPhonePeAppOnly } from '../utils/upiLauncher'
 
 const UPI_ID = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
 const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
@@ -81,7 +81,7 @@ const PAYMENT_APPS = [
 ]
 
 export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
-  // Step states: 'SELECT' | 'LAUNCHING' | 'DID_YOU_PAY' | 'FORM'
+  // Step states: 'SELECT' | 'PHONEPE_MANUAL' | 'LAUNCHING' | 'DID_YOU_PAY' | 'FORM'
   const [step, setStep] = useState('SELECT')
   const [selectedApp, setSelectedApp] = useState(null)
   const [copiedUpi, setCopiedUpi] = useState(false)
@@ -90,6 +90,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [fallbackNotice, setFallbackNotice] = useState('')
   const [genericFallbackUri, setGenericFallbackUri] = useState('')
   const launchingTimeoutRef = useRef(null)
+  const isLaunchingRef = useRef(false)
 
   // Build standard UPI URI for QR code and generic fallback (exact matching merchant VPA, 2-decimals amount, and refId)
   const note = `XBuddy Print ${orderMeta?.fileName ? orderMeta.fileName.slice(0, 15) : 'Order'}`
@@ -108,6 +109,13 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   }, [])
 
   function handleSelectApp(app) {
+    // Prevent double-click duplicate launches
+    if (isLaunchingRef.current) return
+    isLaunchingRef.current = true
+    setTimeout(() => {
+      isLaunchingRef.current = false
+    }, 1500)
+
     const platform = detectPlatform()
 
     if (platform === 'desktop') {
@@ -122,7 +130,15 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     setFallbackNotice('')
     setSelectedApp(app)
 
-    // Synchronous direct top-level navigation inside the user's tap gesture
+    // PHONEPE APP ONLY LAUNCH:
+    // Pure app launch — absolutely no payment parameters, no amount, no recipient, no prefilled screen.
+    if (app.id === 'phonepe') {
+      openPhonePeAppOnly()
+      setStep('PHONEPE_MANUAL')
+      return
+    }
+
+    // Synchronous direct top-level navigation inside the user's tap gesture for other UPI apps
     const { genericFallbackUrl } = directLaunchUPI({
       appId: app.id,
       upiId: UPI_ID,
@@ -320,6 +336,80 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                   className="text-xs font-semibold text-[#F78C25] hover:text-[#e07010] hover:underline cursor-pointer transition-colors"
                 >
                   Already paid? Enter Transaction ID →
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ─── PHONEPE MANUAL APP LAUNCH STEP ─── */}
+          {step === 'PHONEPE_MANUAL' && (
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-4 text-center space-y-3.5">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-center relative shadow-sm">
+                <div className="w-9 h-9 rounded-xl bg-[#5f259f] text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                  पे
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-slate-900 text-base">Opening PhonePe...</h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Pay <strong className="text-slate-800">₹{Number(total || 0).toFixed(2)}</strong> manually in your PhonePe app.
+                </p>
+              </div>
+
+              {/* Requirement: clear message if app couldn't be opened */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium text-left">
+                💡 PhonePe couldn't be opened. Please open PhonePe manually.
+              </div>
+
+              {/* Quick Manual Payment Details */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Payable Amount:</span>
+                  <span className="font-bold text-slate-800 text-sm">₹{Number(total || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                  <div className="text-left">
+                    <span className="text-slate-400 text-[10px] block">Merchant UPI ID</span>
+                    <span className="font-mono font-bold text-slate-700">{UPI_ID}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyUpiId}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:text-[#5f259f] text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                  >
+                    {copiedUpi ? <><Check className="w-3 h-3 text-emerald-600" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => openPhonePeAppOnly()}
+                  className="w-full py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Retry Opening PhonePe
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep('FORM')}
+                  className="w-full py-2.5 bg-[#F78C25] text-white font-bold text-xs rounded-xl shadow-xs hover:bg-[#e07010] transition-colors cursor-pointer"
+                >
+                  I Completed the Payment in PhonePe →
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('qr')
+                    setStep('SELECT')
+                  }}
+                  className="w-full py-2 text-slate-500 hover:text-slate-800 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                >
+                  Or Pay using UPI QR Code
                 </button>
               </div>
             </motion.div>
