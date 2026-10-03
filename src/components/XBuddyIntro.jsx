@@ -386,7 +386,7 @@ export default function XBuddyIntro({ onComplete }) {
                           <div className="absolute top-1.5 left-1.5 bottom-1.5 w-2 rounded-full bg-gradient-to-b from-white/60 to-transparent pointer-events-none" />
 
                           {/* PRESERVED CUTE MASCOT FACE ON THE LEFT BAR */}
-                          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-6 h-5 pointer-events-none">
+                          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-6 h-5 pointer-events-none z-10">
                             <svg width="24" height="20" viewBox="0 0 24 20" fill="none">
                               {/* Blinking Eyes */}
                               <motion.g
@@ -590,6 +590,37 @@ export default function XBuddyIntro({ onComplete }) {
                           >
                             {/* 3D Gloss Highlight Stripe */}
                             <div className="absolute top-1.5 right-1.5 bottom-1.5 w-2 rounded-full bg-gradient-to-b from-white/55 to-transparent pointer-events-none" />
+
+                            {/* CUTE MASCOT FACE ON THE RIGHT BAR */}
+                            <div className="absolute top-4 left-1/2 -translate-x-1/2 w-6 h-5 pointer-events-none z-10">
+                              <svg width="24" height="20" viewBox="0 0 24 20" fill="none">
+                                {/* Blinking Eyes */}
+                                <motion.g
+                                  animate={{ scaleY: [1, 1, 0.1, 1] }}
+                                  transition={{ duration: 2.4, repeat: Infinity, times: [0, 0.85, 0.9, 1], delay: 0.3 }}
+                                  style={{ transformOrigin: '12px 6px' }}
+                                >
+                                  <circle cx="7" cy="6" r="2.8" fill="#0F172A" />
+                                  <circle cx="7.9" cy="5.1" r="1.1" fill="#FFFFFF" />
+
+                                  <circle cx="17" cy="6" r="2.8" fill="#0F172A" />
+                                  <circle cx="17.9" cy="5.1" r="1.1" fill="#FFFFFF" />
+                                </motion.g>
+
+                                {/* Smile Mouth */}
+                                <path
+                                  d="M 7 13 Q 12 18 17 13"
+                                  stroke="#0F172A"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                  fill="none"
+                                />
+
+                                {/* Rosy Cheeks */}
+                                <circle cx="4" cy="11" r="1.6" fill="#D97706" opacity="0.45" />
+                                <circle cx="20" cy="11" r="1.6" fill="#D97706" opacity="0.45" />
+                              </svg>
+                            </div>
 
                             {/* Motion Wind Trail Lines */}
                             {isRunning && (
