@@ -88,7 +88,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
               try {
                 new Notification('X Buddy — Print Ready! 🎉', {
                   body: `Order ${orderId}: Your document is printed! Collect at the Xerox counter.`,
-                  icon: '/favicon.ico',
+                  icon: '/xbuddy-icon-192.png',
                 })
               } catch {}
             }
