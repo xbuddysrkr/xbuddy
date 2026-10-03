@@ -384,8 +384,8 @@ export default function App() {
 
       {/* Navigation Bar */}
       <nav className="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               type="button"
               onClick={openDrawer}
@@ -396,13 +396,13 @@ export default function App() {
             </button>
             <button
               onClick={handleReset}
-              className="flex items-center group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+              className="flex items-center group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] shrink-0"
               aria-label="XBuddy Home"
             >
               <img
                 src="/xbuddy-logo-transparent.png"
                 alt="XBuddy"
-                className="h-8 sm:h-9 md:h-10 w-auto object-contain shrink-0"
+                className="h-[42px] min-[360px]:h-[46px] min-[390px]:h-[48px] min-[412px]:h-[50px] min-[430px]:h-[52px] sm:h-10 md:h-10 w-auto object-contain shrink-0"
               />
             </button>
           </div>
@@ -426,7 +426,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => goToStep(STEP.UPLOAD)}
-                className="px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer"
+                className="px-4 sm:px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer shrink-0"
               >
                 Print Now →
               </button>
