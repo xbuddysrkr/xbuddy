@@ -1,14 +1,19 @@
 /**
  * upiLauncher.js
  * 
- * Production-ready UPI deep-link / intent launcher for X Buddy.
- * Supports Android (app-specific intents + generic UPI intent fallback),
- * iOS (app-specific URL schemes + generic upi:// fallback),
- * and Desktop (graceful QR/copy fallback).
+ * Simplified, reliable UPI intent and deep-link launcher for X Buddy.
+ * 
+ * Key Principles:
+ * 1. Synchronous launch on direct user gesture (no setTimeout / promise delays before navigation).
+ * 2. Amount strictly formatted to two decimal places (e.g. "15.00" instead of "15").
+ * 3. Exact merchant UPI ID and payee name preserved from existing configuration.
+ * 4. Android: targeted package intent with clean generic upi://pay fallback.
+ * 5. iOS: app schemes with clean upi://pay and QR fallback.
+ * 6. Desktop: instant QR / copy UPI ID fallback without broken protocol prompts.
  */
 
 /**
- * Robust platform detection for Android, iOS/iPadOS, and Desktop.
+ * Platform detection for Android, iOS/iPadOS, and Desktop.
  */
 export function detectPlatform() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -16,7 +21,7 @@ export function detectPlatform() {
   }
 
   const ua = navigator.userAgent || ''
-  
+
   // iOS detection (iPhone, iPod, and iPad including iPadOS where platform is MacIntel with multi-touch)
   const isIOS = /iPad|iPhone|iPod/.test(ua) || 
     (navigator.platform === 'MacIntel' && typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 1)
@@ -31,55 +36,62 @@ export function detectPlatform() {
 
 /**
  * Builds standard UPI query string using existing XBuddy payment data.
- * All parameters are safely encoded.
+ * The amount is strictly formatted to 2 decimal places (e.g., "15.00").
+ * Query parameters are individually encoded via encodeURIComponent to avoid illegal characters or plus-signs for spaces.
  */
 export function buildUpiQuery({ upiId, payeeName, amount, note, refId }) {
-  const params = new URLSearchParams()
-  if (upiId) params.set('pa', upiId)
-  if (payeeName) params.set('pn', payeeName)
-  if (amount != null) params.set('am', String(amount))
-  params.set('cu', 'INR')
-  if (note) params.set('tn', note)
-  if (refId) params.set('tr', String(refId))
-  return params.toString()
+  const formattedAmount = Number(amount || 0).toFixed(2)
+  const parts = [
+    `pa=${encodeURIComponent(upiId || '')}`,
+    `pn=${encodeURIComponent(payeeName || '')}`,
+    `am=${encodeURIComponent(formattedAmount)}`,
+    `cu=INR`,
+  ]
+
+  if (note) {
+    parts.push(`tn=${encodeURIComponent(note)}`)
+  }
+
+  if (refId) {
+    parts.push(`tr=${encodeURIComponent(String(refId))}`)
+  }
+
+  return parts.join('&')
 }
 
 /**
- * Generates URLs for a specific app on the target platform.
+ * Returns the primary launch URL and generic UPI fallback URL for a given app and platform.
  */
-export function getAppUrls(appId, platform, upiQuery) {
+export function getUpiUrls({ appId, platform, upiQuery }) {
+  const genericUpiUri = `upi://pay?${upiQuery}`
+
   if (platform === 'android') {
     switch (appId) {
       case 'phonepe':
         return {
           primary: `intent://pay?${upiQuery}#Intent;scheme=upi;package=com.phonepe.app;end`,
-          fallback: `phonepe://pay?${upiQuery}`,
-          generic: `intent://pay?${upiQuery}#Intent;scheme=upi;action=android.intent.action.VIEW;end`,
+          genericFallback: genericUpiUri,
         }
       case 'gpay':
         return {
           primary: `intent://pay?${upiQuery}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`,
-          fallback: `tez://upi/pay?${upiQuery}`,
-          generic: `intent://pay?${upiQuery}#Intent;scheme=upi;action=android.intent.action.VIEW;end`,
+          genericFallback: genericUpiUri,
         }
       case 'paytm':
         return {
           primary: `intent://pay?${upiQuery}#Intent;scheme=upi;package=net.one97.paytm;end`,
-          fallback: `paytmmp://pay?${upiQuery}`,
-          generic: `intent://pay?${upiQuery}#Intent;scheme=upi;action=android.intent.action.VIEW;end`,
+          genericFallback: genericUpiUri,
         }
       case 'bhim':
         return {
           primary: `intent://pay?${upiQuery}#Intent;scheme=upi;package=in.org.npci.upiapp;end`,
-          fallback: `bhim://pay?${upiQuery}`,
-          generic: `intent://pay?${upiQuery}#Intent;scheme=upi;action=android.intent.action.VIEW;end`,
+          genericFallback: genericUpiUri,
         }
       case 'any':
       default:
         return {
-          primary: `intent://pay?${upiQuery}#Intent;scheme=upi;action=android.intent.action.VIEW;end`,
-          fallback: `upi://pay?${upiQuery}`,
-          generic: `upi://pay?${upiQuery}`,
+          primary: genericUpiUri,
+          genericFallback: genericUpiUri,
         }
     }
   }
@@ -89,67 +101,93 @@ export function getAppUrls(appId, platform, upiQuery) {
       case 'phonepe':
         return {
           primary: `phonepe://pay?${upiQuery}`,
-          fallback: `upi://pay?${upiQuery}`,
+          genericFallback: genericUpiUri,
         }
       case 'gpay':
         return {
           primary: `gpay://upi/pay?${upiQuery}`,
-          fallback: `tez://upi/pay?${upiQuery}`,
-          secondaryFallback: `upi://pay?${upiQuery}`,
+          genericFallback: genericUpiUri,
         }
       case 'paytm':
         return {
           primary: `paytmmp://pay?${upiQuery}`,
-          fallback: `upi://pay?${upiQuery}`,
+          genericFallback: genericUpiUri,
         }
       case 'bhim':
         return {
           primary: `bhim://pay?${upiQuery}`,
-          fallback: `upi://pay?${upiQuery}`,
+          genericFallback: genericUpiUri,
         }
       case 'any':
       default:
         return {
-          primary: `upi://pay?${upiQuery}`,
-          fallback: null,
+          primary: genericUpiUri,
+          genericFallback: genericUpiUri,
         }
     }
   }
 
   // Desktop
   return {
-    primary: `upi://pay?${upiQuery}`,
-    fallback: null,
+    primary: genericUpiUri,
+    genericFallback: genericUpiUri,
   }
 }
 
 /**
- * Dispatches a URL via anchor click.
+ * Validates generated UPI intent URL for development diagnostics.
+ * Verifies all requirements: pa, pn, am (2 decimals), cu=INR, tr, no double-encoding, no illegal spaces, no null/undefined.
  */
-function dispatchUrl(url) {
-  if (typeof document === 'undefined') return
+function validateUpiUrlDev(url, appId) {
+  if (typeof window === 'undefined' || !import.meta.env.DEV) return
+
   try {
-    const a = document.createElement('a')
-    a.href = url
-    a.rel = 'noopener noreferrer'
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    setTimeout(() => {
-      if (a.parentNode) {
-        a.parentNode.removeChild(a)
-      }
-    }, 150)
-  } catch {
-    window.location.href = url
+    const hasPa = /pa=[^&]+/.test(url)
+    const hasPn = /pn=[^&]+/.test(url)
+    const hasAm = /am=\d+\.\d{2}/.test(url)
+    const hasCu = url.includes('cu=INR')
+    const hasTr = /tr=[^&#]+/.test(url)
+    const hasSpaces = /\s/.test(url)
+    const hasNullOrUndefined = /undefined|null/i.test(url)
+    const hasDoubleEncoding = /%25[0-9a-fA-F]{2}/.test(url)
+
+    console.group(`[X Buddy UPI Dev Diagnostic] ${appId.toUpperCase()}`)
+    console.log('Final Launch Intent / URL:', url)
+    console.log('Validation Checks:', {
+      'pa exists': hasPa ? '✓ PASS' : '✗ FAIL',
+      'pn exists': hasPn ? '✓ PASS' : '✗ FAIL',
+      'am is 2-decimal format': hasAm ? '✓ PASS' : '✗ FAIL',
+      'cu=INR exists': hasCu ? '✓ PASS' : '✗ FAIL',
+      'tr/reference': hasTr ? '✓ PRESENT' : '(not provided / optional)',
+      'no double encoding': !hasDoubleEncoding ? '✓ PASS' : '✗ FAIL (contains double %25 encoding)',
+      'no spaces': !hasSpaces ? '✓ PASS' : '✗ FAIL (contains literal spaces)',
+      'no null/undefined': !hasNullOrUndefined ? '✓ PASS' : '✗ FAIL (contains null or undefined)',
+    })
+    console.groupEnd()
+  } catch (e) {
+    console.warn('[X Buddy UPI Dev Diagnostic Error]', e)
   }
 }
 
-// Track active launch to prevent double-clicking
-let activeLaunch = false
+// Dev-only diagnostic helper attached to window in dev mode
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  window.__XBUDDY_UPI_DIAGNOSTIC__ = function (testAmount = 15) {
+    const upiId = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
+    const payeeName = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
+    const note = 'XBuddy Print Test'
+    const refId = 'TEST_REF_123'
+    const upiQuery = buildUpiQuery({ upiId, payeeName, amount: testAmount, note, refId })
+    const urls = getUpiUrls({ appId: 'phonepe', platform: 'android', upiQuery })
+    validateUpiUrlDev(urls.primary, 'phonepe')
+    return {
+      phonepeAndroidIntent: urls.primary,
+      genericUpiUri: urls.genericFallback,
+    }
+  }
+}
 
 /**
- * Attempts to launch a UPI app with graceful fallbacks.
+ * Synchronously executes the UPI app launch on direct user gesture.
  * 
  * @param {Object} options
  * @param {string} options.appId - 'phonepe' | 'gpay' | 'paytm' | 'bhim' | 'any'
@@ -158,125 +196,31 @@ let activeLaunch = false
  * @param {number|string} options.amount - Exact total amount
  * @param {string} options.note - Payment description / note
  * @param {string} [options.refId] - Optional transaction reference
- * @param {Function} options.onLaunching - Called when launch starts
- * @param {Function} options.onAppOpened - Called when browser detects app was opened
- * @param {Function} options.onFailure - Called if app could not be opened
+ * @returns {{ platform: string, primaryUrl: string, genericFallbackUrl: string }}
  */
-export function launchUPIPayment({
+export function directLaunchUPI({
   appId,
   upiId,
   payeeName,
   amount,
   note,
   refId,
-  onLaunching,
-  onAppOpened,
-  onFailure,
 }) {
-  if (activeLaunch) return
-  activeLaunch = true
-
   const platform = detectPlatform()
+  const upiQuery = buildUpiQuery({ upiId, payeeName, amount, note, refId })
+  const { primary, genericFallback } = getUpiUrls({ appId, platform, upiQuery })
 
-  if (platform === 'desktop') {
-    activeLaunch = false
-    onFailure?.('desktop')
-    return
+  // Dev diagnostic logging
+  validateUpiUrlDev(primary, appId)
+
+  if (platform !== 'desktop' && typeof window !== 'undefined') {
+    // Synchronous direct top-level navigation from user tap
+    window.location.href = primary
   }
 
-  onLaunching?.()
-
-  const query = buildUpiQuery({ upiId, payeeName, amount, note, refId })
-  const urls = getAppUrls(appId, platform, query)
-
-  let appOpened = false
-  let fallbackAttempted = false
-  let genericAttempted = false
-  let cleanupDone = false
-
-  const cleanupListeners = () => {
-    if (cleanupDone) return
-    cleanupDone = true
-    activeLaunch = false
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
-    window.removeEventListener('pagehide', handlePageHide)
-    window.removeEventListener('blur', handleBlur)
+  return {
+    platform,
+    primaryUrl: primary,
+    genericFallbackUrl: genericFallback,
   }
-
-  function markOpened() {
-    if (appOpened) return
-    appOpened = true
-    cleanupListeners()
-    onAppOpened?.()
-  }
-
-  function handleVisibilityChange() {
-    if (document.visibilityState === 'hidden') {
-      markOpened()
-    }
-  }
-
-  function handlePageHide() {
-    markOpened()
-  }
-
-  function handleBlur() {
-    markOpened()
-  }
-
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  window.addEventListener('pagehide', handlePageHide)
-  window.addEventListener('blur', handleBlur)
-
-  // 1. Dispatch primary URL
-  dispatchUrl(urls.primary)
-
-  // 2. Check if app launched; if not, attempt fallback
-  setTimeout(() => {
-    if (appOpened) return
-
-    // If still in foreground after 1.5s, primary launch likely didn't open the app
-    if (!fallbackAttempted && urls.fallback) {
-      fallbackAttempted = true
-      dispatchUrl(urls.fallback)
-
-      // Check again after 1.2s
-      setTimeout(() => {
-        if (appOpened) return
-
-        if (!genericAttempted && urls.generic) {
-          genericAttempted = true
-          dispatchUrl(urls.generic)
-
-          setTimeout(() => {
-            if (appOpened) return
-            cleanupListeners()
-            onFailure?.('Couldn’t open the app. You can pay using UPI QR instead.')
-          }, 1200)
-        } else if (urls.secondaryFallback) {
-          dispatchUrl(urls.secondaryFallback)
-          setTimeout(() => {
-            if (appOpened) return
-            cleanupListeners()
-            onFailure?.('Couldn’t open the app. You can pay using UPI QR instead.')
-          }, 1200)
-        } else {
-          cleanupListeners()
-          onFailure?.('Couldn’t open the app. You can pay using UPI QR instead.')
-        }
-      }, 1200)
-    } else if (urls.generic && !genericAttempted) {
-      genericAttempted = true
-      dispatchUrl(urls.generic)
-
-      setTimeout(() => {
-        if (appOpened) return
-        cleanupListeners()
-        onFailure?.('Couldn’t open the app. You can pay using UPI QR instead.')
-      }, 1200)
-    } else {
-      cleanupListeners()
-      onFailure?.('Couldn’t open the app. You can pay using UPI QR instead.')
-    }
-  }, 1500)
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PaymentProofForm from './PaymentProofForm'
 import { Smartphone, QrCode, Copy, Check, ArrowRight, RotateCcw, ShieldCheck, CheckCircle2 } from 'lucide-react'
-import { detectPlatform, launchUPIPayment } from '../utils/upiLauncher'
+import { detectPlatform, directLaunchUPI, buildUpiQuery } from '../utils/upiLauncher'
 
 const UPI_ID = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
 const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
@@ -88,11 +88,13 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [viewMode, setViewMode] = useState('apps') // 'apps' | 'qr'
   const [desktopNotice, setDesktopNotice] = useState('')
   const [fallbackNotice, setFallbackNotice] = useState('')
+  const [genericFallbackUri, setGenericFallbackUri] = useState('')
   const launchingTimeoutRef = useRef(null)
 
-  // Build dynamic standard UPI URI strictly for the QR code display only
+  // Build standard UPI URI for QR code and generic fallback (exact matching merchant VPA, 2-decimals amount, and refId)
   const note = `XBuddy Print ${orderMeta?.fileName ? orderMeta.fileName.slice(0, 15) : 'Order'}`
-  const upiQuery = `pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(PAYEE_NAME)}&am=${total}&cu=INR&tn=${encodeURIComponent(note)}`
+  const refId = orderMeta?.orderId || orderMeta?.fileId || ''
+  const upiQuery = buildUpiQuery({ upiId: UPI_ID, payeeName: PAYEE_NAME, amount: total, note, refId })
   const genericUpiUri = `upi://pay?${upiQuery}`
   const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(genericUpiUri)}&size=220x220&margin=4`
 
@@ -108,11 +110,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   function handleSelectApp(app) {
     const platform = detectPlatform()
 
-    // Debug logging
-    console.log('[X Buddy App Launcher] Selected App:', app.name, '| Platform:', platform)
-
     if (platform === 'desktop') {
-      console.log('[X Buddy App Launcher] Desktop detected — showing QR code and copy UPI fallback.')
       setSelectedApp(app)
       setViewMode('qr')
       setDesktopNotice('Please use your mobile device to open the payment app, or scan the QR code below.')
@@ -124,37 +122,24 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     setFallbackNotice('')
     setSelectedApp(app)
 
-    launchUPIPayment({
+    // Synchronous direct top-level navigation inside the user's tap gesture
+    const { genericFallbackUrl } = directLaunchUPI({
       appId: app.id,
       upiId: UPI_ID,
       payeeName: PAYEE_NAME,
       amount: total,
       note,
-      refId: orderMeta?.orderId || orderMeta?.fileId || '',
-      onLaunching: () => {
-        setStep('LAUNCHING')
-        // Automatically transition to DID_YOU_PAY verification after generous window
-        if (launchingTimeoutRef.current) clearTimeout(launchingTimeoutRef.current)
-        launchingTimeoutRef.current = setTimeout(() => {
-          setStep((currentStep) => (currentStep === 'LAUNCHING' ? 'DID_YOU_PAY' : currentStep))
-        }, 3200)
-      },
-      onAppOpened: () => {
-        // App launched! When user returns to browser, show completion prompt
-        setStep('DID_YOU_PAY')
-      },
-      onFailure: (reason) => {
-        if (reason === 'desktop') {
-          setViewMode('qr')
-          setStep('SELECT')
-          setDesktopNotice('Please use your mobile device to open the payment app, or scan the QR code below.')
-        } else {
-          setFallbackNotice(reason || 'Couldn’t open the app. You can pay using UPI QR instead.')
-          setViewMode('qr')
-          setStep('SELECT')
-        }
-      },
+      refId,
     })
+
+    setGenericFallbackUri(genericFallbackUrl)
+    setStep('LAUNCHING')
+
+    // Transition to DID_YOU_PAY confirmation after browser pause/return window
+    if (launchingTimeoutRef.current) clearTimeout(launchingTimeoutRef.current)
+    launchingTimeoutRef.current = setTimeout(() => {
+      setStep((currentStep) => (currentStep === 'LAUNCHING' ? 'DID_YOU_PAY' : currentStep))
+    }, 4500)
   }
 
   function copyUpiId() {
@@ -342,19 +327,24 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
           {/* ─── STEP 2: LAUNCHING APP ─── */}
           {step === 'LAUNCHING' && (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-6 text-center space-y-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-5 text-center space-y-3.5">
               <div className="w-14 h-14 mx-auto rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-center relative shadow-sm">
                 <div className="w-10 h-10 border-3 border-[#F78C25] border-t-transparent rounded-full animate-spin" />
               </div>
               <div>
                 <h4 className="font-bold text-slate-900 text-base">Opening {selectedApp?.name || 'UPI App'}...</h4>
-                <p className="text-xs text-slate-400 mt-1">Please pay ₹{total} in {selectedApp?.name || 'your UPI app'} and return here.</p>
-              </div>
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">
-                After completing the payment, return here to submit your transaction ID.
+                <p className="text-xs text-slate-500 mt-1">Please pay ₹{Number(total || 0).toFixed(2)} in {selectedApp?.name || 'your UPI app'} and return here.</p>
               </div>
 
+              {/* Action Hierarchy: Fallback Generic UPI -> Payment Completed -> QR Code fallback */}
               <div className="space-y-2 pt-1">
+                <a
+                  href={genericFallbackUri || genericUpiUri}
+                  className="w-full py-2.5 px-3 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Smartphone className="w-3.5 h-3.5" /> {selectedApp?.name || 'App'} didn’t open? Pay via Any UPI App
+                </a>
+
                 <button
                   type="button"
                   onClick={() => setStep('DID_YOU_PAY')}
@@ -362,6 +352,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                 >
                   I Completed the Payment →
                 </button>
+
                 <button
                   type="button"
                   onClick={() => {
