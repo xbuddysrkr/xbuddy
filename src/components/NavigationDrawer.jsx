@@ -1,6 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import XBuddyLogo from './XBuddyLogo'
-import XBuddyBrandLockup from './XBuddyBrandLockup'
 
 export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentStep }) {
   const menuItems = [
@@ -36,15 +35,18 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
           >
             <div>
               {/* Header */}
-              <div className="p-4 border-b border-orange-100 flex items-center justify-between bg-white/60">
-                <button
-                  type="button"
-                  onClick={() => { onNavigate('home'); onClose(); }}
-                  className="flex items-center group text-left cursor-pointer"
-                  aria-label="XBuddy Home"
-                >
-                  <XBuddyBrandLockup className="h-8 sm:h-9" />
-                </button>
+              <div className="p-5 border-b border-orange-100 flex items-center justify-between bg-white/60">
+                <div className="flex items-center gap-2.5">
+                  <XBuddyLogo className="w-9 h-9" />
+                  <div className="flex flex-col">
+                    <span className="text-slate-900 font-extrabold text-base leading-none tracking-tight">
+                      X Buddy
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase mt-0.5">
+                      Smart Digital Printing
+                    </span>
+                  </div>
+                </div>
                 <button
                   onClick={onClose}
                   className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 text-gray-400 flex items-center justify-center transition-colors"
