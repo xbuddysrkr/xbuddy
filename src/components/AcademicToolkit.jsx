@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { jsPDF } from 'jspdf'
-import { DOC_TYPES, generateDocument, getDocTitle } from '../utils/letterTemplates'
+import { DOC_TYPES } from '../utils/letterTemplates'
 
 // ── SVG Icons (no emojis) ─────────────────────────────────────────────────────
 const ICONS = {
@@ -41,7 +41,129 @@ const FIELD_META = {
   extra:      { label: 'Additional Details',   placeholder: 'Any extra info (optional)'},
 }
 
+const FIELD_DEFAULTS = {
+  name: '[Your Name]',
+  rollNo: '______',
+  year: '[Year]',
+  department: '[Department]',
+  college: '[College Name]',
+  receiver: 'The HOD',
+  reason: '[State your reason]',
+  days: 'N',
+  weeks: 'N',
+  extra: '',
+}
+
+function getDefaultVal(type, field) {
+  if (field === 'reason') {
+    switch (type) {
+      case 'bonafide': return '[State purpose]'
+      case 'internship': return '[Describe the internship]'
+      case 'permission': return '[Event/Purpose]'
+      case 'apology': return '[describe the incident]'
+      case 'scholarship': return '[State your reason and eligibility]'
+      case 'resume': return 'A motivated student seeking opportunities to apply academic knowledge and develop professional skills.'
+      case 'assignment': return '[Assignment Topic]'
+      default: return '[State your reason]'
+    }
+  }
+  return FIELD_DEFAULTS[field] || ''
+}
+
 const today = () => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function fieldSpan(field, val, defaultVal) {
+  const displayVal = (val !== undefined && val !== null && val !== '') ? val : defaultVal
+  return `<span data-field="${field}">${escapeHtml(displayVal)}</span>`
+}
+
+// ── Canonical Initial Document HTML with DOM-level Field Mappings ──────────────
+function generateDocumentHtml(type, form) {
+  const date = today()
+  const nm = fieldSpan('name', form.name, '[Your Name]')
+  const to = fieldSpan('receiver', form.receiver, 'The HOD')
+  const dept = fieldSpan('department', form.department, '[Department]')
+  const roll = fieldSpan('rollNo', form.rollNo, '______')
+  const yr = fieldSpan('year', form.year, '[Year]')
+  const clg = fieldSpan('college', form.college, '[College Name]')
+  const days = fieldSpan('days', form.days, 'N')
+  const weeks = fieldSpan('weeks', form.weeks || form.days, 'N')
+
+  const letterHeader = `Date: ${date}\n\nTo,\n${to},\nDepartment of ${dept},\n${clg}\n\n`
+  const letterClose = `\n\nThank you for your kind consideration.\n\nYours obediently,\n\n${nm}\nRoll No: ${roll}\n${yr} Year — ${dept}\n${clg}`
+
+  switch (type) {
+    case 'leave': {
+      const reason = fieldSpan('reason', form.reason, '[State your reason]')
+      const extraContent = form.extra ? `Additional details: ${escapeHtml(form.extra)}\n\n` : ''
+      const extra = `<span data-field="extra">${extraContent}</span>`
+      return `${letterHeader}Sub: Application for Leave — ${days} Day(s)\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to respectfully request leave for ${days} day(s) from [Start Date] to [End Date].\n\nReason: ${reason}.\n\n${extra}I assure you that I will complete all pending academic work upon my return. I kindly request you to grant me the leave and oblige.${letterClose}`
+    }
+
+    case 'bonafide': {
+      const reason = fieldSpan('reason', form.reason, '[State purpose]')
+      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extra = `<span data-field="extra">${extraContent}</span>`
+      return `${letterHeader}Sub: Request for Bonafide Certificate\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to request a Bonafide Certificate for the purpose of ${reason}.\n\n${extra}I kindly request you to issue the certificate at the earliest. I shall be highly grateful for your support.${letterClose}`
+    }
+
+    case 'internship': {
+      const reason = fieldSpan('reason', form.reason, '[Describe the internship]')
+      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extra = `<span data-field="extra">${extraContent}</span>`
+      return `${letterHeader}Sub: Request for Permission to Attend Internship\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I have been offered an internship opportunity at [Company Name] for a duration of ${weeks} week(s).\n\nPurpose: ${reason}.\n\n${extra}I humbly request your permission and necessary leave to attend this internship, which will greatly contribute to my professional development.${letterClose}`
+    }
+
+    case 'permission': {
+      const reason = fieldSpan('reason', form.reason, '[Event/Purpose]')
+      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extra = `<span data-field="extra">${extraContent}</span>`
+      return `${letterHeader}Sub: Request for Permission — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to seek your kind permission for ${reason} on [Date].\n\n${extra}I assure you that this will not affect my academic performance. I kindly request you to grant permission and oblige.${letterClose}`
+    }
+
+    case 'apology': {
+      const reason = fieldSpan('reason', form.reason, '[describe the incident]')
+      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extra = `<span data-field="extra">${extraContent}</span>`
+      return `${letterHeader}Sub: Apology Letter — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing this letter to sincerely apologize for ${reason}.\n\nI deeply regret my actions and understand the inconvenience caused.\n\n${extra}I assure you that such an incident will not recur in the future. I humbly request you to kindly forgive me and give me another opportunity to prove myself.${letterClose}`
+    }
+
+    case 'scholarship': {
+      const reason = fieldSpan('reason', form.reason, '[State your reason and eligibility]')
+      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extra = `<span data-field="extra">${extraContent}</span>`
+      return `${letterHeader}Sub: Application for Scholarship\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to apply for the scholarship offered by your institution.\n\nReason / Eligibility: ${reason}.\n\n${extra}I am a sincere and dedicated student and this scholarship will greatly support my academic journey. I kindly request you to consider my application favorably.${letterClose}`
+    }
+
+    case 'resume': {
+      const reason = fieldSpan('reason', form.reason, 'A motivated student seeking opportunities to apply academic knowledge and develop professional skills.')
+      return `${nm}\n${'─'.repeat(60)}\nEmail: [your@email.com]   Phone: [+91 XXXXX XXXXX]   City, State\n\nOBJECTIVE\n${reason}\n\nEDUCATION\nB.Tech / B.E. in ${dept}  —  ${clg}\n${yr} Year  |  CGPA: [X.X / 10]\n\nSKILLS\nTechnical:  [Skill 1], [Skill 2], [Skill 3]\nSoft Skills: Communication, Teamwork, Problem Solving\n\nPROJECTS\n[Project Name]  —  [Tech Stack]\n[Brief description of the project and your role]\n\nINTERNSHIPS\n[Company Name]  —  [Role]  |  [Duration]\n[Description of work done]\n\nACHIEVEMENTS\n- [Achievement / Certification 1]\n- [Achievement / Certification 2]\n\nDECLARATION\nI hereby declare that the above information is true to the best of my knowledge.\n\nDate: ${date}                    Signature: ___________________`
+    }
+
+    case 'assignment': {
+      const clgUpper = fieldSpan('college', (form.college || '[College Name]').toUpperCase(), '[COLLEGE NAME]')
+      const reason = fieldSpan('reason', form.reason, '[Assignment Topic]')
+      return `${'─'.repeat(60)}\n${clgUpper}\nDepartment of ${dept}\n${'─'.repeat(60)}\n\n\n           A S S I G N M E N T\n\n\nSubject      : [Subject Name]\nSubject Code : [Code]\nTopic        : ${reason}\n\n\nSubmitted by:\n  Name         : ${nm}\n  Roll No      : ${roll}\n  Year & Sec   : ${yr} Year\n  Semester     : [Semester]\n\nSubmitted to:\n  Faculty Name : ${to}\n  Designation  : [Designation]\n\n\nDate of Submission: ${date}\n${'─'.repeat(60)}`
+    }
+
+    case 'lab': {
+      const clgUpper = fieldSpan('college', (form.college || '[College Name]').toUpperCase(), '[COLLEGE NAME]')
+      return `${'─'.repeat(60)}\n${clgUpper}\nDepartment of ${dept}\n${'─'.repeat(60)}\n\n\n           L A B   R E C O R D\n\n\nSubject      : [Subject Name]\nSubject Code : [Code]\n\n\nName         : ${nm}\nRoll Number  : ${roll}\nYear & Branch: ${yr} Year — ${dept}\nSection      : [Section]\nSemester     : [Semester]\n\n\nFaculty In-charge  : ${to}\nAcademic Year      : [20XX – 20XX]\n\n\nLab In-charge Signature: ___________________\n${'─'.repeat(60)}`
+    }
+
+    default:
+      return `${letterHeader}Respected Sir/Madam,\n\nI am ${nm}.${letterClose}`
+  }
+}
 
 // ── PDF export via jsPDF ───────────────────────────────────────────────────────
 async function exportToPdf(text, filename, opts = {}) {
@@ -123,95 +245,12 @@ function FormPanel({ fields, form, onChange, onGenerate }) {
   )
 }
 
-// ── Default Template Placeholders ─────────────────────────────────────────────
-const FIELD_DEFAULTS = {
-  name: '[Your Name]',
-  rollNo: '______',
-  year: '[Year]',
-  department: '[Department]',
-  college: '[College Name]',
-  receiver: 'The HOD',
-  reason: '[State your reason]',
-  days: 'N',
-  weeks: 'N',
-  extra: '',
-}
-
-// ── Extract only what is present in the form columns from canvas text ─────────
-function extractFieldsFromCanvasText(type, text) {
-  const updates = {}
-  if (!text) return updates
-
-  // 1. Name
-  const nameMatch = text.match(/I am ([^,\n\r]+)/i)
-    || text.match(/Yours obediently,[\s\r\n]+([^\r\n]+)/i)
-    || text.match(/Submitted by:[\s\r\n]+Name\s*:\s*([^\r\n]+)/i)
-    || text.match(/Student Record:[\s\r\n]+Name\s*:\s*([^\r\n]+)/i)
-  if (nameMatch) {
-    const v = nameMatch[1].trim()
-    if (v && v !== '[Your Name]') updates.name = v
-  }
-
-  // 2. Roll Number
-  const rollMatch = text.match(/Roll No[.:\s]+([^\r\n\),]+)/i)
-    || text.match(/Roll Number[.:\s]+([^\r\n\),]+)/i)
-  if (rollMatch) {
-    const v = rollMatch[1].trim()
-    if (v && v !== '______') updates.rollNo = v
-  }
-
-  // 3. Department
-  const deptMatch = text.match(/Department of ([^\r\n,.]+)/i)
-    || text.match(/Branch:[^\r\n—]+—\s*([^\r\n]+)/i)
-  if (deptMatch) {
-    const v = deptMatch[1].trim()
-    if (v && v !== '[Department]') updates.department = v
-  }
-
-  // 4. College Name
-  const clgMatch = text.match(/Department of [^\r\n,]+,[\s\r\n]+([^\r\n]+)/i)
-  if (clgMatch) {
-    const v = clgMatch[1].trim()
-    if (v && v !== '[College Name]' && !v.startsWith('Sub:') && !v.startsWith('Respected')) {
-      updates.college = v
-    }
-  }
-
-  // 5. Receiver
-  const toMatch = text.match(/To,[\s\r\n]+([^\r\n,]+)/i)
-    || text.match(/Faculty Name\s*:\s*([^\r\n]+)/i)
-    || text.match(/Faculty In-charge\s*:\s*([^\r\n]+)/i)
-  if (toMatch) {
-    const v = toMatch[1].trim()
-    if (v && v !== 'The HOD' && v !== 'The Principal') updates.receiver = v
-  }
-
-  // 6. Days / Weeks
-  const daysMatch = text.match(/(?:Leave|leave)[^\d\r\n]*(\d+)\s*day/i)
-  if (daysMatch) updates.days = daysMatch[1].trim()
-
-  const weeksMatch = text.match(/(?:Internship|internship)[^\d\r\n]*(\d+)\s*week/i)
-  if (weeksMatch) updates.weeks = weeksMatch[1].trim()
-
-  // 7. Reason / Purpose / Topic
-  const reasonMatch = text.match(/Reason:\s*([^\r\n.]+)/i)
-    || text.match(/Topic\s*:\s*([^\r\n]+)/i)
-    || text.match(/Subject \/ Lab\s*:\s*([^\r\n]+)/i)
-  if (reasonMatch) {
-    const v = reasonMatch[1].trim()
-    if (v && !v.startsWith('[')) updates.reason = v
-  }
-
-  return updates
-}
-
 // ── Free-Form Document Canvas Preview Panel ──────────────────────────────────
 function PreviewPanel({
   canvasRef,
-  content,
   onCanvasInput,
-  onCanvasFocus,
-  onCanvasBlur,
+  onCanvasKeyDown,
+  onCanvasPaste,
   fontSize,
   setFontSize,
   exporting,
@@ -302,8 +341,8 @@ function PreviewPanel({
           contentEditable
           suppressContentEditableWarning
           onInput={onCanvasInput}
-          onFocus={onCanvasFocus}
-          onBlur={onCanvasBlur}
+          onKeyDown={onCanvasKeyDown}
+          onPaste={onCanvasPaste}
           className="w-full max-w-[210mm] bg-white text-slate-900 rounded-sm shadow-xl border border-orange-100/90 px-6 py-10 sm:p-[22mm] whitespace-pre-wrap outline-none cursor-text select-text focus:ring-1 focus:ring-orange-200"
           style={{
             fontFamily: "'Georgia', 'Times New Roman', serif",
@@ -311,15 +350,13 @@ function PreviewPanel({
             lineHeight: fontSize <= 10 ? '1.6' : fontSize >= 14 ? '2.2' : '1.9',
             minHeight: '297mm',
           }}
-        >
-          {content}
-        </div>
+        />
       </div>
     </div>
   )
 }
 
-// ── Document Modal with Full Two-Way Synchronization ───────────────────────────
+// ── Document Modal with DOM-Stable Two-Way Synchronization ────────────────────
 function DocModal({ docType, onClose, onPrint }) {
   const EMPTY = {
     name: '',
@@ -334,18 +371,15 @@ function DocModal({ docType, onClose, onPrint }) {
     extra: '',
   }
 
-  // ONE SINGLE CANONICAL SOURCE OF TRUTH
+  // Canonical Form state
   const [form, setForm] = useState(EMPTY)
-  const [content, setContent] = useState(() => generateDocument({ type: docType.id, ...EMPTY }))
   const [mobileTab, setMobileTab] = useState('form')
   const [fontSize, setFontSize] = useState(11) // pt
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState('')
 
+  // The stable canvas DOM ref
   const canvasRef = useRef(null)
-  const contentRef = useRef(content)
-  contentRef.current = content
-  const isTypingOnCanvasRef = useRef(false)
 
   function showToast(msg) {
     setToast(msg)
@@ -354,89 +388,90 @@ function DocModal({ docType, onClose, onPrint }) {
 
   const fields = FIELDS[docType.id] || FIELDS.leave
 
-  // On docType change, initialize fresh document text
+  // On docType change (or initial mount), populate canvas DOM with template HTML
   useEffect(() => {
-    const initialText = generateDocument({ type: docType.id, ...form })
-    setContent(initialText)
-    contentRef.current = initialText
     if (canvasRef.current) {
-      canvasRef.current.innerText = initialText
+      canvasRef.current.innerHTML = generateDocumentHtml(docType.id, form)
     }
   }, [docType.id])
 
-  // Form input changes -> updates document text & canvas
+  // FORM -> CANVAS: Only patch the specific mapped field spans without touching any other user edits
   function handleChange(field, value) {
-    const prevVal = form[field] || FIELD_DEFAULTS[field] || ''
-    const nextForm = { ...form, [field]: value }
-    setForm(nextForm)
+    setForm(prev => ({ ...prev, [field]: value }))
 
-    let currentText = canvasRef.current ? canvasRef.current.innerText : contentRef.current
-    if (prevVal && currentText.includes(prevVal)) {
-      const escaped = prevVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const targetVal = value || FIELD_DEFAULTS[field] || ''
-      currentText = currentText.replace(new RegExp(escaped, 'g'), targetVal)
-    } else {
-      currentText = generateDocument({ type: docType.id, ...nextForm })
-    }
-
-    contentRef.current = currentText
-    setContent(currentText)
-    if (canvasRef.current && !isTypingOnCanvasRef.current) {
-      canvasRef.current.innerText = currentText
-    }
-  }
-
-  // Canvas directly edited -> 100% free-form editing, syncs fields present in columns
-  function handleCanvasInput(e) {
-    isTypingOnCanvasRef.current = true
-    const currentText = e.currentTarget.innerText
-    contentRef.current = currentText
-    setContent(currentText)
-
-    // Sync only what is present in the form columns
-    const updates = extractFieldsFromCanvasText(docType.id, currentText)
-    if (Object.keys(updates).length > 0) {
-      setForm(prev => {
-        let changed = false
-        const next = { ...prev }
-        for (const [k, v] of Object.entries(updates)) {
-          if (v && next[k] !== v) {
-            next[k] = v
-            changed = true
-          }
-        }
-        return changed ? next : prev
-      })
-    }
-  }
-
-  function handleCanvasFocus() {
-    isTypingOnCanvasRef.current = true
-  }
-
-  function handleCanvasBlur(e) {
-    isTypingOnCanvasRef.current = false
     if (canvasRef.current) {
-      const currentText = canvasRef.current.innerText
-      contentRef.current = currentText
-      setContent(currentText)
+      const spans = canvasRef.current.querySelectorAll(`[data-field="${field}"]`)
+      if (spans.length > 0) {
+        const defaultVal = getDefaultVal(docType.id, field)
+        const displayVal = value || defaultVal
+        spans.forEach(span => {
+          if (field === 'college' && (docType.id === 'assignment' || docType.id === 'lab')) {
+            span.textContent = displayVal.toUpperCase()
+          } else {
+            span.textContent = displayVal
+          }
+        })
+      }
     }
+  }
+
+  // CANVAS -> FORM: Native typing in DOM. If inside a mapped field, update form and other occurrences
+  function handleCanvasInput() {
+    const sel = window.getSelection()
+    if (!sel || !sel.anchorNode) return
+
+    const el = sel.anchorNode.nodeType === Node.ELEMENT_NODE
+      ? sel.anchorNode
+      : sel.anchorNode.parentElement
+
+    const fieldSpan = el?.closest('[data-field]')
+    if (fieldSpan && canvasRef.current) {
+      const field = fieldSpan.getAttribute('data-field')
+      const val = fieldSpan.textContent
+      if (field) {
+        // Sync other occurrences of this field on canvas (e.g. name in body & signature)
+        const otherSpans = canvasRef.current.querySelectorAll(`[data-field="${field}"]`)
+        otherSpans.forEach(span => {
+          if (span !== fieldSpan && span.textContent !== val) {
+            span.textContent = val
+          }
+        })
+
+        // Sync to form state so the left input updates
+        setForm(prev => (prev[field] === val ? prev : { ...prev, [field]: val }))
+      }
+    }
+  }
+
+  // Prevent Tab key from unfocusing canvas
+  function handleCanvasKeyDown(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      document.execCommand('insertText', false, '    ')
+    }
+  }
+
+  // Ensure plain text paste without unwanted external HTML/CSS
+  function handleCanvasPaste(e) {
+    e.preventDefault()
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain')
+    document.execCommand('insertText', false, text)
   }
 
   function handleGenerate() {
     setMobileTab('preview')
-    showToast('✓ Document updated & live synchronized')
+    showToast('✓ Document ready for download & print')
   }
 
-  // Download PDF — exports the exact text on the canvas
+  // Download PDF — exports the exact text currently visible on the canvas
   async function handleDownload() {
     setExporting(true)
     try {
-      const textToExport = canvasRef.current ? canvasRef.current.innerText : contentRef.current
+      const textToExport = canvasRef.current ? canvasRef.current.innerText : ''
       const pdf = await exportToPdf(textToExport, docType.id, { fontSize })
       pdf.save(`${docType.id}.pdf`)
       showToast('PDF downloaded successfully!')
-    } catch (e) {
+    } catch {
       showToast('Export failed — try again')
     } finally {
       setExporting(false)
@@ -447,7 +482,7 @@ function DocModal({ docType, onClose, onPrint }) {
   async function handlePrint() {
     setExporting(true)
     try {
-      const textToExport = canvasRef.current ? canvasRef.current.innerText : contentRef.current
+      const textToExport = canvasRef.current ? canvasRef.current.innerText : ''
       const pdf = await exportToPdf(textToExport, docType.id, { fontSize })
       const blob = pdf.output('blob')
       const file = new File([blob], `${docType.id}.pdf`, { type: 'application/pdf' })
@@ -540,10 +575,9 @@ function DocModal({ docType, onClose, onPrint }) {
           } sm:flex flex-1 flex-col overflow-hidden`}>
             <PreviewPanel
               canvasRef={canvasRef}
-              content={content}
               onCanvasInput={handleCanvasInput}
-              onCanvasFocus={handleCanvasFocus}
-              onCanvasBlur={handleCanvasBlur}
+              onCanvasKeyDown={handleCanvasKeyDown}
+              onCanvasPaste={handleCanvasPaste}
               fontSize={fontSize}
               setFontSize={setFontSize}
               exporting={exporting}
