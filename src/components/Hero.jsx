@@ -1,10 +1,30 @@
-import React from 'react'
-import { motion } from 'framer-motion'
+import React, { useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import TrustStats from './TrustStats'
 import BlurText from './BlurText'
+import XBuddyHeroMascot from './XBuddyHeroMascot'
 import { ArrowRight, Sparkles, FileText, ClipboardList } from 'lucide-react'
 
 export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
+  const startBtnRef = useRef(null)
+  const [isBtnHovered, setIsBtnHovered] = useState(false)
+  const [isCelebrating, setIsCelebrating] = useState(false)
+  const shouldReduceMotion = useReducedMotion()
+
+  const handleStartPrinting = () => {
+    if (isCelebrating) return
+
+    if (shouldReduceMotion) {
+      onGetStarted?.()
+      return
+    }
+
+    setIsCelebrating(true)
+    setTimeout(() => {
+      onGetStarted?.()
+    }, 320)
+  }
+
   return (
     <section className="relative min-h-[85vh] flex flex-col justify-between pt-12 pb-16 px-4 overflow-hidden bg-white">
       {/* Soft Orange Radial Glows */}
@@ -30,10 +50,15 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
           <span className="text-slate-600">Smart Print Ordering for Campus Xerox Shops</span>
         </motion.div>
 
-        {/* Hero Title with BlurText */}
-        <h1 className="text-6xl sm:text-7xl md:text-8xl font-extrabold tracking-tight leading-[1.05] mb-3">
+        {/* Hero Title with Interactive Living XBuddy Mascot + BlurText */}
+        <h1 className="text-6xl sm:text-7xl md:text-8xl font-extrabold tracking-tight leading-[1.05] mb-3 inline-flex items-center justify-center gap-2.5 sm:gap-4 md:gap-5 flex-wrap">
+          <XBuddyHeroMascot
+            buttonRef={startBtnRef}
+            isHovered={isBtnHovered}
+            isCelebrating={isCelebrating}
+          />
           <BlurText
-            text="X Buddy"
+            text="Buddy"
             delay={100}
             animateBy="words"
             direction="top"
@@ -82,10 +107,15 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
           className="flex flex-wrap items-center justify-center gap-3.5 w-full sm:w-auto mb-14"
         >
           <motion.button
+            ref={startBtnRef}
             whileHover={{ scale: 1.04, y: -2 }}
             whileTap={{ scale: 0.98 }}
-            onClick={onGetStarted}
-            className="px-8 py-4 rounded-2xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] text-white font-bold text-base glow-orange-button transition-all duration-200 flex items-center justify-center gap-2 group shadow-lg shadow-orange-500/20"
+            onMouseEnter={() => setIsBtnHovered(true)}
+            onMouseLeave={() => setIsBtnHovered(false)}
+            onFocus={() => setIsBtnHovered(true)}
+            onBlur={() => setIsBtnHovered(false)}
+            onClick={handleStartPrinting}
+            className="px-8 py-4 rounded-2xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] text-white font-bold text-base glow-orange-button transition-all duration-200 flex items-center justify-center gap-2 group shadow-lg shadow-orange-500/20 cursor-pointer"
           >
             <span>Start Printing</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
