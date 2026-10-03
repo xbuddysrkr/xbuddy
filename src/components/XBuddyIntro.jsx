@@ -284,11 +284,10 @@ export default function XBuddyIntro({ onComplete }) {
                         ease: [0.16, 1, 0.3, 1],
                       }}
                       className="relative w-36 h-36 flex items-center justify-center pointer-events-none"
-                      style={{ overflow: 'visible' }}
                     >
 
                       {/* ==========================================================
-                          CHARACTERSLASH ANCHOR (LEFT BUDDY)
+                          CHARACTERSLASH ANCHOR
                           - position: absolute; left: 50%; top: 50%
                           - transform: translate(-50%, -50%)
                           - width: 28px, height: 116px
@@ -303,11 +302,9 @@ export default function XBuddyIntro({ onComplete }) {
                           height: '116px',
                           transform: 'translate(-50%, -50%)',
                           transformOrigin: '50% 50%',
-                          overflow: 'visible',
-                          zIndex: 10,
                         }}
                       >
-                        {/* ANIMATED ROTATION & MOVEMENT LAYER OF CHARACTERSLASH:
+                        {/* ANIMATED BODY OF CHARACTERSLASH:
                             Moves diagonally DOWN-RIGHT through center and rotates to +45deg.
                             Ends at EXACT center (0, 0) with rotate: 45deg.
                         */}
@@ -316,8 +313,6 @@ export default function XBuddyIntro({ onComplete }) {
                             width: '100%',
                             height: '100%',
                             transformOrigin: '50% 50%',
-                            position: 'relative',
-                            overflow: 'visible',
                           }}
                           initial={{ x: -240, y: 0, rotate: 24, opacity: 0 }}
                           animate={{
@@ -385,103 +380,14 @@ export default function XBuddyIntro({ onComplete }) {
                             scale: { duration: 0.5, ease: 'easeOut' },
                             opacity: { duration: 0.3 },
                           }}
-                          className="cursor-default"
+                          className="relative w-full h-full rounded-full bg-gradient-to-tr from-[#EA580C] via-[#F7931E] to-[#FFA439] shadow-md flex items-center justify-center cursor-default"
                         >
-                          {/* 1. CharacterBody (z-index: 1) */}
-                          <div
-                            className="absolute inset-0 rounded-full bg-gradient-to-tr from-[#EA580C] via-[#F7931E] to-[#FFA439] shadow-md"
-                            style={{ zIndex: 1, overflow: 'visible' }}
-                          >
-                            {/* 3D Gloss Highlight Stripe */}
-                            <div className="absolute top-1.5 left-1.5 bottom-1.5 w-2 rounded-full bg-gradient-to-b from-white/60 to-transparent pointer-events-none" />
-                          </div>
+                          {/* 3D Gloss Highlight Stripe */}
+                          <div className="absolute top-1.5 left-1.5 bottom-1.5 w-2 rounded-full bg-gradient-to-b from-white/60 to-transparent pointer-events-none" />
 
-                          {/* 2. Legs (z-index: 2) - Visible during running and settled into grounded stance */}
-                          <div
-                            className="absolute -bottom-7 left-1/2 -translate-x-1/2 pointer-events-none"
-                            style={{ zIndex: 2, overflow: 'visible' }}
-                          >
-                            <svg width="40" height="32" viewBox="0 0 40 32" fill="none" style={{ overflow: 'visible' }}>
-                              <motion.g
-                                animate={{
-                                  rotate: isLockedIntoX ? 0 : isAnticipation ? -10 : [-24, 28, -24],
-                                  y: isLockedIntoX ? 0 : isAnticipation ? 0 : [0, -3, 0],
-                                }}
-                                transition={{
-                                  duration: 0.32,
-                                  repeat: isRunning ? Infinity : 0,
-                                  ease: 'easeInOut',
-                                }}
-                                style={{ transformOrigin: '14px 4px' }}
-                              >
-                                <line x1="14" y1="4" x2="10" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
-                                <ellipse cx="8" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
-                                <ellipse cx="6" cy="23" rx="3.5" ry="1.8" fill="#F7931E" />
-                              </motion.g>
-
-                              <motion.g
-                                animate={{
-                                  rotate: isLockedIntoX ? 0 : isAnticipation ? 10 : [28, -24, 28],
-                                  y: isLockedIntoX ? 0 : isAnticipation ? 0 : [-3, 0, -3],
-                                }}
-                                transition={{
-                                  duration: 0.32,
-                                  repeat: isRunning ? Infinity : 0,
-                                  ease: 'easeInOut',
-                                }}
-                                style={{ transformOrigin: '26px 4px' }}
-                              >
-                                <line x1="26" y1="4" x2="30" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
-                                <ellipse cx="32" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
-                                <ellipse cx="34" cy="23" rx="3.5" ry="1.8" fill="#F7931E" />
-                              </motion.g>
-                            </svg>
-                          </div>
-
-                          {/* 3. Outer Left Arm & Hand (z-index: 3) */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: '-12px',
-                              top: '38px',
-                              width: '24px',
-                              height: '28px',
-                              zIndex: 3,
-                              pointerEvents: 'none',
-                              overflow: 'visible',
-                            }}
-                          >
-                            <svg width="24" height="28" viewBox="0 0 24 28" fill="none" style={{ overflow: 'visible' }}>
-                              <motion.g
-                                animate={{
-                                  rotate: isLockedIntoX ? 6 : isAnticipation ? -15 : isRunning ? [-20, 25, -20] : 0,
-                                  y: isLockedIntoX ? 0 : isRunning ? [-1, 2, -1] : 0,
-                                }}
-                                transition={{
-                                  duration: 0.34,
-                                  repeat: isRunning ? Infinity : 0,
-                                  ease: 'easeInOut',
-                                }}
-                                style={{ transformOrigin: '20px 4px' }}
-                              >
-                                <path
-                                  d="M 20 4 C 12 6, 4 14, 6 22"
-                                  stroke="#1E293B"
-                                  strokeWidth="4.5"
-                                  strokeLinecap="round"
-                                  fill="none"
-                                />
-                                <circle cx="6" cy="22" r="3.8" fill="#0F172A" />
-                              </motion.g>
-                            </svg>
-                          </div>
-
-                          {/* 4. Mascot Face Layer (z-index: 4) - Always visible on front surface */}
-                          <div
-                            className="absolute top-4 left-1/2 -translate-x-1/2 w-6 h-5 pointer-events-none"
-                            style={{ zIndex: 4, overflow: 'visible' }}
-                          >
-                            <svg width="24" height="20" viewBox="0 0 24 20" fill="none" style={{ overflow: 'visible' }}>
+                          {/* PRESERVED CUTE MASCOT FACE ON THE LEFT BAR */}
+                          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-6 h-5 pointer-events-none">
+                            <svg width="24" height="20" viewBox="0 0 24 20" fill="none">
                               {/* Blinking Eyes */}
                               <motion.g
                                 animate={{ scaleY: [1, 1, 0.1, 1] }}
@@ -510,73 +416,9 @@ export default function XBuddyIntro({ onComplete }) {
                             </svg>
                           </div>
 
-                          {/* 5. Right Arm & Hand (Holding Papers) (z-index: 5) */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              right: '-16px',
-                              top: '36px',
-                              width: '32px',
-                              height: '32px',
-                              zIndex: 5,
-                              pointerEvents: 'none',
-                              overflow: 'visible',
-                            }}
-                          >
-                            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ overflow: 'visible' }}>
-                              <motion.g
-                                animate={{
-                                  rotate: isLockedIntoX ? 0 : isAnticipation ? 10 : isRunning ? [15, -15, 15] : 0,
-                                  y: isLockedIntoX ? 0 : isRunning ? [1, -2, 1] : 0,
-                                }}
-                                transition={{
-                                  duration: 0.34,
-                                  repeat: isRunning ? Infinity : 0,
-                                  ease: 'easeInOut',
-                                }}
-                                style={{ transformOrigin: '4px 8px' }}
-                              >
-                                <path
-                                  d="M 4 8 C 12 10, 20 14, 24 18"
-                                  stroke="#1E293B"
-                                  strokeWidth="4.5"
-                                  strokeLinecap="round"
-                                  fill="none"
-                                />
-                                <circle cx="24" cy="18" r="3.8" fill="#0F172A" />
-                              </motion.g>
-                            </svg>
-                          </div>
-
-                          {/* 6. Carried Printed Papers (z-index: 6) - Always in hand */}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              left: '26px',
-                              top: '36px',
-                              zIndex: 6,
-                              pointerEvents: 'none',
-                              overflow: 'visible',
-                            }}
-                          >
-                            <motion.div
-                              animate={{
-                                y: isLockedIntoX ? 0 : isAnticipation ? 0 : [-1.5, 2, -1.5],
-                                rotate: isLockedIntoX ? 0 : isAnticipation ? 0 : [-2, 3, -2],
-                              }}
-                              transition={{ duration: 0.32, repeat: isRunning ? Infinity : 0, ease: 'easeInOut' }}
-                              className="relative w-7 h-8 rounded-xs bg-white border border-slate-300 shadow-md p-1 flex flex-col gap-1 select-none"
-                            >
-                              <div className="w-3 h-1 rounded-xs bg-[#F7931E]" />
-                              <div className="w-full h-0.5 rounded-xs bg-slate-400" />
-                              <div className="w-3/4 h-0.5 rounded-xs bg-slate-300" />
-                              <div className="w-4/5 h-0.5 rounded-xs bg-slate-300" />
-                            </motion.div>
-                          </div>
-
-                          {/* 7. Motion Wind Trail Lines (Running Phases) (z-index: 7) */}
+                          {/* Motion Wind Trail Lines (Running Phases) */}
                           {isRunning && (
-                            <div className="absolute -left-7 top-6 pointer-events-none opacity-70" style={{ zIndex: 7 }}>
+                            <div className="absolute -left-7 top-6 pointer-events-none opacity-70">
                               <motion.div
                                 animate={{ x: [-8, 4, -8], opacity: [0.4, 0.9, 0.4] }}
                                 transition={{ duration: 0.35, repeat: Infinity }}
@@ -589,12 +431,72 @@ export default function XBuddyIntro({ onComplete }) {
                               />
                             </div>
                           )}
+
+                          {/* RUNNING LEGS FOR CHARACTERSLASH (Fold away on lock) */}
+                          {!isLockedIntoX && (
+                            <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 pointer-events-none">
+                              <svg width="40" height="32" viewBox="0 0 40 32" fill="none">
+                                <motion.g
+                                  animate={{
+                                    rotate: isAnticipation ? -10 : [-24, 28, -24],
+                                    y: isAnticipation ? 0 : [0, -3, 0],
+                                  }}
+                                  transition={{
+                                    duration: 0.32,
+                                    repeat: isAnticipation ? 0 : Infinity,
+                                    ease: 'easeInOut',
+                                  }}
+                                  style={{ transformOrigin: '14px 4px' }}
+                                >
+                                  <line x1="14" y1="4" x2="10" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
+                                  <ellipse cx="8" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
+                                  <ellipse cx="6" cy="23" rx="3.5" ry="1.8" fill="#F7931E" />
+                                </motion.g>
+
+                                <motion.g
+                                  animate={{
+                                    rotate: isAnticipation ? 10 : [28, -24, 28],
+                                    y: isAnticipation ? 0 : [-3, 0, -3],
+                                  }}
+                                  transition={{
+                                    duration: 0.32,
+                                    repeat: isAnticipation ? 0 : Infinity,
+                                    ease: 'easeInOut',
+                                  }}
+                                  style={{ transformOrigin: '26px 4px' }}
+                                >
+                                  <line x1="26" y1="4" x2="30" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
+                                  <ellipse cx="32" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
+                                  <ellipse cx="34" cy="23" rx="3.5" ry="1.8" fill="#F7931E" />
+                                </motion.g>
+                              </svg>
+                            </div>
+                          )}
+
+                          {/* CARRIED PRINTED PAPERS */}
+                          {!isLockedIntoX && (
+                            <div className="absolute -right-7 top-10 pointer-events-none">
+                              <motion.div
+                                animate={{
+                                  y: isAnticipation ? 0 : [-1, 2, -1],
+                                  rotate: isAnticipation ? 0 : [-2, 3, -2],
+                                }}
+                                transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
+                                className="relative w-6 h-7 rounded-xs bg-white border border-slate-300 shadow-md p-1 flex flex-col gap-1"
+                              >
+                                <div className="w-2.5 h-1 rounded-xs bg-[#F7931E]" />
+                                <div className="w-full h-0.5 rounded-xs bg-slate-400" />
+                                <div className="w-3/4 h-0.5 rounded-xs bg-slate-300" />
+                                <div className="w-4/5 h-0.5 rounded-xs bg-slate-300" />
+                              </motion.div>
+                            </div>
+                          )}
                         </motion.div>
                       </div>
 
 
                       {/* ==========================================================
-                          CHARACTERBACKSLASH ANCHOR (RIGHT BUDDY)
+                          CHARACTERBACKSLASH ANCHOR
                           - position: absolute; left: 50%; top: 50%
                           - transform: translate(-50%, -50%)
                           - width: 28px, height: 116px (IDENTICAL to CharacterSlash)
@@ -610,11 +512,9 @@ export default function XBuddyIntro({ onComplete }) {
                             height: '116px',
                             transform: 'translate(-50%, -50%)',
                             transformOrigin: '50% 50%',
-                            overflow: 'visible',
-                            zIndex: 11,
                           }}
                         >
-                          {/* ANIMATED ROTATION & MOVEMENT LAYER OF CHARACTERBACKSLASH:
+                          {/* ANIMATED BODY OF CHARACTERBACKSLASH:
                               Moves diagonally DOWN-LEFT through center and rotates to -45deg.
                               Ends at EXACT center (0, 0) with rotate: -45deg.
                           */}
@@ -623,8 +523,6 @@ export default function XBuddyIntro({ onComplete }) {
                               width: '100%',
                               height: '100%',
                               transformOrigin: '50% 50%',
-                              position: 'relative',
-                              overflow: 'visible',
                             }}
                             initial={{ x: 240, y: 0, rotate: -24, opacity: 0 }}
                             animate={{
@@ -688,198 +586,14 @@ export default function XBuddyIntro({ onComplete }) {
                               scale: { duration: 0.5, ease: 'easeOut' },
                               opacity: { duration: 0.3 },
                             }}
-                            className="cursor-default"
+                            className="relative w-full h-full rounded-full bg-gradient-to-tl from-[#D97706] via-[#F7931E] to-[#FFBA3B] shadow-md flex items-center justify-center cursor-default"
                           >
-                            {/* 1. CharacterBody (z-index: 1) */}
-                            <div
-                              className="absolute inset-0 rounded-full bg-gradient-to-tl from-[#D97706] via-[#F7931E] to-[#FFBA3B] shadow-md"
-                              style={{ zIndex: 1, overflow: 'visible' }}
-                            >
-                              {/* 3D Gloss Highlight Stripe */}
-                              <div className="absolute top-1.5 right-1.5 bottom-1.5 w-2 rounded-full bg-gradient-to-b from-white/55 to-transparent pointer-events-none" />
-                            </div>
+                            {/* 3D Gloss Highlight Stripe */}
+                            <div className="absolute top-1.5 right-1.5 bottom-1.5 w-2 rounded-full bg-gradient-to-b from-white/55 to-transparent pointer-events-none" />
 
-                            {/* 2. Legs (z-index: 2) - Visible during running and settled into grounded stance */}
-                            <div
-                              className="absolute -bottom-7 left-1/2 -translate-x-1/2 pointer-events-none"
-                              style={{ zIndex: 2, overflow: 'visible' }}
-                            >
-                              <svg width="40" height="32" viewBox="0 0 40 32" fill="none" style={{ overflow: 'visible' }}>
-                                <motion.g
-                                  animate={{
-                                    rotate: isLockedIntoX ? 0 : isAnticipation ? 10 : [28, -24, 28],
-                                    y: isLockedIntoX ? 0 : isAnticipation ? 0 : [-3, 0, -3],
-                                  }}
-                                  transition={{
-                                    duration: 0.32,
-                                    repeat: isRunning ? Infinity : 0,
-                                    ease: 'easeInOut',
-                                  }}
-                                  style={{ transformOrigin: '14px 4px' }}
-                                >
-                                  <line x1="14" y1="4" x2="10" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
-                                  <ellipse cx="8" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
-                                  <ellipse cx="6" cy="23" rx="3.5" ry="1.8" fill="#FBBF24" />
-                                </motion.g>
-
-                                <motion.g
-                                  animate={{
-                                    rotate: isLockedIntoX ? 0 : isAnticipation ? -10 : [-24, 28, -24],
-                                    y: isLockedIntoX ? 0 : isAnticipation ? 0 : [0, -3, 0],
-                                  }}
-                                  transition={{
-                                    duration: 0.32,
-                                    repeat: isRunning ? Infinity : 0,
-                                    ease: 'easeInOut',
-                                  }}
-                                  style={{ transformOrigin: '26px 4px' }}
-                                >
-                                  <line x1="26" y1="4" x2="30" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
-                                  <ellipse cx="32" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
-                                  <ellipse cx="34" cy="23" rx="3.5" ry="1.8" fill="#FBBF24" />
-                                </motion.g>
-                              </svg>
-                            </div>
-
-                            {/* 3. Outer Right Arm & Hand (z-index: 3) */}
-                            <div
-                              style={{
-                                position: 'absolute',
-                                right: '-12px',
-                                top: '38px',
-                                width: '24px',
-                                height: '28px',
-                                zIndex: 3,
-                                pointerEvents: 'none',
-                                overflow: 'visible',
-                              }}
-                            >
-                              <svg width="24" height="28" viewBox="0 0 24 28" fill="none" style={{ overflow: 'visible' }}>
-                                <motion.g
-                                  animate={{
-                                    rotate: isLockedIntoX ? -6 : isAnticipation ? 15 : isRunning ? [20, -25, 20] : 0,
-                                    y: isLockedIntoX ? 0 : isRunning ? [-1, 2, -1] : 0,
-                                  }}
-                                  transition={{
-                                    duration: 0.34,
-                                    repeat: isRunning ? Infinity : 0,
-                                    ease: 'easeInOut',
-                                  }}
-                                  style={{ transformOrigin: '4px 4px' }}
-                                >
-                                  <path
-                                    d="M 4 4 C 12 6, 20 14, 18 22"
-                                    stroke="#1E293B"
-                                    strokeWidth="4.5"
-                                    strokeLinecap="round"
-                                    fill="none"
-                                  />
-                                  <circle cx="18" cy="22" r="3.8" fill="#0F172A" />
-                                </motion.g>
-                              </svg>
-                            </div>
-
-                            {/* 4. Cute Mascot Face for Right Buddy (z-index: 4) */}
-                            <div
-                              className="absolute top-4 left-1/2 -translate-x-1/2 w-6 h-5 pointer-events-none"
-                              style={{ zIndex: 4, overflow: 'visible' }}
-                            >
-                              <svg width="24" height="20" viewBox="0 0 24 20" fill="none" style={{ overflow: 'visible' }}>
-                                {/* Blinking / Expressive Eyes */}
-                                <motion.g
-                                  animate={{ scaleY: [1, 1, 0.1, 1] }}
-                                  transition={{ duration: 2.4, repeat: Infinity, times: [0, 0.85, 0.9, 1], delay: 0.3 }}
-                                  style={{ transformOrigin: '12px 6px' }}
-                                >
-                                  <circle cx="7" cy="6" r="2.8" fill="#0F172A" />
-                                  <circle cx="7.9" cy="5.1" r="1.1" fill="#FFFFFF" />
-
-                                  <circle cx="17" cy="6" r="2.8" fill="#0F172A" />
-                                  <circle cx="17.9" cy="5.1" r="1.1" fill="#FFFFFF" />
-                                </motion.g>
-
-                                {/* Smile Mouth */}
-                                <path
-                                  d="M 7 13 Q 12 18 17 13"
-                                  stroke="#0F172A"
-                                  strokeWidth="1.8"
-                                  strokeLinecap="round"
-                                  fill="none"
-                                />
-
-                                {/* Rosy Cheeks */}
-                                <circle cx="4" cy="11" r="1.6" fill="#D97706" opacity="0.45" />
-                                <circle cx="20" cy="11" r="1.6" fill="#D97706" opacity="0.45" />
-                              </svg>
-                            </div>
-
-                            {/* 5. Left Arm & Hand (Holding Package) (z-index: 5) */}
-                            <div
-                              style={{
-                                position: 'absolute',
-                                left: '-20px',
-                                top: '36px',
-                                width: '32px',
-                                height: '32px',
-                                zIndex: 5,
-                                pointerEvents: 'none',
-                                overflow: 'visible',
-                              }}
-                            >
-                              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ overflow: 'visible' }}>
-                                <motion.g
-                                  animate={{
-                                    rotate: isLockedIntoX ? 0 : isAnticipation ? -10 : isRunning ? [-15, 15, -15] : 0,
-                                    y: isLockedIntoX ? 0 : isRunning ? [1, -2, 1] : 0,
-                                  }}
-                                  transition={{
-                                    duration: 0.34,
-                                    repeat: isRunning ? Infinity : 0,
-                                    ease: 'easeInOut',
-                                  }}
-                                  style={{ transformOrigin: '28px 8px' }}
-                                >
-                                  <path
-                                    d="M 28 8 C 20 10, 12 14, 8 18"
-                                    stroke="#1E293B"
-                                    strokeWidth="4.5"
-                                    strokeLinecap="round"
-                                    fill="none"
-                                  />
-                                  <circle cx="8" cy="18" r="3.8" fill="#0F172A" />
-                                </motion.g>
-                              </svg>
-                            </div>
-
-                            {/* 6. Carried Courier Package (z-index: 6) - Always in hand */}
-                            <div
-                              style={{
-                                position: 'absolute',
-                                right: '26px',
-                                top: '36px',
-                                zIndex: 6,
-                                pointerEvents: 'none',
-                                overflow: 'visible',
-                              }}
-                            >
-                              <motion.div
-                                animate={{
-                                  y: isLockedIntoX ? 0 : isAnticipation ? 0 : [-1.5, 2, -1.5],
-                                  rotate: isLockedIntoX ? 0 : isAnticipation ? 0 : [2, -3, 2],
-                                }}
-                                transition={{ duration: 0.32, repeat: isRunning ? Infinity : 0, ease: 'easeInOut' }}
-                                className="w-7 h-8 rounded-xs bg-[#F59E0B] border border-[#D97706] shadow-md p-1 flex flex-col items-center justify-center select-none"
-                              >
-                                <div className="w-5 h-2 rounded-xs border-t border-[#D97706] mb-1" />
-                                <div className="w-3 h-3 rounded-full bg-white flex items-center justify-center">
-                                  <span className="text-[7px] font-bold text-[#D97706]">✓</span>
-                                </div>
-                              </motion.div>
-                            </div>
-
-                            {/* 7. Motion Wind Trail Lines (Running Phases) (z-index: 7) */}
+                            {/* Motion Wind Trail Lines */}
                             {isRunning && (
-                              <div className="absolute -right-7 top-6 pointer-events-none opacity-70" style={{ zIndex: 7 }}>
+                              <div className="absolute -right-7 top-6 pointer-events-none opacity-70">
                                 <motion.div
                                   animate={{ x: [8, -4, 8], opacity: [0.4, 0.9, 0.4] }}
                                   transition={{ duration: 0.35, repeat: Infinity }}
@@ -890,6 +604,66 @@ export default function XBuddyIntro({ onComplete }) {
                                   transition={{ duration: 0.3, repeat: Infinity, delay: 0.1 }}
                                   className="w-6 h-0.5 rounded-full bg-[#FBBF24] ml-auto"
                                 />
+                              </div>
+                            )}
+
+                            {/* RUNNING LEGS FOR CHARACTERBACKSLASH */}
+                            {!isLockedIntoX && (
+                              <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 pointer-events-none">
+                                <svg width="40" height="32" viewBox="0 0 40 32" fill="none">
+                                  <motion.g
+                                    animate={{
+                                      rotate: isAnticipation ? 10 : [28, -24, 28],
+                                      y: isAnticipation ? 0 : [-3, 0, -3],
+                                    }}
+                                    transition={{
+                                      duration: 0.32,
+                                      repeat: isAnticipation ? 0 : Infinity,
+                                      ease: 'easeInOut',
+                                    }}
+                                    style={{ transformOrigin: '14px 4px' }}
+                                  >
+                                    <line x1="14" y1="4" x2="10" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
+                                    <ellipse cx="8" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
+                                    <ellipse cx="6" cy="23" rx="3.5" ry="1.8" fill="#FBBF24" />
+                                  </motion.g>
+
+                                  <motion.g
+                                    animate={{
+                                      rotate: isAnticipation ? -10 : [-24, 28, -24],
+                                      y: isAnticipation ? 0 : [0, -3, 0],
+                                    }}
+                                    transition={{
+                                      duration: 0.32,
+                                      repeat: isAnticipation ? 0 : Infinity,
+                                      ease: 'easeInOut',
+                                    }}
+                                    style={{ transformOrigin: '26px 4px' }}
+                                  >
+                                    <line x1="26" y1="4" x2="30" y2="20" stroke="#1E293B" strokeWidth="4.5" strokeLinecap="round" />
+                                    <ellipse cx="32" cy="22" rx="6.5" ry="3.5" fill="#0F172A" />
+                                    <ellipse cx="34" cy="23" rx="3.5" ry="1.8" fill="#FBBF24" />
+                                  </motion.g>
+                                </svg>
+                              </div>
+                            )}
+
+                            {/* CARRIED COURIER PACKAGE */}
+                            {!isLockedIntoX && (
+                              <div className="absolute -left-7 top-10 pointer-events-none">
+                                <motion.div
+                                  animate={{
+                                    y: isAnticipation ? 0 : [-1, 2, -1],
+                                    rotate: isAnticipation ? 0 : [2, -3, 2],
+                                  }}
+                                  transition={{ duration: 0.32, repeat: isAnticipation ? 0 : Infinity, ease: 'easeInOut' }}
+                                  className="w-6 h-7 rounded-xs bg-[#F59E0B] border border-[#D97706] shadow-md p-0.5 flex flex-col items-center justify-center"
+                                >
+                                  <div className="w-4 h-2 rounded-xs border-t border-[#D97706] mb-1" />
+                                  <div className="w-2.5 h-2.5 rounded-full bg-white flex items-center justify-center">
+                                    <span className="text-[6px] font-bold text-[#D97706]">✓</span>
+                                  </div>
+                                </motion.div>
                               </div>
                             )}
                           </motion.div>
