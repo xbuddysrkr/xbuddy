@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { jsPDF } from 'jspdf'
 import { DOC_TYPES, generateDocument, getDocTitle } from '../utils/letterTemplates'
+import EditableText from '../resume-builder/components/EditableText'
 
 // ── SVG Icons (no emojis) ─────────────────────────────────────────────────────
 const ICONS = {
@@ -41,27 +42,28 @@ const FIELD_META = {
   extra:      { label: 'Additional Details',   placeholder: 'Any extra info (optional)'},
 }
 
-// ── PDF export via html2canvas → jsPDF (pixel-perfect, no blank pages) ────────
-// Export plain text to PDF using jsPDF (avoids html2canvas reliability issues)
+const today = () => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+
+// ── PDF export via jsPDF ───────────────────────────────────────────────────────
 async function exportToPdf(text, filename, opts = {}) {
   const fontSize = opts.fontSize || 11 // pt
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
   const pageW = pdf.internal.pageSize.getWidth()
   const pageH = pdf.internal.pageSize.getHeight()
-  const margin = 12
+  const margin = 14
   const maxW = pageW - margin * 2
 
   pdf.setFont('Times', 'Roman')
   pdf.setFontSize(fontSize)
 
   const lines = pdf.splitTextToSize(text, maxW)
-  const lineHeightMm = (fontSize * 0.352777778) * 1.25
-  let y = margin
+  const lineHeightMm = (fontSize * 0.352777778) * 1.3
+  let y = margin + 5
 
   for (let i = 0; i < lines.length; i++) {
     if (y + lineHeightMm > pageH - margin) {
       pdf.addPage()
-      y = margin
+      y = margin + 5
     }
     pdf.text(String(lines[i]), margin, y)
     y += lineHeightMm
@@ -70,87 +72,710 @@ async function exportToPdf(text, filename, opts = {}) {
   return pdf
 }
 
-// ── Document Modal ────────────────────────────────────────────────────────────
-// Extracted form panel to top-level to avoid remounts/resetting cursor
+// ── Left Form Panel ────────────────────────────────────────────────────────────
 function FormPanel({ fields, form, onChange, onGenerate }) {
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3.5 scrollbar-thin">
-      <p className="text-slate-900 text-xs sm:text-sm font-extrabold uppercase tracking-wider mb-2.5">Document Details</p>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-slate-900 text-xs sm:text-sm font-extrabold uppercase tracking-wider">
+          Document Details
+        </p>
+        <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">
+          Live Synced ⚡
+        </span>
+      </div>
+
       {fields.map(field => {
         const meta = FIELD_META[field]
         return (
           <div key={field}>
-            <label className="text-slate-900 text-xs sm:text-sm font-bold mb-1.5 block">{meta.label}</label>
-            {field === 'extra' ? (
+            <label className="text-slate-900 text-xs sm:text-sm font-bold mb-1.5 block">
+              {meta.label}
+            </label>
+            {field === 'extra' || field === 'reason' ? (
               <textarea
-                value={form[field]}
+                value={form[field] || ''}
                 onChange={e => onChange(field, e.target.value)}
                 placeholder={meta.placeholder}
-                rows={3}
-                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-xl px-3 py-2 text-slate-900 font-medium text-xs sm:text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all resize-none"
+                rows={field === 'extra' ? 3 : 2}
+                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-xl px-3 py-2 text-slate-900 font-medium text-xs sm:text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all resize-none shadow-2xs"
               />
             ) : (
               <input
                 type="text"
-                value={form[field]}
+                value={form[field] || ''}
                 onChange={e => onChange(field, e.target.value)}
                 placeholder={meta.placeholder}
-                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-xl px-3 py-2 text-slate-900 font-medium text-xs sm:text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all"
+                className="w-full bg-[#FFF8F2] border border-orange-200 rounded-xl px-3 py-2 text-slate-900 font-medium text-xs sm:text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all shadow-2xs"
               />
             )}
           </div>
         )
       })}
+
       <button
+        type="button"
         onClick={onGenerate}
         className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-extrabold text-sm rounded-xl transition-all mt-3 shadow-md shadow-orange-500/20 active:scale-95 cursor-pointer"
       >
-        Generate Document
+        View Full Document Preview →
       </button>
     </div>
   )
 }
 
-// Extracted preview panel to top-level to avoid remounts/resetting cursor
-function PreviewPanel({ generated, content, fontSize, setFontSize, exporting, onDownload, onPrint, toast }) {
-  return (
-    <div className="h-full flex flex-col overflow-hidden bg-[#FAFAFA]">
-      {/* toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-orange-100 flex-shrink-0 gap-2 flex-wrap bg-white">
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setFontSize(s => Math.max(8, s - 1))}
-            className="w-7 h-7 rounded-lg bg-orange-50 hover:bg-orange-100 border border-orange-200 text-[#F78C25] text-xs font-bold transition-all flex items-center justify-center"
-          >A-</button>
-          <span className="text-gray-500 text-xs w-8 text-center">{fontSize}pt</span>
-          <button
-            onClick={() => setFontSize(s => Math.min(18, s + 1))}
-            className="w-7 h-7 rounded-lg bg-orange-50 hover:bg-orange-100 border border-orange-200 text-[#F78C25] text-xs font-bold transition-all flex items-center justify-center"
-          >A+</button>
+// ── Interactive Document Canvas (True Two-Way Synchronization) ──────────────────
+function AcademicDocCanvas({ docType, form, onChange }) {
+  const date = today()
+
+  // Standard College Letters (Leave, Bonafide, Internship, Permission, Apology, Scholarship)
+  if (['leave', 'bonafide', 'internship', 'permission', 'apology', 'scholarship'].includes(docType.id)) {
+    return (
+      <div className="space-y-4">
+        {/* Header Block */}
+        <div>Date: {date}</div>
+
+        <div className="pt-2">
+          <div>To,</div>
+          <div>
+            <EditableText
+              value={form.receiver}
+              placeholder="The HOD / Principal"
+              onChange={v => onChange('receiver', v)}
+            />,
+          </div>
+          <div>
+            Department of{' '}
+            <EditableText
+              value={form.department}
+              placeholder="Computer Science"
+              onChange={v => onChange('department', v)}
+            />,
+          </div>
+          <div>
+            <EditableText
+              value={form.college}
+              placeholder="ABC Engineering College"
+              onChange={v => onChange('college', v)}
+            />
+          </div>
         </div>
-        {generated && (
-          <div className="flex items-center gap-1.5">
+
+        {/* Subject Line */}
+        <div className="pt-3 font-bold text-slate-900">
+          {docType.id === 'leave' && (
+            <span>
+              Sub: Application for Leave —{' '}
+              <EditableText
+                value={form.days}
+                placeholder="3"
+                onChange={v => onChange('days', v)}
+              />{' '}
+              Day(s)
+            </span>
+          )}
+          {docType.id === 'bonafide' && (
+            <span>Sub: Request for Bonafide Certificate</span>
+          )}
+          {docType.id === 'internship' && (
+            <span>
+              Sub: Request for Permission to Attend Internship —{' '}
+              <EditableText
+                value={form.weeks || form.days}
+                placeholder="4"
+                onChange={v => onChange('weeks', v)}
+              />{' '}
+              Week(s)
+            </span>
+          )}
+          {docType.id === 'permission' && (
+            <span>
+              Sub: Request for Permission —{' '}
+              <EditableText
+                value={form.reason}
+                placeholder="Campus Technical Symposium"
+                onChange={v => onChange('reason', v)}
+              />
+            </span>
+          )}
+          {docType.id === 'apology' && (
+            <span>
+              Sub: Apology Letter —{' '}
+              <EditableText
+                value={form.reason}
+                placeholder="Late arrival to laboratory session"
+                onChange={v => onChange('reason', v)}
+              />
+            </span>
+          )}
+          {docType.id === 'scholarship' && (
+            <span>Sub: Application for Merit / Need-Based Scholarship</span>
+          )}
+        </div>
+
+        <div>Respected Sir/Madam,</div>
+
+        {/* Dynamic Letter Body */}
+        <div className="space-y-3.5 leading-relaxed">
+          {docType.id === 'leave' && (
+            <>
+              <p>
+                I am{' '}
+                <EditableText
+                  value={form.name}
+                  placeholder="Rahul Sharma"
+                  onChange={v => onChange('name', v)}
+                />
+                , a student of{' '}
+                <EditableText
+                  value={form.year}
+                  placeholder="II Year / 3rd Sem"
+                  onChange={v => onChange('year', v)}
+                />
+                , Department of{' '}
+                <EditableText
+                  value={form.department}
+                  placeholder="Computer Science"
+                  onChange={v => onChange('department', v)}
+                />{' '}
+                (Roll No:{' '}
+                <EditableText
+                  value={form.rollNo}
+                  placeholder="21CS045"
+                  onChange={v => onChange('rollNo', v)}
+                />
+                ). I am writing to respectfully request leave for{' '}
+                <EditableText
+                  value={form.days}
+                  placeholder="3"
+                  onChange={v => onChange('days', v)}
+                />{' '}
+                day(s).
+              </p>
+              <p>
+                Reason:{' '}
+                <EditableText
+                  value={form.reason}
+                  placeholder="Medical emergency and doctor's prescribed rest"
+                  multiline
+                  onChange={v => onChange('reason', v)}
+                />
+                .
+              </p>
+              {form.extra ? (
+                <p>
+                  Additional details:{' '}
+                  <EditableText
+                    value={form.extra}
+                    placeholder="Doctor prescription attached"
+                    multiline
+                    onChange={v => onChange('extra', v)}
+                  />
+                </p>
+              ) : null}
+              <p>
+                I assure you that I will complete all pending academic work upon my return. I kindly request you to grant me the leave and oblige.
+              </p>
+            </>
+          )}
+
+          {docType.id === 'bonafide' && (
+            <>
+              <p>
+                I am{' '}
+                <EditableText
+                  value={form.name}
+                  placeholder="Rahul Sharma"
+                  onChange={v => onChange('name', v)}
+                />
+                , a student of{' '}
+                <EditableText
+                  value={form.year}
+                  placeholder="II Year / 3rd Sem"
+                  onChange={v => onChange('year', v)}
+                />
+                , Department of{' '}
+                <EditableText
+                  value={form.department}
+                  placeholder="Computer Science"
+                  onChange={v => onChange('department', v)}
+                />{' '}
+                (Roll No:{' '}
+                <EditableText
+                  value={form.rollNo}
+                  placeholder="21CS045"
+                  onChange={v => onChange('rollNo', v)}
+                />
+                ).
+              </p>
+              <p>
+                I am writing to request a Bonafide Certificate for the purpose of:{' '}
+                <EditableText
+                  value={form.reason}
+                  placeholder="applying for education loan and passport verification"
+                  multiline
+                  onChange={v => onChange('reason', v)}
+                />
+                .
+              </p>
+              {form.extra ? (
+                <p>
+                  Details:{' '}
+                  <EditableText
+                    value={form.extra}
+                    placeholder="Application reference number #98234"
+                    multiline
+                    onChange={v => onChange('extra', v)}
+                  />
+                </p>
+              ) : null}
+              <p>
+                I kindly request you to issue the certificate at the earliest. I shall be highly grateful for your kind support.
+              </p>
+            </>
+          )}
+
+          {docType.id === 'internship' && (
+            <>
+              <p>
+                I am{' '}
+                <EditableText
+                  value={form.name}
+                  placeholder="Rahul Sharma"
+                  onChange={v => onChange('name', v)}
+                />
+                , a student of{' '}
+                <EditableText
+                  value={form.year}
+                  placeholder="II Year / 3rd Sem"
+                  onChange={v => onChange('year', v)}
+                />
+                , Department of{' '}
+                <EditableText
+                  value={form.department}
+                  placeholder="Computer Science"
+                  onChange={v => onChange('department', v)}
+                />{' '}
+                (Roll No:{' '}
+                <EditableText
+                  value={form.rollNo}
+                  placeholder="21CS045"
+                  onChange={v => onChange('rollNo', v)}
+                />
+                ).
+              </p>
+              <p>
+                I have been offered an internship opportunity for a duration of{' '}
+                <EditableText
+                  value={form.weeks || form.days}
+                  placeholder="4"
+                  onChange={v => onChange('weeks', v)}
+                />{' '}
+                week(s).
+              </p>
+              <p>
+                Company / Details:{' '}
+                <EditableText
+                  value={form.reason}
+                  placeholder="Software Development Intern at TechCorp Solutions"
+                  multiline
+                  onChange={v => onChange('reason', v)}
+                />
+                .
+              </p>
+              {form.extra ? (
+                <p>
+                  Note:{' '}
+                  <EditableText
+                    value={form.extra}
+                    placeholder="Offer letter attached"
+                    multiline
+                    onChange={v => onChange('extra', v)}
+                  />
+                </p>
+              ) : null}
+              <p>
+                I humbly request your permission and necessary NOC to attend this internship, which will greatly contribute to my professional development.
+              </p>
+            </>
+          )}
+
+          {docType.id === 'permission' && (
+            <>
+              <p>
+                I am{' '}
+                <EditableText
+                  value={form.name}
+                  placeholder="Rahul Sharma"
+                  onChange={v => onChange('name', v)}
+                />
+                , a student of{' '}
+                <EditableText
+                  value={form.year}
+                  placeholder="II Year / 3rd Sem"
+                  onChange={v => onChange('year', v)}
+                />
+                , Department of{' '}
+                <EditableText
+                  value={form.department}
+                  placeholder="Computer Science"
+                  onChange={v => onChange('department', v)}
+                />{' '}
+                (Roll No:{' '}
+                <EditableText
+                  value={form.rollNo}
+                  placeholder="21CS045"
+                  onChange={v => onChange('rollNo', v)}
+                />
+                ).
+              </p>
+              <p>
+                I am writing to seek your kind permission for:{' '}
+                <EditableText
+                  value={form.reason}
+                  placeholder="organizing the inter-college hackathon event"
+                  multiline
+                  onChange={v => onChange('reason', v)}
+                />
+                .
+              </p>
+              {form.extra ? (
+                <p>
+                  Additional Details:{' '}
+                  <EditableText
+                    value={form.extra}
+                    placeholder="Scheduled on 15th October at Main Auditorium"
+                    multiline
+                    onChange={v => onChange('extra', v)}
+                  />
+                </p>
+              ) : null}
+              <p>
+                I assure you that this will not affect my academic commitments. I kindly request you to grant permission and oblige.
+              </p>
+            </>
+          )}
+
+          {docType.id === 'apology' && (
+            <>
+              <p>
+                I am{' '}
+                <EditableText
+                  value={form.name}
+                  placeholder="Rahul Sharma"
+                  onChange={v => onChange('name', v)}
+                />
+                , a student of{' '}
+                <EditableText
+                  value={form.year}
+                  placeholder="II Year / 3rd Sem"
+                  onChange={v => onChange('year', v)}
+                />
+                , Department of{' '}
+                <EditableText
+                  value={form.department}
+                  placeholder="Computer Science"
+                  onChange={v => onChange('department', v)}
+                />{' '}
+                (Roll No:{' '}
+                <EditableText
+                  value={form.rollNo}
+                  placeholder="21CS045"
+                  onChange={v => onChange('rollNo', v)}
+                />
+                ).
+              </p>
+              <p>
+                I am writing this letter to sincerely apologize for{' '}
+                <EditableText
+                  value={form.reason}
+                  placeholder="my unintentional absence from the internal examination"
+                  multiline
+                  onChange={v => onChange('reason', v)}
+                />
+                .
+              </p>
+              <p>
+                I deeply regret my actions and understand the inconvenience caused.{' '}
+                {form.extra ? (
+                  <EditableText
+                    value={form.extra}
+                    placeholder="Medical certificate is submitted herewith."
+                    multiline
+                    onChange={v => onChange('extra', v)}
+                  />
+                ) : null}
+              </p>
+              <p>
+                I assure you that such an incident will not recur in the future. I humbly request you to kindly forgive me and provide an opportunity to prove myself.
+              </p>
+            </>
+          )}
+
+          {docType.id === 'scholarship' && (
+            <>
+              <p>
+                I am{' '}
+                <EditableText
+                  value={form.name}
+                  placeholder="Rahul Sharma"
+                  onChange={v => onChange('name', v)}
+                />
+                , a student of{' '}
+                <EditableText
+                  value={form.year}
+                  placeholder="II Year / 3rd Sem"
+                  onChange={v => onChange('year', v)}
+                />
+                , Department of{' '}
+                <EditableText
+                  value={form.department}
+                  placeholder="Computer Science"
+                  onChange={v => onChange('department', v)}
+                />{' '}
+                (Roll No:{' '}
+                <EditableText
+                  value={form.rollNo}
+                  placeholder="21CS045"
+                  onChange={v => onChange('rollNo', v)}
+                />
+                ).
+              </p>
+              <p>
+                I am writing to formally apply for the scholarship offered by your institution.
+              </p>
+              <p>
+                Reason & Eligibility:{' '}
+                <EditableText
+                  value={form.reason}
+                  placeholder="Consistent 9.0+ CGPA and proven academic excellence"
+                  multiline
+                  onChange={v => onChange('reason', v)}
+                />
+                .
+              </p>
+              {form.extra ? (
+                <p>
+                  Supporting Info:{' '}
+                  <EditableText
+                    value={form.extra}
+                    placeholder="Income certificate and grade sheets attached"
+                    multiline
+                    onChange={v => onChange('extra', v)}
+                  />
+                </p>
+              ) : null}
+              <p>
+                I am a dedicated student and this scholarship will greatly support my academic journey. I kindly request you to consider my application favorably.
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Closing Block */}
+        <div className="pt-8">
+          <div>Thank you for your kind consideration.</div>
+          <div className="mt-4">Yours obediently,</div>
+          <div className="mt-6 font-bold text-slate-900">
+            <EditableText
+              value={form.name}
+              placeholder="Rahul Sharma"
+              onChange={v => onChange('name', v)}
+            />
+          </div>
+          <div>
+            Roll No:{' '}
+            <EditableText
+              value={form.rollNo}
+              placeholder="21CS045"
+              onChange={v => onChange('rollNo', v)}
+            />
+          </div>
+          <div>
+            <EditableText
+              value={form.year}
+              placeholder="II Year / 3rd Sem"
+              onChange={v => onChange('year', v)}
+            />{' '}
+            —{' '}
+            <EditableText
+              value={form.department}
+              placeholder="Computer Science"
+              onChange={v => onChange('department', v)}
+            />
+          </div>
+          <div>
+            <EditableText
+              value={form.college}
+              placeholder="ABC Engineering College"
+              onChange={v => onChange('college', v)}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Assignment Cover Page
+  if (docType.id === 'assignment') {
+    return (
+      <div className="text-center space-y-6">
+        <div className="border-b-2 border-slate-900 pb-4">
+          <h2 className="text-xl font-bold uppercase tracking-wider text-slate-900">
+            <EditableText value={form.college} placeholder="ABC Engineering College" onChange={v => onChange('college', v)} />
+          </h2>
+          <div className="text-sm font-semibold text-slate-700 mt-1">
+            Department of <EditableText value={form.department} placeholder="Computer Science & Engineering" onChange={v => onChange('department', v)} />
+          </div>
+        </div>
+
+        <div className="py-8">
+          <h1 className="text-3xl font-extrabold tracking-widest text-slate-900">
+            A S S I G N M E N T
+          </h1>
+        </div>
+
+        <div className="max-w-md mx-auto text-left space-y-4 text-sm bg-slate-50/60 p-6 rounded-xl border border-slate-200">
+          <div>
+            <strong>Topic / Subject: </strong>
+            <EditableText value={form.reason} placeholder="Data Structures & Algorithms" onChange={v => onChange('reason', v)} />
+          </div>
+          <div className="pt-3 border-t border-slate-200">
+            <div className="font-bold text-slate-900 mb-1">Submitted by:</div>
+            <div>Name: <EditableText value={form.name} placeholder="Rahul Sharma" onChange={v => onChange('name', v)} /></div>
+            <div>Roll No: <EditableText value={form.rollNo} placeholder="21CS045" onChange={v => onChange('rollNo', v)} /></div>
+            <div>Year / Sem: <EditableText value={form.year} placeholder="II Year / 3rd Sem" onChange={v => onChange('year', v)} /></div>
+          </div>
+          <div className="pt-3 border-t border-slate-200">
+            <div className="font-bold text-slate-900 mb-1">Submitted to:</div>
+            <div>Faculty: <EditableText value={form.receiver} placeholder="Dr. S. K. Verma" onChange={v => onChange('receiver', v)} /></div>
+          </div>
+        </div>
+
+        <div className="pt-6 border-t-2 border-slate-900 text-xs text-slate-600 flex justify-between">
+          <span>Date of Submission: {date}</span>
+          <span>Signature: ___________________</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Lab Record Cover Page
+  if (docType.id === 'lab') {
+    return (
+      <div className="text-center space-y-6">
+        <div className="border-b-2 border-slate-900 pb-4">
+          <h2 className="text-xl font-bold uppercase tracking-wider text-slate-900">
+            <EditableText value={form.college} placeholder="ABC Engineering College" onChange={v => onChange('college', v)} />
+          </h2>
+          <div className="text-sm font-semibold text-slate-700 mt-1">
+            Department of <EditableText value={form.department} placeholder="Computer Science & Engineering" onChange={v => onChange('department', v)} />
+          </div>
+        </div>
+
+        <div className="py-8">
+          <h1 className="text-3xl font-extrabold tracking-widest text-slate-900">
+            L A B   R E C O R D
+          </h1>
+        </div>
+
+        <div className="max-w-md mx-auto text-left space-y-4 text-sm bg-slate-50/60 p-6 rounded-xl border border-slate-200">
+          <div>
+            <strong>Subject / Lab: </strong>
+            <EditableText value={form.reason} placeholder="Operating Systems Laboratory" onChange={v => onChange('reason', v)} />
+          </div>
+          <div className="pt-3 border-t border-slate-200">
+            <div className="font-bold text-slate-900 mb-1">Student Record:</div>
+            <div>Name: <EditableText value={form.name} placeholder="Rahul Sharma" onChange={v => onChange('name', v)} /></div>
+            <div>Roll Number: <EditableText value={form.rollNo} placeholder="21CS045" onChange={v => onChange('rollNo', v)} /></div>
+            <div>Year / Branch: <EditableText value={form.year} placeholder="II Year / 3rd Sem" onChange={v => onChange('year', v)} /> — <EditableText value={form.department} placeholder="Computer Science" onChange={v => onChange('department', v)} /></div>
+          </div>
+          <div className="pt-3 border-t border-slate-200">
+            <div className="font-bold text-slate-900 mb-1">Faculty In-charge:</div>
+            <div>Faculty: <EditableText value={form.receiver} placeholder="Prof. A. R. Rao" onChange={v => onChange('receiver', v)} /></div>
+          </div>
+        </div>
+
+        <div className="pt-8 border-t-2 border-slate-900 text-xs text-slate-600 flex justify-between">
+          <span>Date: {date}</span>
+          <span>Lab In-charge Signature: ___________________</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Default / Plain Document
+  const plainText = generateDocument({ type: docType.id, ...form })
+  return (
+    <div className="whitespace-pre-wrap leading-relaxed">
+      {plainText}
+    </div>
+  )
+}
+
+// ── Preview Panel ─────────────────────────────────────────────────────────────
+function PreviewPanel({ docType, form, onChange, fontSize, setFontSize, exporting, onDownload, onPrint, toast }) {
+  return (
+    <div className="h-full flex flex-col overflow-hidden bg-[#FFFDF9]">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-orange-100 flex-shrink-0 gap-2 flex-wrap bg-white/95 backdrop-blur-md shadow-2xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1 bg-orange-50/70 border border-orange-200/80 rounded-xl px-2 py-1">
+            <span className="text-slate-600 text-xs font-semibold mr-1">Font</span>
             <button
-              onClick={onDownload}
-              disabled={exporting}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 border border-orange-200 disabled:opacity-50 text-gray-500 text-xs font-medium transition-all"
+              type="button"
+              onClick={() => setFontSize(s => Math.max(8, s - 1))}
+              className="w-6 h-6 rounded-lg bg-white hover:bg-orange-100 border border-orange-200 text-[#F78C25] text-xs font-bold transition-all flex items-center justify-center cursor-pointer shadow-2xs active:scale-90"
+              title="Decrease Font Size"
             >
-              {exporting
-                ? <div className="w-3 h-3 border border-gray-500 border-t-gray-300 rounded-full animate-spin" />
-                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-              }
-              <span className="hidden sm:inline">{exporting ? 'Generating...' : 'Download'}</span>
+              A−
             </button>
+            <span className="text-slate-700 font-bold text-xs w-8 text-center">{fontSize}pt</span>
             <button
-              onClick={onPrint}
-              disabled={exporting}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#F78C25] hover:bg-[#e07010] disabled:opacity-50 text-white text-xs font-semibold transition-all"
+              type="button"
+              onClick={() => setFontSize(s => Math.min(18, s + 1))}
+              className="w-6 h-6 rounded-lg bg-white hover:bg-orange-100 border border-orange-200 text-[#F78C25] text-xs font-bold transition-all flex items-center justify-center cursor-pointer shadow-2xs active:scale-90"
+              title="Increase Font Size"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" /></svg>
-              Print
+              A+
             </button>
           </div>
-        )}
+
+          <div className="hidden min-[480px]:flex items-center gap-1.5 ml-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-slate-500 text-xs font-medium">Click on document to edit</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-orange-50 border border-slate-200 hover:border-orange-300 text-slate-800 hover:text-[#F78C25] text-xs font-bold transition-all cursor-pointer shadow-2xs disabled:opacity-50 active:scale-95"
+          >
+            {exporting ? (
+              <div className="w-3.5 h-3.5 border-2 border-[#F78C25] border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+            )}
+            <span>{exporting ? 'Exporting...' : 'Download PDF'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onPrint}
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white text-xs font-bold shadow-md shadow-orange-500/20 hover:shadow-lg transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
+            </svg>
+            <span>Print with XBuddy</span>
+          </button>
+        </div>
       </div>
 
       <AnimatePresence>
@@ -159,52 +784,56 @@ function PreviewPanel({ generated, content, fontSize, setFontSize, exporting, on
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="mx-4 mt-2 px-4 py-2 rounded-xl bg-green-50 border border-green-200 text-green-600 text-xs text-center flex-shrink-0"
+            className="mx-4 mt-2 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold text-center flex-shrink-0"
           >
             {toast}
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center">
-        {generated ? (
-          <div
-            contentEditable
-            suppressContentEditableWarning
-            className="w-full max-w-[210mm] bg-white text-gray-900 rounded-sm shadow-xl border border-orange-100 px-6 py-10 sm:p-[22mm] whitespace-pre-wrap outline-none focus:ring-2 focus:ring-orange-200"
-            style={{
-              fontFamily: 'Georgia, serif',
-              fontSize:   `${fontSize}pt`,
-              lineHeight: fontSize <= 10 ? '1.6' : fontSize >= 14 ? '2.2' : '1.9',
-              minHeight:  '297mm',
-            }}
-          >
-            {content}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center text-center h-full min-h-[200px]">
-            <div className="w-14 h-14 rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25] mb-3">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-            </div>
-            <p className="text-gray-500 text-sm font-medium">Preview will appear here</p>
-            <p className="text-gray-400 text-xs mt-1">Fill the form and tap Generate</p>
-          </div>
-        )}
+      {/* A4 Document Canvas */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center bg-[#FFFDF9] bg-dot-pattern">
+        <div
+          className="w-full max-w-[210mm] bg-white text-slate-900 rounded-sm shadow-xl border border-orange-100/90 px-6 py-10 sm:p-[22mm] outline-none"
+          style={{
+            fontFamily: "'Georgia', 'Times New Roman', serif",
+            fontSize: `${fontSize}pt`,
+            lineHeight: fontSize <= 10 ? '1.6' : fontSize >= 14 ? '2.2' : '1.9',
+            minHeight: '297mm',
+          }}
+        >
+          <AcademicDocCanvas
+            docType={docType}
+            form={form}
+            onChange={onChange}
+          />
+        </div>
       </div>
     </div>
   )
 }
 
+// ── Document Modal with Full Two-Way Synchronization ───────────────────────────
 function DocModal({ docType, onClose, onPrint }) {
-  const EMPTY = { name:'', rollNo:'', year:'', department:'', college:'', receiver:'', reason:'', days:'', weeks:'', extra:'' }
-  const [form,      setForm]      = useState(EMPTY)
-  const [content,   setContent]   = useState('')
-  const [generated, setGenerated] = useState(false)
+  const EMPTY = {
+    name: '',
+    rollNo: '',
+    year: '',
+    department: '',
+    college: '',
+    receiver: '',
+    reason: '',
+    days: '',
+    weeks: '',
+    extra: '',
+  }
+
+  // ONE SINGLE SOURCE OF TRUTH FOR THE DOCUMENT
+  const [form, setForm] = useState(EMPTY)
   const [mobileTab, setMobileTab] = useState('form')
-  const [fontSize,  setFontSize]  = useState(11)       // pt
+  const [fontSize, setFontSize] = useState(11) // pt
   const [exporting, setExporting] = useState(false)
-  const [toast,     setToast]     = useState('')
-  
+  const [toast, setToast] = useState('')
 
   function showToast(msg) {
     setToast(msg)
@@ -213,26 +842,24 @@ function DocModal({ docType, onClose, onPrint }) {
 
   const fields = FIELDS[docType.id] || FIELDS.leave
 
+  // Two-way synchronization handler:
+  // Called by FormPanel inputs AND by AcademicDocCanvas EditableText elements!
   function handleChange(field, value) {
-    const updated = { ...form, [field]: value }
-    setForm(updated)
-    if (generated) setContent(generateDocument({ type: docType.id, ...updated }))
+    setForm(prev => ({ ...prev, [field]: value }))
   }
 
   function handleGenerate() {
-    const text = generateDocument({ type: docType.id, ...form })
-    setContent(text)
-    setGenerated(true)
-    setMobileTab('preview') // auto-switch to preview on mobile after generate
+    setMobileTab('preview')
+    showToast('✓ Document updated & live synchronized')
   }
 
   async function handleDownload() {
-    if (!generated || !content) return
     setExporting(true)
     try {
-      const pdf = await exportToPdf(content, docType.id, { fontSize })
+      const fullText = generateDocument({ type: docType.id, ...form })
+      const pdf = await exportToPdf(fullText, docType.id, { fontSize })
       pdf.save(`${docType.id}.pdf`)
-      showToast('PDF downloaded!')
+      showToast('PDF downloaded successfully!')
     } catch (e) {
       showToast('Export failed — try again')
     } finally {
@@ -241,10 +868,10 @@ function DocModal({ docType, onClose, onPrint }) {
   }
 
   async function handlePrint() {
-    if (!generated || !content) return
     setExporting(true)
     try {
-      const pdf  = await exportToPdf(content, docType.id, { fontSize })
+      const fullText = generateDocument({ type: docType.id, ...form })
+      const pdf = await exportToPdf(fullText, docType.id, { fontSize })
       const blob = pdf.output('blob')
       const file = new File([blob], `${docType.id}.pdf`, { type: 'application/pdf' })
       onPrint(file)
@@ -260,8 +887,6 @@ function DocModal({ docType, onClose, onPrint }) {
     window.addEventListener('keydown', fn)
     return () => window.removeEventListener('keydown', fn)
   }, [onClose])
-
-  
 
   return (
     <motion.div
@@ -290,44 +915,63 @@ function DocModal({ docType, onClose, onPrint }) {
               <p className="text-slate-600 font-semibold text-xs sm:text-sm mt-0.5">{docType.desc}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-slate-500 transition-all active:scale-95 cursor-pointer">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-slate-500 transition-all active:scale-95 cursor-pointer"
+            aria-label="Close"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
 
-        {/* Mobile tab switcher */}
+        {/* Mobile Tab Switcher */}
         <div className="flex sm:hidden border-b border-orange-100 flex-shrink-0 bg-white">
           {['form', 'preview'].map(tab => (
             <button
               key={tab}
+              type="button"
               onClick={() => setMobileTab(tab)}
-              className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-all ${
+              className={`flex-1 py-2.5 text-xs font-bold capitalize transition-all cursor-pointer ${
                 mobileTab === tab
-                  ? 'text-[#F78C25] border-b-2 border-[#F78C25]'
-                  : 'text-gray-400'
+                  ? 'text-[#F78C25] border-b-2 border-[#F78C25] bg-orange-50/50'
+                  : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              {tab === 'form' ? 'Fill Details' : 'Preview'}
-              {tab === 'preview' && generated && (
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-orange-100 text-[#F78C25] text-[10px]">Ready</span>
-              )}
+              {tab === 'form' ? '📝 Fill Details' : '👁 Live Preview'}
             </button>
           ))}
         </div>
 
         {/* Body — desktop: side by side | mobile: tabbed */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Form — always visible on desktop, tab-controlled on mobile */}
+          {/* Form Panel */}
           <div className={`${
             mobileTab === 'form' ? 'flex' : 'hidden'
           } sm:flex w-full sm:w-80 flex-shrink-0 sm:border-r border-orange-100 flex-col bg-[#FAFAFA]`}>
-            <FormPanel fields={fields} form={form} onChange={handleChange} onGenerate={handleGenerate} />
+            <FormPanel
+              fields={fields}
+              form={form}
+              onChange={handleChange}
+              onGenerate={handleGenerate}
+            />
           </div>
 
+          {/* Canvas Preview Panel */}
           <div className={`${
             mobileTab === 'preview' ? 'flex' : 'hidden'
           } sm:flex flex-1 flex-col overflow-hidden`}>
-            <PreviewPanel generated={generated} content={content} fontSize={fontSize} setFontSize={setFontSize} exporting={exporting} onDownload={handleDownload} onPrint={handlePrint} toast={toast} />
+            <PreviewPanel
+              docType={docType}
+              form={form}
+              onChange={handleChange}
+              fontSize={fontSize}
+              setFontSize={setFontSize}
+              exporting={exporting}
+              onDownload={handleDownload}
+              onPrint={handlePrint}
+              toast={toast}
+            />
           </div>
         </div>
       </motion.div>
@@ -348,32 +992,32 @@ export default function AcademicToolkit({ onPrint }) {
         viewport={{ once: true }}
         className="mb-14"
       >
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-orange-300 bg-orange-50 text-[#F78C25] text-xs font-medium mb-5">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-orange-300 bg-orange-50 text-[#F78C25] text-xs font-bold mb-5">
           <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
           Academic Toolkit
         </div>
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
-            <h2 className="text-3xl md:text-4xl font-bold text-[#222222] leading-tight">
+            <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 leading-tight">
               Generate any document<br />
               <span className="gradient-text">in under 30 seconds</span>
             </h2>
-            <p className="text-gray-500 mt-3 max-w-lg text-sm">
-              Fill in your details, get a professionally formatted document, edit it live, and send directly to print.
+            <p className="text-slate-600 font-medium mt-3 max-w-lg text-sm sm:text-base">
+              Fill in your details or edit directly on the live document. Everything is two-way synchronized and print-ready.
             </p>
           </div>
-          <div className="flex items-center gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-4 text-xs font-semibold text-slate-600">
             <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              Live preview
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Two-way synced
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-              Inline editing
+              Inline Canvas Editing
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-              Direct print
+              Direct Print
             </div>
           </div>
         </div>
@@ -390,7 +1034,7 @@ export default function AcademicToolkit({ onPrint }) {
             transition={{ delay: i * 0.04 }}
             whileHover={{ y: -2 }}
             onClick={() => setActive(doc)}
-            className="group text-left p-5 rounded-2xl bg-white border border-orange-100 hover:border-[#F78C25] hover:shadow-md transition-all duration-200"
+            className="group text-left p-5 rounded-2xl bg-white border border-orange-100 hover:border-[#F78C25] hover:shadow-md transition-all duration-200 cursor-pointer"
           >
             <div className="flex items-start justify-between mb-4">
               <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25] group-hover:bg-[#F78C25] group-hover:text-white transition-colors">
@@ -405,8 +1049,8 @@ export default function AcademicToolkit({ onPrint }) {
             <p className="text-slate-900 font-extrabold text-base mb-1">{doc.label}</p>
             <p className="text-slate-600 text-xs sm:text-sm font-semibold leading-relaxed">{doc.desc}</p>
             <div className="mt-4 pt-4 border-t border-orange-100 flex items-center justify-between">
-              <span className="text-gray-400 text-xs">Click to generate</span>
-              <span className="text-[#F78C25] text-xs font-medium opacity-60 group-hover:opacity-100 transition-opacity">Generate →</span>
+              <span className="text-slate-400 text-xs">Two-way live preview</span>
+              <span className="text-[#F78C25] text-xs font-bold opacity-75 group-hover:opacity-100 transition-opacity">Open Document →</span>
             </div>
           </motion.button>
         ))}

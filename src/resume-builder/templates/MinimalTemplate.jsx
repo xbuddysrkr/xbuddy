@@ -1,3 +1,7 @@
+import React from 'react'
+import EditableText from '../components/EditableText'
+import { useResume } from '../resumeStore'
+
 // Minimal ATS Template — clean, no colors, maximum ATS compatibility
 
 function Section({ title, children }) {
@@ -17,6 +21,7 @@ function Section({ title, children }) {
 
 export default function MinimalTemplate({ data, fontScale = 1 }) {
   const f = (n) => `${n * fontScale}px`
+  const { updatePersonal, updateSkills, updateListItem, updateAchievements } = useResume()
   const { personal, education, skills, projects, experience, certifications, achievements } = data
   const edu = education[0] || {}
 
@@ -29,14 +34,18 @@ export default function MinimalTemplate({ data, fontScale = 1 }) {
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: '16px', borderBottom: '1px solid #111', paddingBottom: '12px' }}>
         <div style={{ fontSize: f(22), fontWeight: '800', letterSpacing: '1px' }}>
-          {personal.name || 'YOUR NAME'}
+          <EditableText
+            value={personal.name}
+            placeholder="YOUR NAME"
+            onChange={v => updatePersonal('name', v)}
+          />
         </div>
         <div style={{ fontSize: '9px', color: '#333', marginTop: '5px', display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '10px' }}>
-          {personal.phone    && <span>{personal.phone}</span>}
-          {personal.email    && <span>{personal.email}</span>}
-          {personal.location && <span>{personal.location}</span>}
-          {personal.linkedin && <span>{personal.linkedin}</span>}
-          {personal.github   && <span>{personal.github}</span>}
+          <span><EditableText value={personal.phone} placeholder="Phone" onChange={v => updatePersonal('phone', v)} /></span>
+          <span><EditableText value={personal.email} placeholder="Email" onChange={v => updatePersonal('email', v)} /></span>
+          <span><EditableText value={personal.location} placeholder="Location" onChange={v => updatePersonal('location', v)} /></span>
+          <span><EditableText value={personal.linkedin} placeholder="LinkedIn" onChange={v => updatePersonal('linkedin', v)} /></span>
+          <span><EditableText value={personal.github} placeholder="GitHub" onChange={v => updatePersonal('github', v)} /></span>
         </div>
       </div>
 
@@ -45,26 +54,54 @@ export default function MinimalTemplate({ data, fontScale = 1 }) {
         <Section title="Education">
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontWeight: '700' }}>{edu.college}</div>
-              <div style={{ color: '#333', fontSize: '10px' }}>{edu.degree}{edu.department ? `, ${edu.department}` : ''}</div>
-              {edu.intermediate && <div style={{ fontSize: '9.5px', color: '#555' }}>Intermediate: {edu.intermediate}</div>}
-              {edu.schooling    && <div style={{ fontSize: '9.5px', color: '#555' }}>Schooling: {edu.schooling}</div>}
+              <div style={{ fontWeight: '700' }}>
+                <EditableText value={edu.college} placeholder="College Name" onChange={v => updateListItem('education', edu.id, 'college', v)} />
+              </div>
+              <div style={{ color: '#333', fontSize: '10px' }}>
+                <EditableText value={edu.degree} placeholder="Degree" onChange={v => updateListItem('education', edu.id, 'degree', v)} />
+                {edu.department ? ', ' : ''}
+                <EditableText value={edu.department} placeholder="Department" onChange={v => updateListItem('education', edu.id, 'department', v)} />
+              </div>
+              {edu.intermediate && (
+                <div style={{ fontSize: '9.5px', color: '#555' }}>
+                  Intermediate: <EditableText value={edu.intermediate} placeholder="Intermediate" onChange={v => updateListItem('education', edu.id, 'intermediate', v)} />
+                </div>
+              )}
+              {edu.schooling && (
+                <div style={{ fontSize: '9.5px', color: '#555' }}>
+                  Schooling: <EditableText value={edu.schooling} placeholder="Schooling" onChange={v => updateListItem('education', edu.id, 'schooling', v)} />
+                </div>
+              )}
             </div>
             <div style={{ textAlign: 'right', fontSize: '9.5px' }}>
-              {edu.year && <div>{edu.year}</div>}
-              {edu.cgpa && <div><strong>CGPA: {edu.cgpa}</strong></div>}
+              <div><EditableText value={edu.year} placeholder="Year" onChange={v => updateListItem('education', edu.id, 'year', v)} /></div>
+              <div>
+                <strong>CGPA: <EditableText value={edu.cgpa} placeholder="8.5" onChange={v => updateListItem('education', edu.id, 'cgpa', v)} /></strong>
+              </div>
             </div>
           </div>
         </Section>
       )}
 
       {/* Skills */}
-      {(skills.languages || skills.frameworks || skills.tools) && (
+      {(skills.languages || skills.frameworks || skills.tools || skills.soft) && (
         <Section title="Skills">
-          {skills.languages  && <div style={{ marginBottom: '3px' }}><strong>Languages:</strong> {skills.languages}</div>}
-          {skills.frameworks && <div style={{ marginBottom: '3px' }}><strong>Frameworks:</strong> {skills.frameworks}</div>}
-          {skills.tools      && <div style={{ marginBottom: '3px' }}><strong>Tools:</strong> {skills.tools}</div>}
-          {skills.soft       && <div><strong>Soft Skills:</strong> {skills.soft}</div>}
+          <div style={{ marginBottom: '3px' }}>
+            <strong>Languages: </strong>
+            <EditableText value={skills.languages} placeholder="C++, Java, Python" onChange={v => updateSkills('languages', v)} />
+          </div>
+          <div style={{ marginBottom: '3px' }}>
+            <strong>Frameworks: </strong>
+            <EditableText value={skills.frameworks} placeholder="React, Node.js" onChange={v => updateSkills('frameworks', v)} />
+          </div>
+          <div style={{ marginBottom: '3px' }}>
+            <strong>Tools: </strong>
+            <EditableText value={skills.tools} placeholder="Git, Linux, Docker" onChange={v => updateSkills('tools', v)} />
+          </div>
+          <div>
+            <strong>Soft Skills: </strong>
+            <EditableText value={skills.soft} placeholder="Communication, Teamwork" onChange={v => updateSkills('soft', v)} />
+          </div>
         </Section>
       )}
 
@@ -74,10 +111,18 @@ export default function MinimalTemplate({ data, fontScale = 1 }) {
           {experience.filter(e => e.role || e.company).map(exp => (
             <div key={exp.id} style={{ marginBottom: '9px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <strong>{exp.role}{exp.company ? ` | ${exp.company}` : ''}</strong>
-                <span style={{ fontSize: '9.5px' }}>{exp.duration}</span>
+                <strong>
+                  <EditableText value={exp.role} placeholder="Role" onChange={v => updateListItem('experience', exp.id, 'role', v)} />
+                  {' | '}
+                  <EditableText value={exp.company} placeholder="Company" onChange={v => updateListItem('experience', exp.id, 'company', v)} />
+                </strong>
+                <span style={{ fontSize: '9.5px' }}>
+                  <EditableText value={exp.duration} placeholder="Duration" onChange={v => updateListItem('experience', exp.id, 'duration', v)} />
+                </span>
               </div>
-              {exp.description && <div style={{ color: '#333', fontSize: '9.5px', marginTop: '2px' }}>{exp.description}</div>}
+              <div style={{ color: '#333', fontSize: '9.5px', marginTop: '2px' }}>
+                <EditableText value={exp.description} placeholder="Description..." multiline onChange={v => updateListItem('experience', exp.id, 'description', v)} />
+              </div>
             </div>
           ))}
         </Section>
@@ -89,11 +134,19 @@ export default function MinimalTemplate({ data, fontScale = 1 }) {
           {projects.filter(p => p.title).map(proj => (
             <div key={proj.id} style={{ marginBottom: '9px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <strong>{proj.title}</strong>
-                {proj.link && <span style={{ fontSize: '9px' }}>{proj.link}</span>}
+                <strong>
+                  <EditableText value={proj.title} placeholder="Title" onChange={v => updateListItem('projects', proj.id, 'title', v)} />
+                </strong>
+                <span style={{ fontSize: '9px' }}>
+                  <EditableText value={proj.link} placeholder="Link" onChange={v => updateListItem('projects', proj.id, 'link', v)} />
+                </span>
               </div>
-              {proj.description && <div style={{ color: '#333', fontSize: '9.5px', marginTop: '2px' }}>{proj.description}</div>}
-              {proj.tech && <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>Tech: {proj.tech}</div>}
+              <div style={{ color: '#333', fontSize: '9.5px', marginTop: '2px' }}>
+                <EditableText value={proj.description} placeholder="Description..." multiline onChange={v => updateListItem('projects', proj.id, 'description', v)} />
+              </div>
+              <div style={{ fontSize: '9px', color: '#555', marginTop: '2px' }}>
+                Tech: <EditableText value={proj.tech} placeholder="React, Node.js" onChange={v => updateListItem('projects', proj.id, 'tech', v)} />
+              </div>
             </div>
           ))}
         </Section>
@@ -104,8 +157,16 @@ export default function MinimalTemplate({ data, fontScale = 1 }) {
         <Section title="Certifications">
           {certifications.filter(c => c.course).map(cert => (
             <div key={cert.id} style={{ marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
-              <span><strong>{cert.course}</strong>{cert.platform ? ` — ${cert.platform}` : ''}</span>
-              {cert.year && <span style={{ fontSize: '9.5px' }}>{cert.year}</span>}
+              <span>
+                <strong>
+                  <EditableText value={cert.course} placeholder="Course" onChange={v => updateListItem('certifications', cert.id, 'course', v)} />
+                </strong>
+                {' — '}
+                <EditableText value={cert.platform} placeholder="Platform" onChange={v => updateListItem('certifications', cert.id, 'platform', v)} />
+              </span>
+              <span style={{ fontSize: '9.5px' }}>
+                <EditableText value={cert.year} placeholder="Year" onChange={v => updateListItem('certifications', cert.id, 'year', v)} />
+              </span>
             </div>
           ))}
         </Section>
@@ -114,7 +175,9 @@ export default function MinimalTemplate({ data, fontScale = 1 }) {
       {/* Achievements */}
       {achievements && (
         <Section title="Achievements">
-          <div style={{ color: '#333', fontSize: '9.5px', whiteSpace: 'pre-line' }}>{achievements}</div>
+          <div style={{ color: '#333', fontSize: '9.5px', whiteSpace: 'pre-line' }}>
+            <EditableText value={achievements} placeholder="Achievements..." multiline onChange={v => updateAchievements(v)} />
+          </div>
         </Section>
       )}
     </div>

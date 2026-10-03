@@ -1,3 +1,7 @@
+import React from 'react'
+import EditableText from '../components/EditableText'
+import { useResume } from '../resumeStore'
+
 // Executive / Corporate Template — Traditional single-column, serif typography, navy accents
 
 function Section({ title, children }) {
@@ -23,17 +27,9 @@ function Section({ title, children }) {
 
 export default function ExecutiveTemplate({ data, fontScale = 1 }) {
   const f = (n) => `${n * fontScale}px`
+  const { updatePersonal, updateSkills, updateListItem, updateAchievements } = useResume()
   const { personal, education, skills, projects, experience, certifications, achievements } = data
   const edu = education[0] || {}
-
-  const contactItems = [
-    personal.phone,
-    personal.email,
-    personal.location,
-    personal.linkedin,
-    personal.portfolio,
-    personal.github,
-  ].filter(Boolean)
 
   const hasSkills = Boolean(skills.languages || skills.frameworks || skills.tools || skills.soft)
 
@@ -59,27 +55,28 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
           textTransform: 'uppercase',
           marginBottom: '6px',
         }}>
-          {personal.name || 'YOUR NAME'}
+          <EditableText
+            value={personal.name}
+            placeholder="YOUR NAME"
+            onChange={v => updatePersonal('name', v)}
+          />
         </div>
 
-        {contactItems.length > 0 && (
-          <div style={{
-            fontSize: '9.5px',
-            color: '#475569',
-            fontFamily: "'Arial', 'Helvetica', sans-serif",
-            display: 'flex',
-            justify: 'center',
-            flexWrap: 'wrap',
-            gap: '12px',
-          }}>
-            {contactItems.map((item, idx) => (
-              <span key={idx}>
-                {item}
-                {idx < contactItems.length - 1 && <span style={{ marginLeft: '12px', color: '#cbd5e1' }}>|</span>}
-              </span>
-            ))}
-          </div>
-        )}
+        <div style={{
+          fontSize: '9.5px',
+          color: '#475569',
+          fontFamily: "'Arial', 'Helvetica', sans-serif",
+          display: 'flex',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}>
+          <span>📞 <EditableText value={personal.phone} placeholder="Phone" onChange={v => updatePersonal('phone', v)} /></span>
+          <span>✉ <EditableText value={personal.email} placeholder="Email" onChange={v => updatePersonal('email', v)} /></span>
+          <span>📍 <EditableText value={personal.location} placeholder="Location" onChange={v => updatePersonal('location', v)} /></span>
+          <span>🔗 <EditableText value={personal.linkedin} placeholder="LinkedIn" onChange={v => updatePersonal('linkedin', v)} /></span>
+          <span>🌐 <EditableText value={personal.portfolio} placeholder="Portfolio" onChange={v => updatePersonal('portfolio', v)} /></span>
+        </div>
       </div>
 
       {/* Education */}
@@ -87,16 +84,30 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
         <Section title="Education">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <div style={{ fontWeight: '700', fontSize: '11px', color: '#0f172a' }}>{edu.college}</div>
-              <div style={{ color: '#334155', fontSize: '10px', fontStyle: 'italic' }}>
-                {edu.degree}{edu.department ? ` in ${edu.department}` : ''}
+              <div style={{ fontWeight: '700', fontSize: '11px', color: '#0f172a' }}>
+                <EditableText value={edu.college} placeholder="College Name" onChange={v => updateListItem('education', edu.id, 'college', v)} />
               </div>
-              {edu.intermediate && <div style={{ color: '#64748b', fontSize: '9.5px', marginTop: '2px' }}>Intermediate: {edu.intermediate}</div>}
-              {edu.schooling && <div style={{ color: '#64748b', fontSize: '9.5px' }}>Schooling: {edu.schooling}</div>}
+              <div style={{ color: '#334155', fontSize: '10px', fontStyle: 'italic' }}>
+                <EditableText value={edu.degree} placeholder="Degree" onChange={v => updateListItem('education', edu.id, 'degree', v)} />
+                {edu.department ? ' in ' : ''}
+                <EditableText value={edu.department} placeholder="Department" onChange={v => updateListItem('education', edu.id, 'department', v)} />
+              </div>
+              {edu.intermediate && (
+                <div style={{ color: '#64748b', fontSize: '9.5px', marginTop: '2px' }}>
+                  Intermediate: <EditableText value={edu.intermediate} placeholder="Intermediate" onChange={v => updateListItem('education', edu.id, 'intermediate', v)} />
+                </div>
+              )}
+              {edu.schooling && (
+                <div style={{ color: '#64748b', fontSize: '9.5px' }}>
+                  Schooling: <EditableText value={edu.schooling} placeholder="Schooling" onChange={v => updateListItem('education', edu.id, 'schooling', v)} />
+                </div>
+              )}
             </div>
             <div style={{ textAlign: 'right', fontSize: '9.5px', color: '#475569', fontFamily: "'Arial', sans-serif" }}>
-              {edu.year && <div>{edu.year}</div>}
-              {edu.cgpa && <div style={{ fontWeight: '700', color: '#1e3a8a' }}>CGPA / Score: {edu.cgpa}</div>}
+              <div><EditableText value={edu.year} placeholder="Year" onChange={v => updateListItem('education', edu.id, 'year', v)} /></div>
+              <div style={{ fontWeight: '700', color: '#1e3a8a' }}>
+                CGPA / Score: <EditableText value={edu.cgpa} placeholder="Score" onChange={v => updateListItem('education', edu.id, 'cgpa', v)} />
+              </div>
             </div>
           </div>
         </Section>
@@ -108,15 +119,19 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
           {experience.filter(e => e.role || e.company).map(exp => (
             <div key={exp.id} style={{ marginBottom: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontWeight: '700', fontSize: '11px', color: '#0f172a' }}>{exp.role}</span>
-                <span style={{ fontSize: '9.5px', color: '#64748b', fontFamily: "'Arial', sans-serif" }}>{exp.duration}</span>
+                <span style={{ fontWeight: '700', fontSize: '11px', color: '#0f172a' }}>
+                  <EditableText value={exp.role} placeholder="Role" onChange={v => updateListItem('experience', exp.id, 'role', v)} />
+                </span>
+                <span style={{ fontSize: '9.5px', color: '#64748b', fontFamily: "'Arial', sans-serif" }}>
+                  <EditableText value={exp.duration} placeholder="Duration" onChange={v => updateListItem('experience', exp.id, 'duration', v)} />
+                </span>
               </div>
               <div style={{ color: '#1e3a8a', fontSize: '10px', fontWeight: '600', fontStyle: 'italic', marginBottom: '3px' }}>
-                {exp.company}
+                <EditableText value={exp.company} placeholder="Company" onChange={v => updateListItem('experience', exp.id, 'company', v)} />
               </div>
               {exp.description && (
                 <div style={{ color: '#334155', fontSize: '9.5px', lineHeight: '1.5', whiteSpace: 'pre-line' }}>
-                  {exp.description}
+                  <EditableText value={exp.description} placeholder="Responsibilities and impact..." multiline onChange={v => updateListItem('experience', exp.id, 'description', v)} />
                 </div>
               )}
             </div>
@@ -130,19 +145,19 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
           {projects.filter(p => p.title).map(proj => (
             <div key={proj.id} style={{ marginBottom: '11px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontWeight: '700', fontSize: '11px', color: '#0f172a' }}>{proj.title}</span>
-                {proj.link && <span style={{ fontSize: '9px', color: '#1e3a8a', fontFamily: "'Arial', sans-serif" }}>{proj.link}</span>}
+                <span style={{ fontWeight: '700', fontSize: '11px', color: '#0f172a' }}>
+                  <EditableText value={proj.title} placeholder="Title" onChange={v => updateListItem('projects', proj.id, 'title', v)} />
+                </span>
+                <span style={{ fontSize: '9px', color: '#1e3a8a', fontFamily: "'Arial', sans-serif" }}>
+                  <EditableText value={proj.link} placeholder="Link" onChange={v => updateListItem('projects', proj.id, 'link', v)} />
+                </span>
               </div>
-              {proj.description && (
-                <div style={{ color: '#334155', fontSize: '9.5px', marginTop: '2px', lineHeight: '1.5' }}>
-                  {proj.description}
-                </div>
-              )}
-              {proj.tech && (
-                <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2.5px', fontStyle: 'italic' }}>
-                  Technologies / Focus: {proj.tech}
-                </div>
-              )}
+              <div style={{ color: '#334155', fontSize: '9.5px', marginTop: '2px', lineHeight: '1.5' }}>
+                <EditableText value={proj.description} placeholder="Description..." multiline onChange={v => updateListItem('projects', proj.id, 'description', v)} />
+              </div>
+              <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2.5px', fontStyle: 'italic' }}>
+                Focus: <EditableText value={proj.tech} placeholder="Technologies" onChange={v => updateListItem('projects', proj.id, 'tech', v)} />
+              </div>
             </div>
           ))}
         </Section>
@@ -152,26 +167,22 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
       {hasSkills && (
         <Section title="Technical & Functional Competencies">
           <div style={{ fontSize: '9.5px', color: '#334155', lineHeight: '1.6' }}>
-            {skills.languages && (
-              <div style={{ marginBottom: '3px' }}>
-                <strong style={{ color: '#0f172a' }}>Core Languages:</strong> {skills.languages}
-              </div>
-            )}
-            {skills.frameworks && (
-              <div style={{ marginBottom: '3px' }}>
-                <strong style={{ color: '#0f172a' }}>Frameworks & Libraries:</strong> {skills.frameworks}
-              </div>
-            )}
-            {skills.tools && (
-              <div style={{ marginBottom: '3px' }}>
-                <strong style={{ color: '#0f172a' }}>Tools & Platforms:</strong> {skills.tools}
-              </div>
-            )}
-            {skills.soft && (
-              <div>
-                <strong style={{ color: '#0f172a' }}>Management & Leadership:</strong> {skills.soft}
-              </div>
-            )}
+            <div style={{ marginBottom: '3px' }}>
+              <strong style={{ color: '#0f172a' }}>Core Languages: </strong>
+              <EditableText value={skills.languages} placeholder="Languages" onChange={v => updateSkills('languages', v)} />
+            </div>
+            <div style={{ marginBottom: '3px' }}>
+              <strong style={{ color: '#0f172a' }}>Frameworks & Libraries: </strong>
+              <EditableText value={skills.frameworks} placeholder="Frameworks" onChange={v => updateSkills('frameworks', v)} />
+            </div>
+            <div style={{ marginBottom: '3px' }}>
+              <strong style={{ color: '#0f172a' }}>Tools & Platforms: </strong>
+              <EditableText value={skills.tools} placeholder="Tools" onChange={v => updateSkills('tools', v)} />
+            </div>
+            <div>
+              <strong style={{ color: '#0f172a' }}>Management & Leadership: </strong>
+              <EditableText value={skills.soft} placeholder="Competencies" onChange={v => updateSkills('soft', v)} />
+            </div>
           </div>
         </Section>
       )}
@@ -182,10 +193,17 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
           {certifications.filter(c => c.course).map(cert => (
             <div key={cert.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '9.5px' }}>
               <div>
-                <strong style={{ color: '#0f172a' }}>{cert.course}</strong>
-                {cert.platform && <span style={{ color: '#475569' }}> — {cert.platform}</span>}
+                <strong style={{ color: '#0f172a' }}>
+                  <EditableText value={cert.course} placeholder="Course" onChange={v => updateListItem('certifications', cert.id, 'course', v)} />
+                </strong>
+                <span style={{ color: '#475569' }}>
+                  {' — '}
+                  <EditableText value={cert.platform} placeholder="Platform" onChange={v => updateListItem('certifications', cert.id, 'platform', v)} />
+                </span>
               </div>
-              {cert.year && <span style={{ color: '#64748b', fontFamily: "'Arial', sans-serif" }}>{cert.year}</span>}
+              <span style={{ color: '#64748b', fontFamily: "'Arial', sans-serif" }}>
+                <EditableText value={cert.year} placeholder="Year" onChange={v => updateListItem('certifications', cert.id, 'year', v)} />
+              </span>
             </div>
           ))}
         </Section>
@@ -195,7 +213,7 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
       {achievements && (
         <Section title="Honors & Achievements">
           <div style={{ color: '#334155', fontSize: '9.5px', whiteSpace: 'pre-line', lineHeight: '1.5' }}>
-            {achievements}
+            <EditableText value={achievements} placeholder="Achievements..." multiline onChange={v => updateAchievements(v)} />
           </div>
         </Section>
       )}

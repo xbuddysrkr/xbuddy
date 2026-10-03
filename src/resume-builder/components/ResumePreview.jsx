@@ -228,15 +228,12 @@ const ResumePreview = forwardRef(function ResumePreview(
             {/* Inner Content with Font Scaling */}
             <div
               ref={previewRef}
-              contentEditable
-              suppressContentEditableWarning
               style={{
                 width: `${A4_W}px`,
                 transformOrigin: 'top left',
                 transform: `scale(${1 / fontScale})`,
                 fontSize: `${fontScale * 100}%`,
                 outline: 'none',
-                cursor: 'text',
               }}
             >
               <TemplateComponent data={resume} fontScale={fontScale} />

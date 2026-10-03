@@ -1,3 +1,7 @@
+import React from 'react'
+import EditableText from '../components/EditableText'
+import { useResume } from '../resumeStore'
+
 // Two-Column Technical Template — Sidebar for skills/edu/certs, main column for experience/projects
 
 function SideSection({ title, children }) {
@@ -40,26 +44,9 @@ function MainSection({ title, children }) {
   )
 }
 
-function TechTag({ children }) {
-  return (
-    <span style={{
-      display: 'inline-block',
-      background: '#ccfbf1',
-      color: '#0f766e',
-      borderRadius: '4px',
-      padding: '1px 6px',
-      fontSize: '8.5px',
-      fontWeight: '600',
-      marginRight: '4px',
-      marginBottom: '3px',
-    }}>
-      {children}
-    </span>
-  )
-}
-
 export default function TwoColumnTechTemplate({ data, fontScale = 1 }) {
   const f = (n) => `${n * fontScale}px`
+  const { updatePersonal, updateSkills, updateListItem, updateAchievements } = useResume()
   const { personal, education, skills, projects, experience, certifications, achievements } = data
   const edu = education[0] || {}
 
@@ -87,64 +74,65 @@ export default function TwoColumnTechTemplate({ data, fontScale = 1 }) {
       {/* Top Header */}
       <div style={{ marginBottom: '18px', borderBottom: '2.5px solid #0f766e', paddingBottom: '12px' }}>
         <div style={{ fontSize: f(24), fontWeight: '800', color: '#0f766e', letterSpacing: '-0.3px' }}>
-          {personal.name || 'YOUR NAME'}
+          <EditableText
+            value={personal.name}
+            placeholder="YOUR NAME"
+            onChange={v => updatePersonal('name', v)}
+          />
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px', fontSize: '9px', color: '#475569' }}>
-          {personal.phone && <span>📞 {personal.phone}</span>}
-          {personal.email && <span>✉ {personal.email}</span>}
-          {personal.location && <span>📍 {personal.location}</span>}
-          {personal.linkedin && <span>🔗 {personal.linkedin}</span>}
-          {personal.github && <span>⌥ {personal.github}</span>}
-          {personal.portfolio && <span>🌐 {personal.portfolio}</span>}
+          <span>📞 <EditableText value={personal.phone} placeholder="Phone" onChange={v => updatePersonal('phone', v)} /></span>
+          <span>✉ <EditableText value={personal.email} placeholder="Email" onChange={v => updatePersonal('email', v)} /></span>
+          <span>📍 <EditableText value={personal.location} placeholder="Location" onChange={v => updatePersonal('location', v)} /></span>
+          <span>🔗 <EditableText value={personal.linkedin} placeholder="LinkedIn" onChange={v => updatePersonal('linkedin', v)} /></span>
+          <span>⌥ <EditableText value={personal.github} placeholder="GitHub" onChange={v => updatePersonal('github', v)} /></span>
+          <span>🌐 <EditableText value={personal.portfolio} placeholder="Portfolio" onChange={v => updatePersonal('portfolio', v)} /></span>
         </div>
       </div>
 
-      {/* Two-Column Body — Handles empty sections gracefully */}
+      {/* Two-Column Body */}
       <div style={{ display: 'flex', gap: '22px' }}>
-        {/* Left Sidebar (~32% width) — renders only if sidebar content exists */}
+        {/* Left Sidebar (~32% width) */}
         {hasSidebarContent && (
           <div style={{ width: '32%', flexShrink: 0, borderRight: '1px solid #f1f5f9', paddingRight: '14px' }}>
             {/* Skills */}
-            {hasSidebarSkills && (
-              <SideSection title="Technical Skills">
-                {skills.languages && (
-                  <div style={{ marginBottom: '7px' }}>
-                    <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Languages</div>
-                    <div style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }}>{skills.languages}</div>
-                  </div>
-                )}
-                {skills.frameworks && (
-                  <div style={{ marginBottom: '7px' }}>
-                    <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Frameworks</div>
-                    <div style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }}>{skills.frameworks}</div>
-                  </div>
-                )}
-                {skills.tools && (
-                  <div style={{ marginBottom: '7px' }}>
-                    <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Tools & DevOp</div>
-                    <div style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }}>{skills.tools}</div>
-                  </div>
-                )}
-                {skills.soft && (
-                  <div>
-                    <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Soft Skills</div>
-                    <div style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }}>{skills.soft}</div>
-                  </div>
-                )}
-              </SideSection>
-            )}
+            <SideSection title="Technical Skills">
+              <div style={{ marginBottom: '7px' }}>
+                <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Languages</div>
+                <EditableText value={skills.languages} placeholder="Languages" style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }} onChange={v => updateSkills('languages', v)} />
+              </div>
+              <div style={{ marginBottom: '7px' }}>
+                <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Frameworks</div>
+                <EditableText value={skills.frameworks} placeholder="Frameworks" style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }} onChange={v => updateSkills('frameworks', v)} />
+              </div>
+              <div style={{ marginBottom: '7px' }}>
+                <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Tools & DevOps</div>
+                <EditableText value={skills.tools} placeholder="Tools" style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }} onChange={v => updateSkills('tools', v)} />
+              </div>
+              <div>
+                <div style={{ fontWeight: '700', fontSize: '9px', color: '#334155', marginBottom: '2px' }}>Soft Skills</div>
+                <EditableText value={skills.soft} placeholder="Soft skills" style={{ color: '#475569', fontSize: '8.5px', lineHeight: '1.4' }} onChange={v => updateSkills('soft', v)} />
+              </div>
+            </SideSection>
 
             {/* Education in Sidebar */}
-            {hasSidebarEdu && (
+            {(edu.college || edu.degree) && (
               <SideSection title="Education">
-                <div style={{ fontWeight: '700', fontSize: '9.5px', color: '#0f172a' }}>{edu.college}</div>
-                <div style={{ color: '#0f766e', fontSize: '9px', fontWeight: '600' }}>
-                  {edu.degree}{edu.department ? ` (${edu.department})` : ''}
+                <div style={{ fontWeight: '700', fontSize: '9.5px', color: '#0f172a' }}>
+                  <EditableText value={edu.college} placeholder="College" onChange={v => updateListItem('education', edu.id, 'college', v)} />
                 </div>
-                {edu.year && <div style={{ color: '#64748b', fontSize: '8.5px', marginTop: '2px' }}>{edu.year}</div>}
-                {edu.cgpa && <div style={{ color: '#0f766e', fontSize: '8.5px', fontWeight: '700' }}>CGPA: {edu.cgpa}</div>}
-                {edu.intermediate && <div style={{ color: '#64748b', fontSize: '8.5px', marginTop: '3px' }}>Inter: {edu.intermediate}</div>}
-                {edu.schooling && <div style={{ color: '#64748b', fontSize: '8.5px' }}>School: {edu.schooling}</div>}
+                <div style={{ color: '#0f766e', fontSize: '9px', fontWeight: '600' }}>
+                  <EditableText value={edu.degree} placeholder="Degree" onChange={v => updateListItem('education', edu.id, 'degree', v)} />
+                  {edu.department ? ' (' : ''}
+                  {edu.department ? <EditableText value={edu.department} placeholder="Dept" onChange={v => updateListItem('education', edu.id, 'department', v)} /> : null}
+                  {edu.department ? ')' : ''}
+                </div>
+                <div style={{ color: '#64748b', fontSize: '8.5px', marginTop: '2px' }}>
+                  <EditableText value={edu.year} placeholder="Year" onChange={v => updateListItem('education', edu.id, 'year', v)} />
+                </div>
+                <div style={{ color: '#0f766e', fontSize: '8.5px', fontWeight: '700' }}>
+                  CGPA: <EditableText value={edu.cgpa} placeholder="8.5" onChange={v => updateListItem('education', edu.id, 'cgpa', v)} />
+                </div>
               </SideSection>
             )}
 
@@ -153,9 +141,15 @@ export default function TwoColumnTechTemplate({ data, fontScale = 1 }) {
               <SideSection title="Certifications">
                 {certifications.filter(c => c.course).map(cert => (
                   <div key={cert.id} style={{ marginBottom: '6px' }}>
-                    <div style={{ fontWeight: '600', fontSize: '9px', color: '#0f172a' }}>{cert.course}</div>
-                    {cert.platform && <div style={{ color: '#64748b', fontSize: '8.5px' }}>{cert.platform}</div>}
-                    {cert.year && <div style={{ color: '#94a3b8', fontSize: '8px' }}>{cert.year}</div>}
+                    <div style={{ fontWeight: '600', fontSize: '9px', color: '#0f172a' }}>
+                      <EditableText value={cert.course} placeholder="Course" onChange={v => updateListItem('certifications', cert.id, 'course', v)} />
+                    </div>
+                    <div style={{ color: '#64748b', fontSize: '8.5px' }}>
+                      <EditableText value={cert.platform} placeholder="Platform" onChange={v => updateListItem('certifications', cert.id, 'platform', v)} />
+                    </div>
+                    <div style={{ color: '#94a3b8', fontSize: '8px' }}>
+                      <EditableText value={cert.year} placeholder="Year" onChange={v => updateListItem('certifications', cert.id, 'year', v)} />
+                    </div>
                   </div>
                 ))}
               </SideSection>
@@ -163,7 +157,7 @@ export default function TwoColumnTechTemplate({ data, fontScale = 1 }) {
           </div>
         )}
 
-        {/* Right Main Column — takes full width if sidebar is empty, otherwise flex: 1 */}
+        {/* Right Main Column */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Work Experience */}
           {hasMainExp && (
@@ -171,13 +165,19 @@ export default function TwoColumnTechTemplate({ data, fontScale = 1 }) {
               {experience.filter(e => e.role || e.company).map(exp => (
                 <div key={exp.id} style={{ marginBottom: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontWeight: '700', fontSize: '10.5px', color: '#0f172a' }}>{exp.role}</span>
-                    <span style={{ fontSize: '8.5px', color: '#64748b' }}>{exp.duration}</span>
+                    <span style={{ fontWeight: '700', fontSize: '10.5px', color: '#0f172a' }}>
+                      <EditableText value={exp.role} placeholder="Role" onChange={v => updateListItem('experience', exp.id, 'role', v)} />
+                    </span>
+                    <span style={{ fontSize: '8.5px', color: '#64748b' }}>
+                      <EditableText value={exp.duration} placeholder="Duration" onChange={v => updateListItem('experience', exp.id, 'duration', v)} />
+                    </span>
                   </div>
-                  <div style={{ color: '#0f766e', fontSize: '9.5px', fontWeight: '600' }}>{exp.company}</div>
+                  <div style={{ color: '#0f766e', fontSize: '9.5px', fontWeight: '600' }}>
+                    <EditableText value={exp.company} placeholder="Company" onChange={v => updateListItem('experience', exp.id, 'company', v)} />
+                  </div>
                   {exp.description && (
                     <div style={{ color: '#334155', fontSize: '9px', marginTop: '2px', lineHeight: '1.45', whiteSpace: 'pre-line' }}>
-                      {exp.description}
+                      <EditableText value={exp.description} placeholder="Description..." multiline onChange={v => updateListItem('experience', exp.id, 'description', v)} />
                     </div>
                   )}
                 </div>
@@ -191,21 +191,20 @@ export default function TwoColumnTechTemplate({ data, fontScale = 1 }) {
               {projects.filter(p => p.title).map(proj => (
                 <div key={proj.id} style={{ marginBottom: '11px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontWeight: '700', fontSize: '10.5px', color: '#0f172a' }}>{proj.title}</span>
-                    {proj.link && <span style={{ fontSize: '8.5px', color: '#0f766e' }}>{proj.link}</span>}
+                    <span style={{ fontWeight: '700', fontSize: '10.5px', color: '#0f172a' }}>
+                      <EditableText value={proj.title} placeholder="Title" onChange={v => updateListItem('projects', proj.id, 'title', v)} />
+                    </span>
+                    <span style={{ fontSize: '8.5px', color: '#0f766e' }}>
+                      <EditableText value={proj.link} placeholder="Link" onChange={v => updateListItem('projects', proj.id, 'link', v)} />
+                    </span>
                   </div>
-                  {proj.description && (
-                    <div style={{ color: '#334155', fontSize: '9px', marginTop: '2px', lineHeight: '1.45' }}>
-                      {proj.description}
-                    </div>
-                  )}
-                  {proj.tech && (
-                    <div style={{ marginTop: '4px' }}>
-                      {proj.tech.split(',').map(t => t.trim()).filter(Boolean).map((t, i) => (
-                        <TechTag key={i}>{t}</TechTag>
-                      ))}
-                    </div>
-                  )}
+                  <div style={{ color: '#334155', fontSize: '9px', marginTop: '2px', lineHeight: '1.45' }}>
+                    <EditableText value={proj.description} placeholder="Description..." multiline onChange={v => updateListItem('projects', proj.id, 'description', v)} />
+                  </div>
+                  <div style={{ marginTop: '4px' }}>
+                    <strong style={{ fontSize: '8.5px', color: '#64748b' }}>Stack: </strong>
+                    <EditableText value={proj.tech} placeholder="React, Node.js" style={{ fontSize: '8.5px', color: '#0f766e' }} onChange={v => updateListItem('projects', proj.id, 'tech', v)} />
+                  </div>
                 </div>
               ))}
             </MainSection>
@@ -215,7 +214,7 @@ export default function TwoColumnTechTemplate({ data, fontScale = 1 }) {
           {hasMainAchievements && (
             <MainSection title="Key Achievements">
               <div style={{ color: '#334155', fontSize: '9px', whiteSpace: 'pre-line', lineHeight: '1.45' }}>
-                {achievements}
+                <EditableText value={achievements} placeholder="Achievements..." multiline onChange={v => updateAchievements(v)} />
               </div>
             </MainSection>
           )}
