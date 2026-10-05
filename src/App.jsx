@@ -12,6 +12,7 @@ import PrintStatus from './components/PrintStatus'
 import AcademicToolkit from './components/AcademicToolkit'
 import { calcPriceBreakdown } from './utils/pricing'
 import { parsePageRange, resolveAllPages } from './utils/pageRangeParser'
+import { createNormalizedPrintSettings } from './utils/printSettings'
 import * as pdfjsLib from 'pdfjs-dist'
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -324,22 +325,24 @@ export default function App() {
 
   const total = priceBreakdown.totalAmount
 
-  const orderMeta = fileInfo
+  const normalizedSettings = fileInfo
+    ? createNormalizedPrintSettings({
+        colorMode: settings.colorMode,
+        sideMode: settings.sideMode,
+        copies: settings.copies,
+        paperSize: settings.pageSize,
+        orientation: settings.orientation,
+        pageRangeMode: settings.pageRange,
+        customPages: settings.customPages,
+      }, fileInfo.totalPages)
+    : null
+
+  const orderMeta = fileInfo && normalizedSettings
     ? {
         fileName: fileInfo.name,
         totalPages: fileInfo.totalPages,
-        copies: settings.copies,
-        printType: settings.colorMode === 'color' ? 'Color' : 'B&W',
-        printSide: settings.sideMode === 'double' ? 'Double' : 'Single',
-        pageSize: settings.pageSize,
-        orientation: settings.orientation,
+        ...normalizedSettings,
         margins: settings.margins,
-        pageRange: resolvedPageRange, // e.g. "1" or "all"
-        pageRangeMode: settings.pageRange, // "custom" or "all"
-        customPages: settings.customPages,
-        selectedPages, // e.g. [1]
-        selectedPageCount, // 1
-        printableCount, // 1
         imageFit: settings.imageFit,
         printingCost: priceBreakdown.printingCost,
         digitalProcessingFee: priceBreakdown.digitalProcessingFee,

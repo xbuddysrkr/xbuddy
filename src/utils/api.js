@@ -213,11 +213,18 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
 export async function submitOrder(orderData, { onStep } = {}) {
   const clientOrderId = 'XB' + String(Math.floor(1000 + Math.random() * 9000))
 
+  const normalizedColor = (orderData.colorMode === 'color' || orderData.printType === 'Color') ? 'color' : 'bw'
+  const isDuplex = orderData.duplex === true || orderData.printSide === 'Double'
+  const resolvedPaperSize = orderData.paperSize || orderData.pageSize || 'A4'
+
   const printSettings = {
-    copies:            orderData.copies,
-    printSide:         orderData.printSide         || 'Single',
-    colorMode:         orderData.printType         || 'B&W',
-    pageSize:          orderData.pageSize          || 'A4',
+    copies:            Number(orderData.copies) || 1,
+    printSide:         isDuplex ? 'Double' : 'Single',
+    duplex:            isDuplex,
+    colorMode:         normalizedColor,
+    printType:         normalizedColor === 'color' ? 'Color' : 'B&W',
+    pageSize:          resolvedPaperSize,
+    paperSize:         resolvedPaperSize,
     orientation:       orderData.orientation       || 'portrait',
     pageRange:         orderData.pageRange         || 'all',
     pageRangeMode:     orderData.pageRangeMode     || (orderData.pageRange === 'all' ? 'all' : 'custom'),
@@ -236,19 +243,24 @@ export async function submitOrder(orderData, { onStep } = {}) {
     const res = await fetch(`${API_URL}?${new URLSearchParams({
       action: 'saveOrder', key: API_KEY, orderId: clientOrderId,
       name: orderData.name, fileName: orderData.fileName,
-      totalPages: String(orderData.totalPages), copies: String(orderData.copies),
-      printType: orderData.printType || 'B&W', printSide: orderData.printSide || 'Single',
-      pageSize: orderData.pageSize || 'A4', orientation: orderData.orientation || 'portrait',
+      totalPages: String(orderData.totalPages), copies: String(printSettings.copies),
+      colorMode: normalizedColor,
+      printType: printSettings.printType,
+      printSide: printSettings.printSide,
+      duplex: String(isDuplex),
+      pageSize: resolvedPaperSize,
+      paperSize: resolvedPaperSize,
+      orientation: printSettings.orientation,
       amount: String(orderData.amount),
       printingCost: String(orderData.printingCost || ''),
       serviceFee: String(orderData.serviceFee || ''),
       transactionId: orderData.transactionId,
-      pageRange: orderData.pageRange || 'all',
-      pageRangeMode: orderData.pageRangeMode || (orderData.pageRange === 'all' ? 'all' : 'custom'),
-      customPages: orderData.customPages || '',
-      printableCount: String(orderData.printableCount || orderData.totalPages),
-      selectedPages: JSON.stringify(orderData.selectedPages || []),
-      selectedPageCount: String(orderData.selectedPageCount || (orderData.selectedPages ? orderData.selectedPages.length : 1)),
+      pageRange: printSettings.pageRange,
+      pageRangeMode: printSettings.pageRangeMode,
+      customPages: printSettings.customPages,
+      printableCount: String(printSettings.printableCount),
+      selectedPages: JSON.stringify(printSettings.selectedPages),
+      selectedPageCount: String(printSettings.selectedPageCount),
     }).toString()}`, { signal: AbortSignal.timeout(20000) })
     if (!res.ok) throw { step: 'save_order', reason: `HTTP ${res.status}` }
     gasResult = await res.json()
