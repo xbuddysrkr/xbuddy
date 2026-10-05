@@ -254,6 +254,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
       amount: String(orderData.amount),
       printingCost: String(orderData.printingCost || ''),
       serviceFee: String(orderData.serviceFee || ''),
+      digitalProcessingFee: String(orderData.digitalProcessingFee || orderData.serviceFee || ''),
       transactionId: orderData.transactionId,
       pageRange: printSettings.pageRange,
       pageRangeMode: printSettings.pageRangeMode,

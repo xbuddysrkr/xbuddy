@@ -64,6 +64,7 @@ var ORDER_COLUMNS = [
   'amount',
   'printingCost',
   'serviceFee',
+  'digitalProcessingFee',
   'transactionId',
   'pageRange',
   'printableCount',
@@ -490,6 +491,7 @@ function handleSaveOrder(params) {
   var sheet = getOrCreateOrdersSheet();
   var orderId = params.orderId || ('XB' + Math.floor(1000 + Math.random() * 9000));
   var nowIso = new Date().toISOString();
+  var digitalFee = params.digitalProcessingFee || params.serviceFee || 0;
 
   var row = [
     orderId,
@@ -506,6 +508,7 @@ function handleSaveOrder(params) {
     params.amount || 0,
     params.printingCost || 0,
     params.serviceFee || 0,
+    digitalFee,
     params.transactionId || '',
     params.pageRange || 'all',
     params.printableCount || 1,
@@ -534,17 +537,20 @@ function handleGetOrderStatus(orderId) {
       return jsonResponse({
         success: true,
         order: {
-          orderId:       row[0],
-          name:          row[1],
-          fileName:      row[2],
-          totalPages:    row[3],
-          copies:        row[4],
-          colorMode:     row[5],
-          amount:        row[11],
-          transactionId: row[14],
-          paymentStatus: row[19] || 'pending',
-          printStatus:   row[20] || 'waiting_for_shopkeeper',
-          createdAt:     row[21]
+          orderId:              row[0],
+          name:                 row[1],
+          fileName:             row[2],
+          totalPages:           row[3],
+          copies:               row[4],
+          colorMode:            row[5],
+          amount:               row[11],
+          printingCost:         row[12],
+          serviceFee:           row[13],
+          digitalProcessingFee: row[14],
+          transactionId:        row[15],
+          paymentStatus:        row[20] || 'pending',
+          printStatus:          row[21] || 'waiting_for_shopkeeper',
+          createdAt:            row[22]
         }
       });
     }
@@ -564,20 +570,23 @@ function handleListOrders() {
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
     orders.push({
-      rowIndex:      i + 2,
-      orderId:       row[0],
-      name:          row[1],
-      fileName:      row[2],
-      totalPages:    row[3],
-      copies:        row[4],
-      colorMode:     row[5],
-      printType:     row[6],
-      printSide:     row[7],
-      amount:        row[11],
-      transactionId: row[14],
-      paymentStatus: row[19] || 'pending',
-      printStatus:   row[20] || 'waiting_for_shopkeeper',
-      createdAt:     row[21]
+      rowIndex:             i + 2,
+      orderId:              row[0],
+      name:                 row[1],
+      fileName:             row[2],
+      totalPages:           row[3],
+      copies:               row[4],
+      colorMode:            row[5],
+      printType:            row[6],
+      printSide:            row[7],
+      amount:               row[11],
+      printingCost:         row[12],
+      serviceFee:           row[13],
+      digitalProcessingFee: row[14],
+      transactionId:        row[15],
+      paymentStatus:        row[20] || 'pending',
+      printStatus:          row[21] || 'waiting_for_shopkeeper',
+      createdAt:            row[22]
     });
   }
 
