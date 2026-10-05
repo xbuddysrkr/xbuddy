@@ -12,8 +12,6 @@ const PENDING_STATUSES = { upload_file: 'pending', save_order: 'pending', print_
 export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
   const [phone,         setPhone]         = useState('')
   const [transactionId, setTransactionId] = useState('')
-  const [screenshot,    setScreenshot]    = useState(null)
-  const [preview,       setPreview]       = useState(null)
   const [fieldError,    setFieldError]    = useState('')
 
   // Progress state
@@ -24,9 +22,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
   const [result,        setResult]        = useState(null)   // { orderId, message }
 
   // Cached base64 values so retry can skip re-encoding
-  const cachedRef = useRef({ screenshotBase64: null, pdfBase64: null })
-
-  const fileInputRef = useRef()
+  const cachedRef = useRef({ pdfBase64: null })
 
   // beforeunload guard while processing
   useEffect(() => {
@@ -40,15 +36,6 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
     setStepStatuses(prev => ({ ...prev, [id]: status }))
   }
 
-  function handleScreenshot(file) {
-    if (!file) return
-    if (!file.type.startsWith('image/')) { setFieldError('Please upload an image file (JPG, PNG, etc.)'); return }
-    setScreenshot(file)
-    setPreview(URL.createObjectURL(file))
-    cachedRef.current.screenshotBase64 = null  // invalidate cache on new file
-    setFieldError('')
-  }
-
   // Core submission logic — retryFromStep lets us resume from a failed step
   const runSubmit = useCallback(async (retryFromStep = null) => {
     setProcessing(true)
@@ -58,12 +45,11 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
     const cache = cachedRef.current
 
     try {
-      // ── Step: upload_file (encode both files) ──────────────────────────────
+      // ── Step: upload_file (encode PDF file) ──────────────────────────────
       if (!retryFromStep || retryFromStep === 'upload_file') {
         setStep('upload_file', 'active')
         try {
-          if (!cache.screenshotBase64) cache.screenshotBase64 = await fileToBase64(screenshot)
-          if (!cache.pdfBase64)        cache.pdfBase64        = await fileToBase64(orderMeta.pdfFile)
+          if (!cache.pdfBase64) cache.pdfBase64 = await fileToBase64(orderMeta.pdfFile)
         } catch (err) {
           throw { step: 'upload_file', reason: err.message || 'Failed to read file' }
         }
@@ -95,7 +81,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
           serviceFee:           orderMeta.digitalProcessingFee || orderMeta.serviceFee || 0,
           amount:               orderMeta.amount,
           transactionId:        transactionId.trim(),
-          screenshotBase64:     cache.screenshotBase64,
+          screenshotBase64:     '',
           pdfBase64:            cache.pdfBase64,
         },
         {
@@ -149,13 +135,12 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
     } finally {
       setProcessing(false)
     }
-  }, [phone, transactionId, screenshot, orderMeta, onSuccess])
+  }, [phone, transactionId, orderMeta, onSuccess])
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!phone.trim())         return setFieldError('Please enter your phone number.')
     if (!transactionId.trim()) return setFieldError('Please enter the Transaction ID.')
-    if (!screenshot)           return setFieldError('Please upload your payment screenshot.')
     setStepStatuses(PENDING_STATUSES)
     runSubmit(null)
   }
@@ -209,43 +194,6 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
             className={inputCls + ' font-mono'}
             disabled={processing}
           />
-        </div>
-
-        <div>
-          <label className="text-gray-500 text-xs mb-1 block">Payment Screenshot</label>
-          <div
-            onClick={() => !processing && fileInputRef.current.click()}
-            className={`border-2 border-dashed rounded-xl p-4 text-center transition-all ${
-              processing ? 'opacity-60 cursor-not-allowed' :
-              preview    ? 'border-orange-300 bg-orange-50 cursor-pointer' :
-                           'border-orange-200 hover:border-[#F78C25] hover:bg-orange-50 cursor-pointer'
-            }`}
-          >
-            <input
-              ref={fileInputRef} type="file" accept="image/*" className="hidden"
-              onChange={(e) => handleScreenshot(e.target.files[0])}
-              disabled={processing}
-            />
-            <AnimatePresence mode="wait">
-              {preview ? (
-                <motion.div key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <img src={preview} alt="Payment screenshot" className="h-24 object-contain mx-auto rounded-lg mb-2" />
-                  <p className="text-[#F78C25] text-xs">{screenshot.name}</p>
-                  {!processing && <p className="text-gray-400 text-xs mt-0.5">Click to change</p>}
-                </motion.div>
-              ) : (
-                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <div className="w-8 h-8 rounded-lg bg-orange-50 border border-orange-200 flex items-center justify-center mx-auto mb-2">
-                    <svg className="w-4 h-4 text-[#F78C25]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <p className="text-gray-400 text-xs">Tap to upload screenshot</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
         </div>
 
         <AnimatePresence>

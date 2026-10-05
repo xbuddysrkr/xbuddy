@@ -309,3 +309,18 @@ export async function submitOrder(orderData, { onStep } = {}) {
   }
 }
 
+/**
+ * Fetches approved active campus advertisements from Google Apps Script.
+ * Returns null if network fails or action is unavailable so UI falls back cleanly.
+ */
+export async function fetchCampusAds(placement = 'order-status') {
+  try {
+    const res = await gasGet({ action: 'getAds', placement })
+    if (res?.success && Array.isArray(res.ads)) {
+      return res.ads
+    }
+  } catch (err) {
+    console.warn('[Campus Ads] Failed to fetch active ads from GAS:', err)
+  }
+  return null
+}

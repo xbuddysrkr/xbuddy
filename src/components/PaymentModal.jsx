@@ -545,7 +545,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
             </motion.div>
           )}
 
-          {/* ─── STEP 4: TRANSACTION ID & SCREENSHOT FORM ─── */}
+          {/* ─── STEP 4: TRANSACTION ID CONFIRMATION FORM ─── */}
           {step === 'FORM' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
               <div className="flex items-center justify-between mb-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
