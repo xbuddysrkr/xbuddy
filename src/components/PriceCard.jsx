@@ -6,11 +6,17 @@ import { AlertCircle, Store } from 'lucide-react'
 export default function PriceCard({ fileInfo, settings, onPayAndPrint }) {
   const { colorMode, sideMode, copies, pageRange, customPages } = settings
   const isDoubleSide = sideMode === 'double'
+  const isCustom = pageRange === 'custom'
 
   let selectedPages = []
-  if (pageRange === 'custom' && customPages) {
+  let isCustomValid = true
+  let customError = ''
+
+  if (isCustom) {
     const parsed = parsePageRange(customPages, fileInfo.totalPages)
-    if (parsed.valid) selectedPages = parsed.selectedPages
+    isCustomValid = parsed.valid
+    selectedPages = parsed.valid ? parsed.selectedPages : []
+    customError = parsed.error || 'Enter a valid page number or range.'
   }
 
   const breakdown = calcPriceBreakdown({
@@ -111,12 +117,20 @@ export default function PriceCard({ fileInfo, settings, onPayAndPrint }) {
           <div className="w-full py-3.5 bg-slate-100 text-slate-500 font-bold text-sm rounded-2xl text-center border border-slate-200 flex items-center justify-center gap-2">
             <Store className="w-4 h-4" /> Please contact the Xerox shop for large orders
           </div>
+        ) : (isCustom && (!isCustomValid || selectedPages.length === 0 || totalAmount <= 0)) ? (
+          <button
+            type="button"
+            disabled
+            className="w-full py-4 bg-slate-100 text-slate-400 font-bold text-base rounded-2xl cursor-not-allowed border border-slate-200 text-center"
+          >
+            {customError ? customError : 'Enter a valid page number or range.'}
+          </button>
         ) : (
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={onPayAndPrint}
-            className="w-full py-4 bg-[#F7931E] hover:bg-[#e07010] text-white font-bold text-lg rounded-2xl glow-orange transition-all duration-200 shadow-md shadow-orange-500/20"
+            className="w-full py-4 bg-[#F7931E] hover:bg-[#e07010] text-white font-bold text-lg rounded-2xl glow-orange transition-all duration-200 shadow-md shadow-orange-500/20 cursor-pointer"
           >
             Pay ₹{totalAmount} &amp; Print →
           </motion.button>

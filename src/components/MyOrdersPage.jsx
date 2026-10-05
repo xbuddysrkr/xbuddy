@@ -333,10 +333,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     <span className="text-gray-500">Total Pages:</span>
                     <span className="font-semibold text-gray-800">{selectedOrder.totalPages}</span>
                   </div>
-                  {selectedOrder.pageRange === 'custom' && selectedOrder.customPages && (
+                  {(selectedOrder.pageRangeMode === 'custom' || (selectedOrder.pageRange && selectedOrder.pageRange !== 'all') || selectedOrder.customPages) && (
                     <div className="flex justify-between">
                       <span className="text-gray-500">Custom Pages:</span>
-                      <span className="font-semibold text-[#F78C25]">{selectedOrder.customPages} ({selectedOrder.printableCount} pages)</span>
+                      <span className="font-semibold text-[#F78C25]">{selectedOrder.customPages || selectedOrder.pageRange} ({selectedOrder.printableCount || selectedOrder.selectedPageCount || selectedOrder.totalPages} pages)</span>
                     </div>
                   )}
                   <div className="flex justify-between">

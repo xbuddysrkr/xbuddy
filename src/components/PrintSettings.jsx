@@ -218,6 +218,9 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                             : 'border-orange-200 focus:border-[#F78C25]'
                         }`}
                       />
+                      {customPages.trim().length === 0 && (
+                        <p className="text-amber-600 text-xs font-medium">Enter a valid page number or range.</p>
+                      )}
                       {customPages.trim().length > 0 && !customParse.valid && (
                         <p className="text-rose-500 text-xs font-medium">{customParse.error}</p>
                       )}

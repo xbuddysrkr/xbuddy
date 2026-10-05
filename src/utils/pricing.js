@@ -51,14 +51,32 @@ export function calcEffectivePages(totalPages, isDoubleSide) {
 
 export function calcPriceBreakdown({ totalPages, colorMode, isDoubleSide, copies = 1, pageRange, selectedPages }) {
   const numCopies = Math.max(1, Number(copies) || 1)
-  const isCustom = pageRange === 'custom'
+  const isCustom = pageRange === 'custom' || (pageRange && pageRange !== 'all')
   const printablePages = isCustom
-    ? (Array.isArray(selectedPages) ? selectedPages.length : (selectedPages?.length || 0))
+    ? (Array.isArray(selectedPages) ? selectedPages.length : (Number(selectedPages) || 0))
     : (Number(totalPages) || 0)
+
+  const ratePerPage = colorMode === 'color' ? RATES.color : RATES.bw
+
+  if (isCustom && printablePages <= 0) {
+    return {
+      printablePages: 0,
+      effectivePages: 0,
+      totalBillablePages: 0,
+      ratePerPage,
+      copies: numCopies,
+      printingCost: 0,
+      digitalProcessingFee: 0,
+      serviceFee: 0,
+      totalAmount: 0,
+      overLimit: false,
+      overLimitMessage: '',
+      invalidSelection: true,
+    }
+  }
 
   const effectivePages = calcEffectivePages(printablePages, isDoubleSide)
   const totalBillablePages = effectivePages * numCopies
-  const ratePerPage = colorMode === 'color' ? RATES.color : RATES.bw
   const printingCost = totalBillablePages * ratePerPage
 
   const { fee: digitalProcessingFee, overLimit, message: overLimitMessage } = calcDigitalProcessingFee(totalBillablePages)
@@ -76,6 +94,7 @@ export function calcPriceBreakdown({ totalPages, colorMode, isDoubleSide, copies
     totalAmount,
     overLimit,
     overLimitMessage,
+    invalidSelection: false,
   }
 }
 

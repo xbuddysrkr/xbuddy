@@ -214,17 +214,19 @@ export async function submitOrder(orderData, { onStep } = {}) {
   const clientOrderId = 'XB' + String(Math.floor(1000 + Math.random() * 9000))
 
   const printSettings = {
-    copies:        orderData.copies,
-    printSide:     orderData.printSide     || 'Single',
-    colorMode:     orderData.printType     || 'B&W',
-    pageSize:      orderData.pageSize      || 'A4',
-    orientation:   orderData.orientation   || 'portrait',
-    pageRange:     orderData.pageRange     || 'all',
-    customPages:   orderData.customPages   || '',
-    printableCount: orderData.printableCount || orderData.totalPages || 1,
-    selectedPages: orderData.selectedPages || [],
-    printingCost:  orderData.printingCost  || 0,
-    serviceFee:    orderData.serviceFee    || 0,
+    copies:            orderData.copies,
+    printSide:         orderData.printSide         || 'Single',
+    colorMode:         orderData.printType         || 'B&W',
+    pageSize:          orderData.pageSize          || 'A4',
+    orientation:       orderData.orientation       || 'portrait',
+    pageRange:         orderData.pageRange         || 'all',
+    pageRangeMode:     orderData.pageRangeMode     || (orderData.pageRange === 'all' ? 'all' : 'custom'),
+    customPages:       orderData.customPages       || '',
+    printableCount:    orderData.printableCount    || (orderData.selectedPages ? orderData.selectedPages.length : 1),
+    selectedPages:     orderData.selectedPages     || [],
+    selectedPageCount: orderData.selectedPageCount || (orderData.selectedPages ? orderData.selectedPages.length : 1),
+    printingCost:      orderData.printingCost      || 0,
+    serviceFee:        orderData.serviceFee        || 0,
   }
 
   // ── Step 1: Save order to GAS ─────────────────────────────────────────────
@@ -242,9 +244,11 @@ export async function submitOrder(orderData, { onStep } = {}) {
       serviceFee: String(orderData.serviceFee || ''),
       transactionId: orderData.transactionId,
       pageRange: orderData.pageRange || 'all',
+      pageRangeMode: orderData.pageRangeMode || (orderData.pageRange === 'all' ? 'all' : 'custom'),
       customPages: orderData.customPages || '',
       printableCount: String(orderData.printableCount || orderData.totalPages),
       selectedPages: JSON.stringify(orderData.selectedPages || []),
+      selectedPageCount: String(orderData.selectedPageCount || (orderData.selectedPages ? orderData.selectedPages.length : 1)),
     }).toString()}`, { signal: AbortSignal.timeout(20000) })
     if (!res.ok) throw { step: 'save_order', reason: `HTTP ${res.status}` }
     gasResult = await res.json()

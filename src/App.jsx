@@ -11,7 +11,7 @@ import PaymentModal from './components/PaymentModal'
 import PrintStatus from './components/PrintStatus'
 import AcademicToolkit from './components/AcademicToolkit'
 import { calcPriceBreakdown } from './utils/pricing'
-import { parsePageRange } from './utils/pageRangeParser'
+import { parsePageRange, resolveAllPages } from './utils/pageRangeParser'
 import * as pdfjsLib from 'pdfjs-dist'
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -292,11 +292,24 @@ export default function App() {
     }
   }
 
-  let selectedPages = []
-  if (fileInfo && settings.pageRange === 'custom' && settings.customPages) {
-    const parsed = parsePageRange(settings.customPages, fileInfo.totalPages)
-    if (parsed.valid) selectedPages = parsed.selectedPages
-  }
+  const isCustomRange = settings.pageRange === 'custom'
+  const customParsed = (fileInfo && isCustomRange)
+    ? parsePageRange(settings.customPages, fileInfo.totalPages)
+    : null
+
+  const selectedPages = isCustomRange
+    ? (customParsed?.valid ? customParsed.selectedPages : [])
+    : resolveAllPages(fileInfo?.totalPages || 1)
+
+  const selectedPageCount = selectedPages.length
+  const printableCount = selectedPageCount
+
+  // For print agent, GAS and downstream:
+  // When custom range is active, pageRange is the exact parsed range (e.g. "1" or "1-3,5").
+  // When All Pages is active, pageRange is "all".
+  const resolvedPageRange = isCustomRange
+    ? (customParsed?.valid ? customParsed.pageRangeString : '')
+    : 'all'
 
   const priceBreakdown = fileInfo
     ? calcPriceBreakdown({
@@ -310,7 +323,6 @@ export default function App() {
     : { totalAmount: 0, printingCost: 0, serviceFee: 0, printablePages: 0 }
 
   const total = priceBreakdown.totalAmount
-  const printableCount = settings.pageRange === 'custom' ? selectedPages.length : (fileInfo?.totalPages || 1)
 
   const orderMeta = fileInfo
     ? {
@@ -322,10 +334,12 @@ export default function App() {
         pageSize: settings.pageSize,
         orientation: settings.orientation,
         margins: settings.margins,
-        pageRange: settings.pageRange,
+        pageRange: resolvedPageRange, // e.g. "1" or "all"
+        pageRangeMode: settings.pageRange, // "custom" or "all"
         customPages: settings.customPages,
-        selectedPages,
-        printableCount,
+        selectedPages, // e.g. [1]
+        selectedPageCount, // 1
+        printableCount, // 1
         imageFit: settings.imageFit,
         printingCost: priceBreakdown.printingCost,
         digitalProcessingFee: priceBreakdown.digitalProcessingFee,
