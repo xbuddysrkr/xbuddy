@@ -113,3 +113,17 @@ body {
   stroke-dasharray: 8 8;
   animation: dashMove 2s linear infinite;
 }
+
+/* Standard A4 Print Rules */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  html, body {
+    width: 210mm;
+    min-height: 297mm;
+    background: #ffffff !important;
+  }
+}

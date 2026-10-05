@@ -98,96 +98,153 @@ function generateDocumentHtml(type, form) {
   const days = fieldSpan('days', form.days, 'N')
   const weeks = fieldSpan('weeks', form.weeks || form.days, 'N')
 
-  const letterHeader = `Date: ${date}\n\nTo,\n${to},\nDepartment of ${dept},\n${clg}\n\n`
-  const letterClose = `\n\nThank you for your kind consideration.\n\nYours obediently,\n\n${nm}\nRoll No: ${roll}\n${yr} Year — ${dept}\n${clg}`
+  const letterHeader = `Date: ${date}\n\n\nTo,\n${to},\nDepartment of ${dept},\n${clg}.\n\n\n`
+  const letterClose = `\n\n\nThank you for your kind consideration.\n\n\nYours obediently,\n\n\n\n${nm}\nRoll No: ${roll}\n${yr} Year — ${dept}\n${clg}`
 
   switch (type) {
     case 'leave': {
       const reason = fieldSpan('reason', form.reason, '[State your reason]')
-      const extraContent = form.extra ? `Additional details: ${escapeHtml(form.extra)}\n\n` : ''
+      const extraContent = form.extra ? `\nAdditional details: ${escapeHtml(form.extra)}\n` : ''
       const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Sub: Application for Leave — ${days} Day(s)\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to respectfully request leave for ${days} day(s) from [Start Date] to [End Date].\n\nReason: ${reason}.\n\n${extra}I assure you that I will complete all pending academic work upon my return. I kindly request you to grant me the leave and oblige.${letterClose}`
+      return `${letterHeader}Subject: Application for Leave — ${days} Day(s)\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully request leave of absence for a period of ${days} day(s) from [Start Date] to [End Date].\n\nReason for Leave: ${reason}.\n${extra}\nI assure you that I will be proactive in completing all pending coursework, laboratory experiments, and academic assignments upon my return. I kindly request you to approve my leave application and oblige.${letterClose}`
     }
 
     case 'bonafide': {
       const reason = fieldSpan('reason', form.reason, '[State purpose]')
-      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
       const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Sub: Request for Bonafide Certificate\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to request a Bonafide Certificate for the purpose of ${reason}.\n\n${extra}I kindly request you to issue the certificate at the earliest. I shall be highly grateful for your support.${letterClose}`
+      return `${letterHeader}Subject: Request for Official Bonafide Certificate\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to formally request the issuance of an official Bonafide Certificate from the college administration.\n\nPurpose of Certificate: ${reason}.\n${extra}\nThis certificate is urgently required for the purpose mentioned above. I assure you that my academic records and conduct have been exemplary. I kindly request you to issue the certificate at the earliest convenience. I shall be highly grateful for your prompt support.${letterClose}`
     }
 
     case 'internship': {
       const reason = fieldSpan('reason', form.reason, '[Describe the internship]')
-      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
       const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Sub: Request for Permission to Attend Internship\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I have been offered an internship opportunity at [Company Name] for a duration of ${weeks} week(s).\n\nPurpose: ${reason}.\n\n${extra}I humbly request your permission and necessary leave to attend this internship, which will greatly contribute to my professional development.${letterClose}`
+      return `${letterHeader}Subject: Request for Permission to Attend Internship — ${weeks} Week(s)\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I have been offered a valuable internship opportunity at [Company / Institution Name] for a duration of ${weeks} week(s).\n\nInternship Domain / Profile: ${reason}.\n${extra}\nThis internship will provide vital industry exposure and practical experience that directly complements my academic studies. I assure you that my regular coursework and attendance requirements will be diligently maintained. I kindly request your permission and approval for the required leave to attend this internship program.${letterClose}`
     }
 
     case 'permission': {
-      const reason = fieldSpan('reason', form.reason, '[Event/Purpose]')
-      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const reason = fieldSpan('reason', form.reason, '[Event / Purpose]')
+      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
       const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Sub: Request for Permission — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to seek your kind permission for ${reason} on [Date].\n\n${extra}I assure you that this will not affect my academic performance. I kindly request you to grant permission and oblige.${letterClose}`
+      return `${letterHeader}Subject: Request for Permission — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully seek your permission for ${reason} scheduled to take place on [Date / Time Window].\n\n${extra}\nI assure you that participating in this activity will not adversely impact my academic schedule or college discipline. I will ensure all missed study material is covered promptly. I humbly request you to grant the required permission and oblige.${letterClose}`
     }
 
     case 'apology': {
       const reason = fieldSpan('reason', form.reason, '[describe the incident]')
-      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
       const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Sub: Apology Letter — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing this letter to sincerely apologize for ${reason}.\n\nI deeply regret my actions and understand the inconvenience caused.\n\n${extra}I assure you that such an incident will not recur in the future. I humbly request you to kindly forgive me and give me another opportunity to prove myself.${letterClose}`
+      return `${letterHeader}Subject: Formal Letter of Apology — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing this letter to tender my sincere and unreserved apology regarding ${reason}.\n\n${extra}\nI deeply regret my actions and fully realize the disruption and inconvenience caused. I assure you that such a lapse in conduct will never recur under any circumstances, and I will strictly adhere to all college rules and expectations moving forward. I humbly request you to pardon my mistake and give me an opportunity to prove my sincere commitment to academic discipline.${letterClose}`
     }
 
     case 'scholarship': {
       const reason = fieldSpan('reason', form.reason, '[State your reason and eligibility]')
-      const extraContent = form.extra ? `${escapeHtml(form.extra)}\n\n` : ''
+      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
       const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Sub: Application for Scholarship\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to apply for the scholarship offered by your institution.\n\nReason / Eligibility: ${reason}.\n\n${extra}I am a sincere and dedicated student and this scholarship will greatly support my academic journey. I kindly request you to consider my application favorably.${letterClose}`
+      return `${letterHeader}Subject: Application for Institutional Scholarship Assistance\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully submit my application for the scholarship assistance program offered by the institution.\n\nEligibility & Family Background: ${reason}.\n${extra}\nI have consistently maintained a strong academic record and an active presence in departmental coursework. Receiving this scholarship assistance will substantially alleviate my family's financial burden and enable me to focus wholeheartedly on my engineering education. I humbly request you to consider my application favorably and grant me this opportunity.${letterClose}`
     }
 
     case 'resume': {
-      const reason = fieldSpan('reason', form.reason, 'A motivated student seeking opportunities to apply academic knowledge and develop professional skills.')
-      return `${nm}\n${'─'.repeat(60)}\nEmail: [your@email.com]   Phone: [+91 XXXXX XXXXX]   City, State\n\nOBJECTIVE\n${reason}\n\nEDUCATION\nB.Tech / B.E. in ${dept}  —  ${clg}\n${yr} Year  |  CGPA: [X.X / 10]\n\nSKILLS\nTechnical:  [Skill 1], [Skill 2], [Skill 3]\nSoft Skills: Communication, Teamwork, Problem Solving\n\nPROJECTS\n[Project Name]  —  [Tech Stack]\n[Brief description of the project and your role]\n\nINTERNSHIPS\n[Company Name]  —  [Role]  |  [Duration]\n[Description of work done]\n\nACHIEVEMENTS\n- [Achievement / Certification 1]\n- [Achievement / Certification 2]\n\nDECLARATION\nI hereby declare that the above information is true to the best of my knowledge.\n\nDate: ${date}                    Signature: ___________________`
+      const reason = fieldSpan('reason', form.reason, 'A dedicated engineering student seeking opportunities to apply technical skills and contribute effectively to organizational success.')
+      return `${nm}\n${'─'.repeat(54)}\nEmail: [your.email@example.com]   |   Phone: [+91 98765 43210]   |   Location: [City, State]\nLinkedIn: linkedin.com/in/[profile]       |   GitHub: github.com/[profile]\n\n\nCAREER OBJECTIVE\n${'─'.repeat(54)}\n${reason}\n\n\nACADEMIC BACKGROUND\n${'─'.repeat(54)}\n• B.Tech in ${dept} — ${clg}\n  Year of Study: ${yr} Year   |   CGPA: [X.XX / 10.0]\n• Intermediate / 10+2: [Junior College Name] — [XX.X%]\n• Secondary School Certificate (SSC): [School Name] — [XX.X%]\n\n\nTECHNICAL SKILLS\n${'─'.repeat(54)}\n• Programming Languages : C, Java, Python\n• Web & Frameworks      : HTML5, CSS3, JavaScript, React.js\n• Tools & Databases     : MySQL, Git, GitHub, VS Code\n• Core Concepts         : Data Structures, OOP, DBMS, Computer Networks\n\n\nPROJECT WORK\n${'─'.repeat(54)}\n1. [Project Title 1] — [Tech Stack Used]\n   - Developed a responsive web application implementing core functionalities.\n   - Improved user experience and achieved robust database integration.\n\n2. [Project Title 2] — [Tech Stack Used]\n   - Designed and deployed end-to-end module with real-time data handling.\n\n\nKEY ACHIEVEMENTS & CERTIFICATIONS\n${'─'.repeat(54)}\n• Completed Professional Certification in [Course Name] by [Platform/Issuer].\n• Participated in National Level Technical Symposium / Hackathon.\n\n\nDECLARATION\n${'─'.repeat(54)}\nI hereby affirm that the details furnished above are authentic and complete to the best of my knowledge.\n\nDate: ${date}\nPlace: [City Name]                                Signature: ___________________`
     }
 
     case 'assignment': {
       const clgUpper = fieldSpan('college', (form.college || '[College Name]').toUpperCase(), '[COLLEGE NAME]')
       const reason = fieldSpan('reason', form.reason, '[Assignment Topic]')
-      return `${'─'.repeat(60)}\n${clgUpper}\nDepartment of ${dept}\n${'─'.repeat(60)}\n\n\n           A S S I G N M E N T\n\n\nSubject      : [Subject Name]\nSubject Code : [Code]\nTopic        : ${reason}\n\n\nSubmitted by:\n  Name         : ${nm}\n  Roll No      : ${roll}\n  Year & Sec   : ${yr} Year\n  Semester     : [Semester]\n\nSubmitted to:\n  Faculty Name : ${to}\n  Designation  : [Designation]\n\n\nDate of Submission: ${date}\n${'─'.repeat(60)}`
+      const doubleLine = '═'.repeat(54)
+      const singleLine = '─'.repeat(54)
+      return `${doubleLine}\n                  ${clgUpper}\n             DEPARTMENT OF ${dept.toUpperCase()}\n${doubleLine}\n\n\n\n                  A S S I G N M E N T   R E P O R T\n\n\n\nSubject Name     : [Subject Name]\nSubject Code     : [Subject Code]\nTopic            : ${reason}\nAcademic Year    : [20XX – 20XX]\nSemester         : [Odd / Even Semester]\n\n\n\n${singleLine}\nSUBMITTED BY:\n  Student Name   : ${nm}\n  Roll Number    : ${roll}\n  Year & Branch  : ${yr} Year — ${dept}\n  Section / Batch: [Section A / B]\n${singleLine}\n\nSUBMITTED TO:\n  Faculty Name   : ${to}\n  Designation    : [Assistant / Associate Professor]\n  Department     : Department of ${dept}\n${singleLine}\n\n\nDate of Submission: ${date}               Faculty Signature: __________________\n${doubleLine}`
     }
 
     case 'lab': {
       const clgUpper = fieldSpan('college', (form.college || '[College Name]').toUpperCase(), '[COLLEGE NAME]')
-      return `${'─'.repeat(60)}\n${clgUpper}\nDepartment of ${dept}\n${'─'.repeat(60)}\n\n\n           L A B   R E C O R D\n\n\nSubject      : [Subject Name]\nSubject Code : [Code]\n\n\nName         : ${nm}\nRoll Number  : ${roll}\nYear & Branch: ${yr} Year — ${dept}\nSection      : [Section]\nSemester     : [Semester]\n\n\nFaculty In-charge  : ${to}\nAcademic Year      : [20XX – 20XX]\n\n\nLab In-charge Signature: ___________________\n${'─'.repeat(60)}`
+      const doubleLine = '═'.repeat(54)
+      const singleLine = '─'.repeat(54)
+      return `${doubleLine}\n                  ${clgUpper}\n             DEPARTMENT OF ${dept.toUpperCase()}\n${doubleLine}\n\n\n\n             L A B O R A T O R Y   R E C O R D\n\n\n\nLaboratory Course: [Laboratory Course Name]\nCourse Code      : [Course Code]\nAcademic Year    : [20XX – 20XX]\nSemester         : [Semester Details]\n\n\n\n${singleLine}\nSTUDENT CREDENTIALS:\n  Name           : ${nm}\n  Roll Number    : ${roll}\n  Year & Branch  : ${yr} Year — ${dept}\n  Section / Batch: [Section / Batch]\n${singleLine}\n\nFACULTY IN-CHARGE:\n  Name           : ${to}\n  Designation    : [Faculty Designation]\n  Department     : Department of ${dept}\n${singleLine}\n\n\nCERTIFICATE\nThis is to certify that this is a bonafide record of practical work done by the student in the laboratory during the academic year [20XX – 20XX].\n\n\nStaff In-charge: __________________      Head of Department: __________________\n${doubleLine}`
     }
 
     default:
-      return `${letterHeader}Respected Sir/Madam,\n\nI am ${nm}.${letterClose}`
+      return `${letterHeader}Subject: Application\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} (Roll No: ${roll}).\n\nI kindly request your consideration and assistance.${letterClose}`
   }
 }
 
-// ── PDF export via jsPDF ───────────────────────────────────────────────────────
-async function exportToPdf(text, filename, opts = {}) {
-  const fontSize = opts.fontSize || 11 // pt
+// ── High-Fidelity A4 PDF Export via html2canvas & jsPDF ────────────────────────
+async function exportToPdf(canvasElement, docId, opts = {}) {
+  const html2canvas = (await import('html2canvas')).default
+  const { jsPDF } = await import('jspdf')
+
+  if (!canvasElement) {
+    throw new Error('Canvas element not found')
+  }
+
+  // Exact A4 dimensions at 96 DPI: 210mm x 297mm
+  const A4_W = 794
+  const A4_H = 1123
+
+  // Create an off-screen clone with exact true A4 dimensions
+  const clone = document.createElement('div')
+  clone.style.cssText = `
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    width: ${A4_W}px;
+    min-height: ${A4_H}px;
+    background: #ffffff;
+    z-index: -9999;
+    box-sizing: border-box;
+    padding: 24mm 24mm;
+    font-family: ${canvasElement.style.fontFamily || "'Georgia', 'Times New Roman', serif"};
+    font-size: ${canvasElement.style.fontSize || '12pt'};
+    line-height: ${canvasElement.style.lineHeight || '1.6'};
+    color: #0f172a;
+    white-space: pre-wrap;
+    word-break: break-word;
+  `
+  clone.innerHTML = canvasElement.innerHTML
+
+  document.body.appendChild(clone)
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  const totalHeight = Math.max(A4_H, clone.scrollHeight)
+  const totalPages = Math.max(1, Math.ceil((totalHeight - 15) / A4_H))
+
+  const canvas = await html2canvas(clone, {
+    scale: 2, // 300 DPI high resolution
+    useCORS: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+    width: A4_W,
+    height: totalPages * A4_H,
+    windowWidth: A4_W,
+  })
+
+  document.body.removeChild(clone)
+
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-  const pageW = pdf.internal.pageSize.getWidth()
-  const pageH = pdf.internal.pageSize.getHeight()
-  const margin = 14
-  const maxW = pageW - margin * 2
 
-  pdf.setFont('Times', 'Roman')
-  pdf.setFontSize(fontSize)
+  // Slice into exact A4 pages
+  for (let page = 0; page < totalPages; page++) {
+    if (page > 0) pdf.addPage()
 
-  const lines = pdf.splitTextToSize(text, maxW)
-  const lineHeightMm = (fontSize * 0.352777778) * 1.3
-  let y = margin + 5
+    const pageCanvas = document.createElement('canvas')
+    pageCanvas.width = canvas.width
+    pageCanvas.height = Math.round(canvas.width * (297 / 210))
+    const ctx = pageCanvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
 
-  for (let i = 0; i < lines.length; i++) {
-    if (y + lineHeightMm > pageH - margin) {
-      pdf.addPage()
-      y = margin + 5
-    }
-    pdf.text(String(lines[i]), margin, y)
-    y += lineHeightMm
+    const sliceH = Math.round(canvas.width * (297 / 210))
+    const sourceY = page * sliceH
+    const sourceH = Math.min(canvas.height - sourceY, sliceH)
+
+    ctx.drawImage(
+      canvas,
+      0, sourceY, canvas.width, sourceH,
+      0, 0, pageCanvas.width, sourceH
+    )
+
+    pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.98), 'JPEG', 0, 0, 210, 297)
   }
 
   return pdf
@@ -258,16 +315,26 @@ function PreviewPanel({
   onPrint,
   toast,
 }) {
+  const [zoom, setZoom] = useState(() => {
+    if (typeof window === 'undefined') return 0.75
+    const w = window.innerWidth
+    if (w < 480) return Math.max(0.36, Math.min(0.48, +((w - 32) / 794).toFixed(2)))
+    if (w < 768) return 0.55
+    if (w < 1200) return 0.68
+    return 0.78
+  })
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#FFFDF9]">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-orange-100 flex-shrink-0 gap-2 flex-wrap bg-white/95 backdrop-blur-md shadow-2xs">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 border-b border-orange-100 flex-shrink-0 gap-2 flex-wrap bg-white/95 backdrop-blur-md shadow-2xs">
         <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Font Controls */}
           <div className="flex items-center gap-1 bg-orange-50/70 border border-orange-200/80 rounded-xl px-2 py-1">
             <span className="text-slate-600 text-xs font-semibold mr-1">Font</span>
             <button
               type="button"
-              onClick={() => setFontSize(s => Math.max(8, s - 1))}
+              onClick={() => setFontSize(s => Math.max(9, s - 1))}
               className="w-6 h-6 rounded-lg bg-white hover:bg-orange-100 border border-orange-200 text-[#F78C25] text-xs font-bold transition-all flex items-center justify-center cursor-pointer shadow-2xs active:scale-90"
               title="Decrease Font Size"
             >
@@ -276,7 +343,7 @@ function PreviewPanel({
             <span className="text-slate-700 font-bold text-xs w-8 text-center">{fontSize}pt</span>
             <button
               type="button"
-              onClick={() => setFontSize(s => Math.min(18, s + 1))}
+              onClick={() => setFontSize(s => Math.min(16, s + 1))}
               className="w-6 h-6 rounded-lg bg-white hover:bg-orange-100 border border-orange-200 text-[#F78C25] text-xs font-bold transition-all flex items-center justify-center cursor-pointer shadow-2xs active:scale-90"
               title="Increase Font Size"
             >
@@ -284,9 +351,33 @@ function PreviewPanel({
             </button>
           </div>
 
-          <div className="hidden min-[480px]:flex items-center gap-1.5 ml-1">
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 bg-orange-50/70 border border-orange-200/80 rounded-xl px-2 py-1">
+            <span className="text-slate-600 text-[11px] font-semibold mr-1">Zoom</span>
+            <button
+              type="button"
+              onClick={() => setZoom(z => Math.max(0.35, +(z - 0.08).toFixed(2)))}
+              className="w-6 h-6 rounded-lg bg-white hover:bg-orange-100 text-[#F78C25] font-bold text-xs flex items-center justify-center transition-all shadow-2xs cursor-pointer active:scale-90"
+              title="Zoom Out"
+            >
+              −
+            </button>
+            <span className="text-slate-700 font-bold text-xs w-9 text-center">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom(z => Math.min(1.3, +(z + 0.08).toFixed(2)))}
+              className="w-6 h-6 rounded-lg bg-white hover:bg-orange-100 text-[#F78C25] font-bold text-xs flex items-center justify-center transition-all shadow-2xs cursor-pointer active:scale-90"
+              title="Zoom In"
+            >
+              +
+            </button>
+          </div>
+
+          <div className="hidden min-[600px]:flex items-center gap-1.5 ml-1">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-slate-500 text-xs font-medium">Click anywhere on document to edit freely</span>
+            <span className="text-slate-500 text-xs font-medium">True A4 Sheet · Click to edit</span>
           </div>
         </div>
 
@@ -304,7 +395,7 @@ function PreviewPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
             )}
-            <span>{exporting ? 'Exporting...' : 'Download PDF'}</span>
+            <span>{exporting ? 'Generating...' : 'Download PDF'}</span>
           </button>
 
           <button
@@ -334,23 +425,28 @@ function PreviewPanel({
         )}
       </AnimatePresence>
 
-      {/* A4 Document Canvas — Completely free-form native editable sheet */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex justify-center bg-[#FFFDF9] bg-dot-pattern">
-        <div
-          ref={canvasRef}
-          contentEditable
-          suppressContentEditableWarning
-          onInput={onCanvasInput}
-          onKeyDown={onCanvasKeyDown}
-          onPaste={onCanvasPaste}
-          className="w-full max-w-[210mm] bg-white text-slate-900 rounded-sm shadow-xl border border-orange-100/90 px-6 py-10 sm:p-[22mm] whitespace-pre-wrap outline-none cursor-text select-text focus:ring-1 focus:ring-orange-200"
-          style={{
-            fontFamily: "'Georgia', 'Times New Roman', serif",
-            fontSize: `${fontSize}pt`,
-            lineHeight: fontSize <= 10 ? '1.6' : fontSize >= 14 ? '2.2' : '1.9',
-            minHeight: '297mm',
-          }}
-        />
+      {/* A4 Document Canvas Container */}
+      <div className="flex-1 overflow-auto p-4 sm:p-8 flex justify-center items-start bg-[#FFFDF9] bg-dot-pattern">
+        <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center', transition: 'transform 0.15s ease' }}>
+          <div
+            ref={canvasRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={onCanvasInput}
+            onKeyDown={onCanvasKeyDown}
+            onPaste={onCanvasPaste}
+            className="bg-white text-slate-900 rounded-xs shadow-2xl border border-orange-200/80 outline-none cursor-text select-text whitespace-pre-wrap"
+            style={{
+              width: '794px', // True A4 width 210mm
+              minHeight: '1123px', // True A4 height 297mm
+              boxSizing: 'border-box',
+              padding: '24mm 24mm', // Exact professional A4 margins
+              fontFamily: "'Georgia', 'Times New Roman', serif",
+              fontSize: `${fontSize}pt`,
+              lineHeight: '1.6',
+            }}
+          />
+        </div>
       </div>
     </div>
   )
@@ -374,7 +470,7 @@ function DocModal({ docType, onClose, onPrint }) {
   // Canonical Form state
   const [form, setForm] = useState(EMPTY)
   const [mobileTab, setMobileTab] = useState('form')
-  const [fontSize, setFontSize] = useState(11) // pt
+  const [fontSize, setFontSize] = useState(12) // pt (standard formal document)
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState('')
 
@@ -463,32 +559,32 @@ function DocModal({ docType, onClose, onPrint }) {
     showToast('✓ Document ready for download & print')
   }
 
-  // Download PDF — exports the exact text currently visible on the canvas
+  // Download PDF — exports the exact document layout on the canvas at true A4 scale
   async function handleDownload() {
     setExporting(true)
     try {
-      const textToExport = canvasRef.current ? canvasRef.current.innerText : ''
-      const pdf = await exportToPdf(textToExport, docType.id, { fontSize })
+      const pdf = await exportToPdf(canvasRef.current, docType.id, { fontSize })
       pdf.save(`${docType.id}.pdf`)
-      showToast('PDF downloaded successfully!')
-    } catch {
+      showToast('✓ PDF downloaded in true A4 format!')
+    } catch (err) {
+      console.error(err)
       showToast('Export failed — try again')
     } finally {
       setExporting(false)
     }
   }
 
-  // Print with XBuddy — sends the exact text on the canvas to print
+  // Print with XBuddy — sends the exact A4 document to print
   async function handlePrint() {
     setExporting(true)
     try {
-      const textToExport = canvasRef.current ? canvasRef.current.innerText : ''
-      const pdf = await exportToPdf(textToExport, docType.id, { fontSize })
+      const pdf = await exportToPdf(canvasRef.current, docType.id, { fontSize })
       const blob = pdf.output('blob')
       const file = new File([blob], `${docType.id}.pdf`, { type: 'application/pdf' })
       onPrint(file)
       onClose()
-    } catch {
+    } catch (err) {
+      console.error(err)
       showToast('Export failed — try again')
       setExporting(false)
     }
