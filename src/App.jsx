@@ -402,13 +402,13 @@ export default function App() {
 
       {/* Navigation Bar - Hidden only on Resume Builder route */}
       {step !== STEP.RESUME && (
-        <nav className="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300">
-          <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <nav className="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300 w-full max-w-[100vw] overflow-x-hidden">
+          <div className="w-full max-w-7xl mx-auto px-2 min-[360px]:px-2.5 min-[390px]:px-3 sm:px-6 py-2 sm:py-3.5 flex items-center justify-between gap-1 sm:gap-4 overflow-x-hidden">
+            <div className="flex items-center gap-1.5 min-[360px]:gap-2 sm:gap-3 shrink-0">
               <button
                 type="button"
                 onClick={openDrawer}
-                className="p-2 sm:p-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-base transition-all border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
+                className="w-7 h-7 min-[360px]:w-8 min-[360px]:h-8 sm:w-auto sm:h-auto p-1 min-[360px]:p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-xs min-[360px]:text-sm sm:text-base transition-all border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
                 aria-label="Open Navigation Menu"
               >
                 ☰
@@ -421,7 +421,7 @@ export default function App() {
                 <img
                   src="/xbuddy-logo-transparent.png"
                   alt="XBuddy"
-                  className="h-[42px] min-[360px]:h-[46px] min-[390px]:h-[48px] min-[412px]:h-[50px] min-[430px]:h-[52px] sm:h-10 md:h-10 w-auto object-contain shrink-0"
+                  className="h-[26px] min-[360px]:h-7 min-[390px]:h-8 sm:h-10 md:h-10 w-auto object-contain shrink-0"
                 />
               </button>
             </div>
@@ -445,7 +445,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => goToStep(STEP.UPLOAD)}
-                  className="px-4 sm:px-5 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer shrink-0"
+                  className="px-3.5 min-[360px]:px-4 sm:px-5 py-1.5 sm:py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-lg sm:rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer shrink-0"
                 >
                   Print Now →
                 </button>
@@ -453,22 +453,44 @@ export default function App() {
             ) : step === STEP.MY_ORDERS || step === STEP.ADMIN ? (
               <button
                 onClick={handleReset}
-                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                className="px-3 min-[360px]:px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
               >
                 ← Back to Home
               </button>
             ) : (
-              <div className="flex items-center gap-3 text-xs font-semibold">
-                {['Upload', 'Settings', 'Pay & Print'].map((label, i) => {
+              <div className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-3 text-[10px] min-[360px]:text-[11px] sm:text-xs font-semibold shrink-0">
+                {[
+                  { key: STEP.UPLOAD, label: 'Upload', short: 'Upload' },
+                  { key: STEP.SETTINGS, label: 'Settings', short: 'Settings' },
+                  { key: STEP.PRINTING, label: 'Pay & Print', short: 'Pay' }
+                ].map(({ key, label, short }, i) => {
                   const stepKeys = [STEP.UPLOAD, STEP.SETTINGS, STEP.PRINTING]
-                  const isPast   = step === STEP.PRINTING && i < 2
+                  const isPast   = (step === STEP.SETTINGS && i === 0) || (step === STEP.PRINTING && i < 2)
                   const isActive = step === stepKeys[i]
                   return (
-                    <div key={label} className="flex items-center gap-2">
-                      <span className={`px-2.5 py-1 rounded-lg ${isPast ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : isActive ? 'bg-orange-50 text-[#F7931E] border border-orange-200' : 'text-slate-400'}`}>
-                        {isPast ? '✓' : `${i + 1}.`} {label}
+                    <div key={label} className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-2 shrink-0">
+                      <span className={`px-1.5 min-[360px]:px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg whitespace-nowrap transition-colors ${
+                        isPast
+                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                          : isActive
+                            ? 'bg-orange-50 text-[#F7931E] border border-orange-200 font-bold'
+                            : 'text-slate-400 border border-transparent'
+                      }`}>
+                        {isPast ? '✓' : `${i + 1}.`}{' '}
+                        {short === label ? (
+                          label
+                        ) : (
+                          <>
+                            <span className="inline min-[430px]:hidden">{short}</span>
+                            <span className="hidden min-[430px]:inline">{label}</span>
+                          </>
+                        )}
                       </span>
-                      {i < 2 && <span className="text-slate-300">›</span>}
+                      {i < 2 && (
+                        <span className="text-slate-300 text-[9px] min-[360px]:text-[10px] sm:text-xs select-none">
+                          ›
+                        </span>
+                      )}
                     </div>
                   )
                 })}
