@@ -1,4 +1,4 @@
-const API_URL    = 'https://script.google.com/macros/s/AKfycbymPjGiGwUpVHEY5rWy66tIenGzknt29CbfkkAnUJVTzUKG_bdi8f8Fz3M6eS6aLXot/exec'
+const API_URL    = 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
 const LOCAL_API  = 'http://localhost:3001'
 const GITHUB_RAW = 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
 const API_KEY    = import.meta.env.VITE_API_KEY || 'XB_API_SECRET_KEY_2026'

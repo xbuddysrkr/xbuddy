@@ -40,7 +40,7 @@
 
 ## 2. Deploying to Existing Apps Script Project
 
-1. Open your existing Google Apps Script editor (the one currently deployed at `https://script.google.com/macros/s/AKfycbymPjGiGwUpVHEY5rWy66tIenGzknt29CbfkkAnUJVTzUKG_bdi8f8Fz3M6eS6aLXot/exec`).
+1. Open your existing Google Apps Script editor (the one currently deployed at `https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec`).
 2. Add a new script file: Click **+** > **Script**, name it `CampusAds.gs`.
 3. Copy and paste the entire contents of [`CampusAds.gs`](./CampusAds.gs).
 4. In your main `Code.gs`, in your existing `doGet(e)` / `doPost(e)` function, add this one-line router call at the top:
