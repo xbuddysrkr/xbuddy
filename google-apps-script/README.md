@@ -1,9 +1,15 @@
 # XBuddy Campus Ads — Google Apps Script Integration Guide
 
-## 1. Google Sheet & Drive Setup
+## 1. Separate Google Sheets & Drive Setup
 
-- **Google Sheet ID**: `1a_dzI0AaOQo0gypw00BUUiKC872a7lKbKNQU4qe-Eq4`
-- **Sheet Name**: `XBuddy Ads`
+### A. Orders Database (Dedicated Spreadsheet)
+- **Spreadsheet ID**: `16R6KiGoNgH31qEJxCiKrNTD2u99TKHJfDlzgb6iH_nw`
+- **Tab Name**: `Orders`
+- Used exclusively for print orders, customer details, UPI transaction tracking, and print station workflow.
+
+### B. Campus Ads Database (Dedicated Spreadsheet)
+- **Spreadsheet ID**: `1a_dzI0AaOQo0gypw00BUUiKC872a7lKbKNQU4qe-Eq4`
+- **Tab Name**: `XBuddy Ads`
 - **Columns (in exact order)**:
   1. `adId`
   2. `clubName`

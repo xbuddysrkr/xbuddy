@@ -17,14 +17,19 @@
  * - PDF Uploads Drive Folder: 'XBuddy Orders' (auto-created if not exists)
  */
 
-var API_SECRET_KEY      = 'XB_API_SECRET_KEY_2026';
-var ORDERS_SHEET_NAME   = 'Orders';
-var TUNNEL_PROPERTY_KEY = 'XBUDDY_TUNNEL_URL';
+var API_SECRET_KEY        = 'XB_API_SECRET_KEY_2026';
+var TUNNEL_PROPERTY_KEY   = 'XBUDDY_TUNNEL_URL';
 
-// Campus Ads Configurations
-var ADS_SPREADSHEET_ID  = '1a_dzI0AaOQo0gypw00BUUiKC872a7lKbKNQU4qe-Eq4';
-var ADS_SHEET_NAME      = 'XBuddy Ads';
-var ADS_DRIVE_FOLDER_ID = '1HQ_WklATac1JXXpVOzQ40r_X9AClORGo';
+// 1. Orders Google Sheet Configuration (SEPARATE SPREADSHEET)
+var ORDERS_SPREADSHEET_ID = '16R6KiGoNgH31qEJxCiKrNTD2u99TKHJfDlzgb6iH_nw';
+var ORDERS_SHEET_NAME     = 'Orders';
+
+// 2. Campus Ads Google Sheet Configuration (SEPARATE SPREADSHEET)
+var ADS_SPREADSHEET_ID    = '1a_dzI0AaOQo0gypw00BUUiKC872a7lKbKNQU4qe-Eq4';
+var ADS_SHEET_NAME        = 'XBuddy Ads';
+
+// 3. Campus Ads Google Drive Configuration
+var ADS_DRIVE_FOLDER_ID   = '1HQ_WklATac1JXXpVOzQ40r_X9AClORGo';
 
 var ADS_COLUMNS = [
   'adId',
@@ -462,14 +467,8 @@ function seedSampleCampusAd() {
 // ============================================================================
 
 function getOrCreateOrdersSheet() {
-  var ss;
-  try {
-    ss = SpreadsheetApp.getActiveSpreadsheet();
-  } catch (e) {}
-  if (!ss) {
-    ss = SpreadsheetApp.openById(ADS_SPREADSHEET_ID);
-  }
-
+  // CRITICAL: Always open the dedicated Orders Spreadsheet (NEVER Ads spreadsheet)
+  var ss = SpreadsheetApp.openById(ORDERS_SPREADSHEET_ID);
   var sheet = ss.getSheetByName(ORDERS_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(ORDERS_SHEET_NAME);
