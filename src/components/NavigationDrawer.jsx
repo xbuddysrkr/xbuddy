@@ -70,11 +70,10 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
                         item.action()
                         onClose()
                       }}
-                      className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all ${
-                        isActive
+                      className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all ${isActive
                           ? 'bg-orange-50 text-[#F7931E] border border-orange-200 shadow-xs'
                           : 'text-slate-700 hover:bg-orange-50/60 hover:text-[#F78C25]'
-                      }`}
+                        }`}
                     >
                       <span className="text-base">{item.icon}</span>
                       <span>{item.label}</span>

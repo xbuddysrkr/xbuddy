@@ -24,11 +24,12 @@ import ResumeBuilder from './resume-builder/ResumeBuilder'
 import NavigationDrawer from './components/NavigationDrawer'
 import MyOrdersPage from './components/MyOrdersPage'
 import AdminDashboard from './components/AdminDashboard'
+import CampusAdsAdmin from './components/CampusAdsAdmin'
 import XBuddyIntro from './components/XBuddyIntro'
 import XBuddyLogo from './components/XBuddyLogo'
 import Footer from './components/Footer'
 
-const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin' }
+const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin', ADS: 'ads' }
 const DEFAULT_SETTINGS = {
   colorMode: 'bw', sideMode: 'single', copies: 1,
   pageSize: 'A4', orientation: 'portrait', margins: 'normal',
@@ -44,6 +45,8 @@ function getUrlForStep(stepName) {
       return '/my-orders'
     case STEP.ADMIN:
       return '/admin'
+    case STEP.ADS:
+      return '/xbuddyads'
     case STEP.RESUME:
       return '/resume'
     case STEP.PRINTING:
@@ -81,6 +84,9 @@ export default function App() {
       if (path.startsWith('/admin') || hash === '#admin') {
         return STEP.ADMIN
       }
+      if (path.startsWith('/xbuddyads') || hash === '#xbuddyads' || path.startsWith('/ads') || hash === '#ads') {
+        return STEP.ADS
+      }
       if (path.startsWith('/my-orders') || hash === '#orders') {
         return STEP.MY_ORDERS
       }
@@ -103,7 +109,11 @@ export default function App() {
       const isDirectRoute = window.location.pathname.startsWith('/admin') ||
                             window.location.hash === '#admin' ||
                             window.location.pathname.startsWith('/my-orders') ||
-                            window.location.hash === '#orders'
+                            window.location.hash === '#orders' ||
+                            window.location.pathname.startsWith('/xbuddyads') ||
+                            window.location.hash === '#xbuddyads' ||
+                            window.location.pathname.startsWith('/ads') ||
+                            window.location.hash === '#ads'
       if (isDirectRoute) return false
       if (window.sessionStorage.getItem('xbuddy_intro_seen')) return false
       return true
@@ -125,6 +135,8 @@ export default function App() {
 
     if (currentPath.startsWith('/admin') || currentHash === '#admin') {
       initialStep = STEP.ADMIN
+    } else if (currentPath.startsWith('/xbuddyads') || currentHash === '#xbuddyads' || currentPath.startsWith('/ads') || currentHash === '#ads') {
+      initialStep = STEP.ADS
     } else if (currentPath.startsWith('/my-orders') || currentHash === '#orders') {
       initialStep = STEP.MY_ORDERS
     } else if (currentPath.startsWith('/resume') || currentHash === '#resume') {
@@ -182,6 +194,8 @@ export default function App() {
 
         if (path.startsWith('/admin') || hash === '#admin') {
           setStep(STEP.ADMIN)
+        } else if (path.startsWith('/xbuddyads') || hash === '#xbuddyads' || path.startsWith('/ads') || hash === '#ads') {
+          setStep(STEP.ADS)
         } else if (path.startsWith('/my-orders') || hash === '#orders') {
           setStep(STEP.MY_ORDERS)
         } else if (path.startsWith('/resume') || hash === '#resume') {
@@ -278,6 +292,8 @@ export default function App() {
       goToStep(STEP.MY_ORDERS, { replace })
     } else if (target === 'admin') {
       goToStep(STEP.ADMIN, { replace })
+    } else if (target === 'ads') {
+      goToStep(STEP.ADS, { replace })
     } else if (target === 'about') {
       goToStep(STEP.HERO, { replace })
       setTimeout(() => {
@@ -442,6 +458,9 @@ export default function App() {
                   <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
                     🏪 Shop Staff
                   </button>
+                  <button onClick={() => goToStep(STEP.ADS)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
+                    📢 Campus Ads
+                  </button>
                 </div>
                 <button
                   onClick={() => goToStep(STEP.UPLOAD)}
@@ -450,7 +469,7 @@ export default function App() {
                   Print Now →
                 </button>
               </div>
-            ) : step === STEP.MY_ORDERS || step === STEP.ADMIN ? (
+            ) : step === STEP.MY_ORDERS || step === STEP.ADMIN || step === STEP.ADS ? (
               <button
                 onClick={handleReset}
                 className="px-3 min-[360px]:px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
@@ -534,6 +553,7 @@ export default function App() {
                 onMyOrders={() => goToStep(STEP.MY_ORDERS)}
                 onResumeBuilder={() => goToStep(STEP.RESUME)}
                 onShopStaff={() => goToStep(STEP.ADMIN)}
+                onCampusAds={() => goToStep(STEP.ADS)}
               />
             </motion.div>
           )}
@@ -567,6 +587,12 @@ export default function App() {
           {step === STEP.ADMIN && (
             <motion.div key="admin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <AdminDashboard />
+            </motion.div>
+          )}
+
+          {step === STEP.ADS && (
+            <motion.div key="ads" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <CampusAdsAdmin onBack={handleReset} />
             </motion.div>
           )}
 

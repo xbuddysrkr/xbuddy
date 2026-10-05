@@ -13,6 +13,7 @@ export default function Footer({
   onMyOrders,
   onResumeBuilder,
   onShopStaff,
+  onCampusAds,
 }) {
   return (
     <footer className="border-t border-orange-100/80 bg-[#FFFDF9] text-slate-800 pt-16 pb-10 px-4 sm:px-6 relative overflow-hidden">
@@ -164,6 +165,17 @@ export default function Footer({
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
                   >
                     Shop Staff Login
+                  </button>
+                </li>
+              )}
+              {onCampusAds && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={onCampusAds}
+                    className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
+                  >
+                    📢 Campus Ads Manager
                   </button>
                 </li>
               )}

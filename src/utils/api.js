@@ -325,3 +325,34 @@ export async function fetchCampusAds(placement = 'order-status') {
   }
   return null
 }
+
+/**
+ * Creates a new campus promotion ad record in Google Sheets via Google Apps Script.
+ */
+export async function createCampusAd(adData) {
+  try {
+    const params = {
+      action: 'createAdRecord',
+      clubName: adData.clubName || '',
+      title: adData.title || '',
+      description: adData.description || '',
+      mediaType: adData.mediaType || 'image',
+      mediaUrl: adData.mediaUrl || '',
+      clickUrl: adData.clickUrl || '',
+      buttonText: adData.buttonText || 'View Details',
+      placement: adData.placement || 'order-status',
+      startDate: adData.startDate || new Date().toISOString().slice(0, 10),
+      endDate: adData.endDate || '',
+      status: adData.status || 'approved',
+      priority: String(adData.priority ?? 1),
+    }
+    const res = await gasGet(params)
+    if (res && res.success) {
+      return { success: true, adId: res.adId }
+    }
+    return { success: false, error: res?.error || 'Failed to save ad to Google Sheets' }
+  } catch (err) {
+    return { success: false, error: err.message || 'Network error connecting to Ads API' }
+  }
+}
+
