@@ -27,19 +27,27 @@ export function isValidAdUrl(url) {
  * builds a direct Google Drive view URL.
  */
 export function resolveMediaUrl(ad) {
-  if (!ad) return ''
-  if (ad.mediaUrl && typeof ad.mediaUrl === 'string' && ad.mediaUrl.trim()) {
+  if (!ad) return '/assets/campus-ads/hackathon-2026.jpg'
+  
+  if (ad.mediaUrl && typeof ad.mediaUrl === 'string') {
     const trimmed = ad.mediaUrl.trim()
-    // If it's a raw Drive file ID rather than a full URL
-    if (!trimmed.startsWith('http') && !trimmed.startsWith('/') && trimmed.length > 20) {
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+      return trimmed
+    }
+    // If it's a Drive file ID rather than a full URL
+    if (trimmed.length > 20 && !trimmed.includes(' ')) {
       return `https://drive.google.com/uc?export=view&id=${trimmed}`
     }
-    return trimmed
   }
-  if (ad.mediaFileId && typeof ad.mediaFileId === 'string' && ad.mediaFileId.trim()) {
-    return `https://drive.google.com/uc?export=view&id=${ad.mediaFileId.trim()}`
+
+  if (ad.mediaFileId && typeof ad.mediaFileId === 'string') {
+    const trimmedId = ad.mediaFileId.trim()
+    if (trimmedId.length > 20 && trimmedId !== 'FILE_ID') {
+      return `https://drive.google.com/uc?export=view&id=${trimmedId}`
+    }
   }
-  return ''
+
+  return '/assets/campus-ads/hackathon-2026.jpg'
 }
 
 // Default approved campus ads catalog (guarantees zero-blank UI even if GAS is offline)
