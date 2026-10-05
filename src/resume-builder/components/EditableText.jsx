@@ -3,11 +3,14 @@ import React, { useRef, useEffect } from 'react'
 /**
  * EditableText
  * 
- * True two-way synchronized inline canvas editor component.
- * - Reads from shared state
- * - Writes to shared state on input and blur
- * - Protects cursor positioning during user typing
- * - Updates immediately when form input changes
+ * Free-form, natural canvas text editor matching the Academic Toolkit architecture.
+ * - ZERO React children inside contentEditable so React's reconciler never destroys
+ *   DOM text nodes or cursor positions during typing.
+ * - Deleting characters (Backspace/Delete) deletes cleanly with ZERO bounce-back.
+ * - Completely unboxed: NO dashed outlines, NO solid orange focus boxes, NO background shifts.
+ * - Two-way live synchronization:
+ *     - External changes (Form input) update Canvas immediately when field is not focused.
+ *     - Canvas typing/deletions update Form input and shared resumeStore in real time.
  */
 export default function EditableText({
   value = '',
@@ -19,45 +22,85 @@ export default function EditableText({
   multiline = false,
 }) {
   const ref = useRef(null)
-  const isEditingRef = useRef(false)
+  const isFocusedRef = useRef(false)
+  const lastReportedValueRef = useRef(value)
 
-  // Synchronize canvas text from state when not actively being edited by user
+  // 1. External Form -> Canvas synchronization:
+  // When 'value' updates from the form on the left, update the canvas DOM text
+  // only if the user is not actively typing inside this element.
   useEffect(() => {
-    if (!isEditingRef.current && ref.current) {
-      const current = (ref.current.innerText || '').trim()
-      const expected = (value || '').trim()
-      const fallback = (placeholder || '').trim()
-      if (expected) {
-        if (current !== expected) {
-          ref.current.innerText = value
-        }
-      } else {
-        if (current !== fallback) {
-          ref.current.innerText = placeholder
-        }
-      }
+    if (!ref.current) return
+    if (isFocusedRef.current) return
+
+    const displayVal = (value !== undefined && value !== null && value !== '') 
+      ? value 
+      : (placeholder || '')
+
+    if (ref.current.textContent !== displayVal) {
+      ref.current.textContent = displayVal
     }
+    lastReportedValueRef.current = value
   }, [value, placeholder])
 
-  const handleInput = (e) => {
-    const text = (e.currentTarget.innerText || '').replace(/\r?\n+$/, '')
-    if (onChange) {
-      onChange(text)
+  // Initial mount: ensure text content is populated immediately
+  useEffect(() => {
+    if (ref.current) {
+      const displayVal = (value !== undefined && value !== null && value !== '') 
+        ? value 
+        : (placeholder || '')
+      ref.current.textContent = displayVal
+      lastReportedValueRef.current = value
     }
-  }
+  }, [])
 
+  // 2. User focuses on the canvas element
   const handleFocus = () => {
-    isEditingRef.current = true
+    isFocusedRef.current = true
+
+    // If current text equals placeholder, auto-select it all on focus
+    // so any keystroke or backspace immediately replaces or clears it cleanly
+    if (ref.current && placeholder && ref.current.textContent === placeholder) {
+      setTimeout(() => {
+        if (!ref.current || !isFocusedRef.current) return
+        try {
+          const sel = window.getSelection()
+          if (sel) {
+            const range = document.createRange()
+            range.selectNodeContents(ref.current)
+            sel.removeAllRanges()
+            sel.addRange(range)
+          }
+        } catch (e) {
+          // ignore selection errors
+        }
+      }, 0)
+    }
   }
 
-  const handleBlur = (e) => {
-    isEditingRef.current = false
-    const text = (e.currentTarget.innerText || '').trim()
-    if (!text && placeholder && ref.current) {
-      ref.current.innerText = placeholder
-    }
+  // 3. User types or deletes on the canvas (Native DOM event)
+  const handleInput = (e) => {
+    const rawText = (e.currentTarget.textContent || '').replace(/\r?\n+$/, '')
+    lastReportedValueRef.current = rawText
+
     if (onChange) {
-      onChange(text)
+      onChange(rawText)
+    }
+  }
+
+  // 4. User finishes editing and blurs
+  const handleBlur = (e) => {
+    isFocusedRef.current = false
+    const currentText = (e.currentTarget.textContent || '').trim()
+
+    // If left completely blank and a placeholder exists, restore the placeholder
+    // so the field remains visible, positioned, and clickable on the canvas
+    if (!currentText && placeholder && ref.current) {
+      ref.current.textContent = placeholder
+      if (onChange && lastReportedValueRef.current !== '') {
+        onChange('')
+      }
+    } else if (onChange && currentText !== value) {
+      onChange(currentText)
     }
   }
 
@@ -65,6 +108,18 @@ export default function EditableText({
     if (!multiline && e.key === 'Enter') {
       e.preventDefault()
       e.currentTarget.blur()
+    }
+  }
+
+  const handlePaste = (e) => {
+    // Paste as plain text to avoid foreign HTML / fonts
+    e.preventDefault()
+    const text = (e.clipboardData || window.clipboardData)?.getData('text/plain') || ''
+    if (!multiline) {
+      const clean = text.replace(/[\r\n]+/g, ' ')
+      document.execCommand('insertText', false, clean)
+    } else {
+      document.execCommand('insertText', false, text)
     }
   }
 
@@ -77,14 +132,16 @@ export default function EditableText({
       onInput={handleInput}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
-      title="Click to edit on canvas"
-      className={`outline-none cursor-text rounded-xs transition-colors hover:bg-orange-50/50 hover:outline-dashed hover:outline-1 hover:outline-orange-300 focus:bg-orange-50/80 focus:outline-solid focus:outline-1.5 focus:outline-[#F78C25] ${className}`}
+      onPaste={handlePaste}
+      title="Click to edit"
+      className={`outline-none border-none bg-transparent cursor-text select-text ${className}`}
       style={{
+        outline: 'none',
+        border: 'none',
+        background: 'transparent',
         minWidth: '1ch',
         ...style,
       }}
-    >
-      {value || placeholder}
-    </Component>
+    />
   )
 }

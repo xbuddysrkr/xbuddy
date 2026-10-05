@@ -223,7 +223,6 @@ const ResumePreview = forwardRef(function ResumePreview(
               position: 'relative',
               borderRadius: '2px',
             }}
-            onClick={() => previewRef.current?.focus()}
           >
             {/* Inner Content with Font Scaling */}
             <div
