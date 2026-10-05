@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getOrderStatus } from '../utils/api'
 import PermissionCourier from './PermissionCourier'
+import CampusPromotionAd from './CampusPromotionAd'
 
 const POLL_INTERVAL_MS = 4000
 
@@ -265,6 +266,9 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           </motion.div>
         )}
       </div>
+
+      {/* ── CAMPUS PROMOTION (ACTIVE AD SLOT) ── */}
+      <CampusPromotionAd placement="order-status" />
 
       {/* ── THE LITTLE X BUDDY COURIER: FUN BROWSER PERMISSION GUIDE ── */}
       <PermissionCourier orderId={orderId} />
