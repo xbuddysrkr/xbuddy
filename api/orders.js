@@ -518,6 +518,42 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, orderId, paymentStatus })
     }
 
+    // ── 6. PHASE 2: READ-ONLY ORDERS PARITY AUDIT ───────────────────────────
+    if (action === 'parityAudit') {
+      try {
+        const gasRes = await writeToGoogleAppsScript({ action: 'listOrders' })
+        const sheetOrders = gasRes?.orders || []
+
+        const { db } = await connectToDatabase()
+        const ordersCollection = db.collection('orders')
+        
+        const indexes = await ordersCollection.indexes()
+        const uniqueOrderIndex = indexes.find(idx => idx.key?.orderId === 1 && idx.unique === true)
+        const isUniqueIndexVerified = !!uniqueOrderIndex
+
+        const mongoOrders = await ordersCollection.find({}).toArray()
+
+        const { runParityAudit, formatAuditReport } = await import('./_lib/parityAudit.js')
+        const auditResult = runParityAudit({
+          sheetOrders,
+          mongoOrders,
+          mongoUniqueIndexVerified: isUniqueIndexVerified,
+        })
+        const reportText = formatAuditReport(auditResult)
+
+        return res.status(200).json({
+          success: true,
+          audit: auditResult,
+          report: reportText,
+        })
+      } catch (auditErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Parity audit execution failed: ${auditErr.message}`,
+        })
+      }
+    }
+
     return res.status(400).json({ success: false, error: `Unrecognized action: ${action}` })
   } catch (fatalErr) {
     console.error('[API Orders Fatal Error]:', fatalErr)
