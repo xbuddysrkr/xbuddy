@@ -554,6 +554,58 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── 7. PHASE 2.5: HISTORICAL ORDERS BACKFILL ────────────────────────────
+    if (action === 'backfillOrders') {
+      const mode = String(req.query?.mode || req.body?.mode || 'dry-run').toLowerCase()
+      const isExecute = mode === 'execute'
+
+      try {
+        const gasRes = await writeToGoogleAppsScript({ action: 'listOrders' })
+        const sheetOrders = gasRes?.orders || []
+
+        const { db } = await connectToDatabase()
+        const ordersCollection = db.collection('orders')
+        const mongoOrders = await ordersCollection.find({}).toArray()
+
+        const { planBackfill, executeBackfill, formatBackfillReport } = await import('./_lib/backfill.js')
+        const plan = planBackfill({ sheetOrders, mongoOrders })
+
+        let executionResult = null
+        if (isExecute) {
+          executionResult = await executeBackfill({ ordersCollection, plan })
+        }
+
+        const reportText = formatBackfillReport(plan, executionResult)
+
+        let updatedAudit = null
+        if (isExecute) {
+          const { runParityAudit } = await import('./_lib/parityAudit.js')
+          const updatedMongoOrders = await ordersCollection.find({}).toArray()
+          const indexes = await ordersCollection.indexes()
+          const isUniqueIndexVerified = !!indexes.find(idx => idx.key?.orderId === 1 && idx.unique === true)
+          updatedAudit = runParityAudit({
+            sheetOrders,
+            mongoOrders: updatedMongoOrders,
+            mongoUniqueIndexVerified: isUniqueIndexVerified,
+          })
+        }
+
+        return res.status(200).json({
+          success: true,
+          mode: isExecute ? 'execute' : 'dry-run',
+          plan,
+          execution: executionResult,
+          report: reportText,
+          updatedAudit,
+        })
+      } catch (backfillErr) {
+        return res.status(500).json({
+          success: false,
+          error: `Backfill failed: ${backfillErr.message}`,
+        })
+      }
+    }
+
     return res.status(400).json({ success: false, error: `Unrecognized action: ${action}` })
   } catch (fatalErr) {
     console.error('[API Orders Fatal Error]:', fatalErr)
