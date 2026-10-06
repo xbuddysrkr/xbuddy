@@ -54,9 +54,27 @@ export function validateOrderPayload(data) {
 }
 
 /**
- * Forward write to existing Google Apps Script Orders backend (Phase 1 Dual-Write).
+ * Determines whether two orders represent the same logical print order
+ * for safe idempotency checking on student retries.
  */
-async function writeToGoogleAppsScript(params) {
+export function isSameLogicalOrder(existing, incoming) {
+  if (!existing || !incoming) return false
+  const cleanStr = (s) => String(s || '').trim().toLowerCase()
+  const toNum = (n) => Number(n) || 0
+
+  const sameAmount = toNum(existing.amount) === toNum(incoming.amount)
+  const sameCopies = toNum(existing.copies) === toNum(incoming.copies)
+  const sameFile = cleanStr(existing.fileName) === cleanStr(incoming.fileName)
+  const sameColor = cleanStr(existing.colorMode) === cleanStr(incoming.colorMode)
+  const sameRange = cleanStr(existing.pageRange) === cleanStr(incoming.pageRange)
+
+  return sameAmount && sameCopies && sameFile && sameColor && sameRange
+}
+
+/**
+ * Forward request to existing Google Apps Script Orders backend.
+ */
+export async function writeToGoogleAppsScript(params) {
   const url = `${GAS_API_URL}?${new URLSearchParams({ ...params, key: GAS_API_KEY }).toString()}`
   const res = await fetch(url, {
     method: 'GET',
@@ -70,7 +88,7 @@ async function writeToGoogleAppsScript(params) {
  * Serverless API Handler: /api/orders
  */
 export default async function handler(req, res) {
-  // Disallow any Campus Ads requests through this endpoint
+  // CRITICAL FIREWALL: Disallow any Campus Ads requests through /api/orders
   const actionParam = (req.query?.action || req.body?.action || '').trim()
   if (actionParam && (actionParam.includes('Ad') || actionParam.includes('ad'))) {
     return res.status(400).json({
@@ -83,7 +101,7 @@ export default async function handler(req, res) {
   const action = (req.body?.action || req.query?.action || (method === 'POST' ? 'saveOrder' : 'listOrders')).trim()
 
   try {
-    // ── 1. SAVE ORDER (DUAL-WRITE) ──────────────────────────────────────────
+    // ── 1. SAVE ORDER (DUAL-WRITE + IDEMPOTENCY + RECOVERY) ──────────────────
     if (action === 'saveOrder') {
       const payload = req.body || req.query || {}
       const validation = validateOrderPayload(payload)
@@ -129,155 +147,287 @@ export default async function handler(req, res) {
         printStatus:          'waiting_for_shopkeeper',
         createdAt:            nowIso,
         updatedAt:            nowIso,
+        syncStatus:           'pending',
+        mongoSaved:           false,
+        sheetsSaved:          false,
       }
 
-      let mongoSaved = false
-      let sheetsSaved = false
-      let mongoError = null
-      let sheetsError = null
+      const gasPayload = {
+        action: 'saveOrder',
+        orderId: cleanId,
+        name: orderDoc.name,
+        fileName: orderDoc.fileName,
+        totalPages: String(orderDoc.totalPages),
+        copies: String(orderDoc.copies),
+        colorMode: orderDoc.colorMode,
+        printType: orderDoc.printType,
+        printSide: orderDoc.printSide,
+        duplex: String(orderDoc.duplex),
+        pageSize: orderDoc.pageSize,
+        paperSize: orderDoc.paperSize,
+        orientation: orderDoc.orientation,
+        amount: String(orderDoc.amount),
+        printingCost: String(orderDoc.printingCost),
+        serviceFee: String(orderDoc.serviceFee),
+        digitalProcessingFee: String(orderDoc.digitalProcessingFee),
+        transactionId: orderDoc.transactionId,
+        pageRange: orderDoc.pageRange,
+        pageRangeMode: orderDoc.pageRangeMode,
+        customPages: orderDoc.customPages,
+        printableCount: String(orderDoc.printableCount),
+        selectedPages: JSON.stringify(orderDoc.selectedPages),
+        selectedPageCount: String(orderDoc.selectedPageCount),
+        driveUrl: orderDoc.driveUrl,
+      }
 
-      // Step A: MongoDB Write (with Duplicate Check)
+      // Connect to MongoDB
+      let mongoDb = null
+      let ordersCollection = null
+      let mongoConnectError = null
+
       try {
         const { db } = await connectToDatabase()
-        const ordersCollection = db.collection('orders')
+        mongoDb = db
+        ordersCollection = db.collection('orders')
+      } catch (connErr) {
+        mongoConnectError = connErr.message
+      }
 
-        // Check for existing duplicate order
-        const existing = await ordersCollection.findOne({ orderId: cleanId })
-        if (existing) {
-          console.warn(`[MongoDB Duplicate] Order ${cleanId} already exists in database. Duplicate creation blocked.`)
+      // Check if orderId already exists in MongoDB
+      let existingMongo = null
+      if (ordersCollection) {
+        try {
+          existingMongo = await ordersCollection.findOne({ orderId: cleanId })
+        } catch (findErr) {
+          console.warn(`[MongoDB find notice]: ${findErr.message}`)
+        }
+      }
+
+      // ── CHECK 1: Existing MongoDB Document (Idempotency vs Conflict) ──────
+      if (existingMongo) {
+        // Conflicting duplicate orderId payload
+        if (!isSameLogicalOrder(existingMongo, orderDoc)) {
+          console.warn(`[Conflict 409] Order ${cleanId} exists with different payload details.`)
           return res.status(409).json({
             success: false,
-            error: `Duplicate order ID: ${cleanId} already exists`,
-            duplicate: true,
+            conflict: true,
+            error: `Conflict: orderId ${cleanId} already exists with different order details`,
           })
         }
 
-        await ordersCollection.insertOne(orderDoc)
-        mongoSaved = true
-        console.log(`[MongoDB Insert] Order ${cleanId} successfully saved to MongoDB Atlas`)
-      } catch (mErr) {
-        mongoError = mErr.message
-        console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
+        // Same orderId + same logical order => IDEMPOTENT RETRY
+        if (existingMongo.sheetsSaved || existingMongo.syncStatus === 'synced') {
+          console.log(`[Idempotent Retry] Order ${cleanId} already synchronized.`)
+          return res.status(200).json({
+            success: true,
+            orderId: cleanId,
+            idempotent: true,
+            mongoSaved: true,
+            sheetsSaved: true,
+            syncStatus: 'synced',
+            message: 'Order already synchronized (idempotent retry)',
+          })
+        }
+
+        // Case B Reconciliation: Mongo saved previously, but Google Sheet was pending/failed.
+        try {
+          const gasRes = await writeToGoogleAppsScript(gasPayload)
+          if (gasRes?.success) {
+            await ordersCollection.updateOne(
+              { orderId: cleanId },
+              {
+                $set: {
+                  sheetsSaved: true,
+                  syncStatus: 'synced',
+                  updatedAt: new Date().toISOString(),
+                },
+                $unset: { syncError: '' },
+              }
+            )
+            console.log(`[Case B Recovery] Order ${cleanId} successfully synced to Google Sheets on retry`)
+            return res.status(200).json({
+              success: true,
+              orderId: cleanId,
+              idempotent: true,
+              recovered: true,
+              mongoSaved: true,
+              sheetsSaved: true,
+              syncStatus: 'synced',
+              message: 'Order recovered and synchronized with Google Sheets',
+            })
+          } else {
+            const sErr = gasRes?.error || 'GAS write rejected'
+            await ordersCollection.updateOne(
+              { orderId: cleanId },
+              { $set: { syncError: sErr, updatedAt: new Date().toISOString() } }
+            )
+            return res.status(502).json({
+              success: false,
+              orderId: cleanId,
+              idempotent: true,
+              error: `Google Sheet dual-write retry failed: ${sErr}`,
+              mongoSaved: true,
+              sheetsSaved: false,
+              syncStatus: 'sheets_pending',
+            })
+          }
+        } catch (gasRetryErr) {
+          await ordersCollection.updateOne(
+            { orderId: cleanId },
+            { $set: { syncError: gasRetryErr.message, updatedAt: new Date().toISOString() } }
+          )
+          return res.status(502).json({
+            success: false,
+            orderId: cleanId,
+            idempotent: true,
+            error: `Google Sheet dual-write retry failed: ${gasRetryErr.message}`,
+            mongoSaved: true,
+            sheetsSaved: false,
+            syncStatus: 'sheets_pending',
+          })
+        }
       }
 
-      // Step B: Google Sheet Write (Authoritative Dual-Write)
+      // ── CHECK 2: MongoDB document does not exist yet. ─────────────────────
+      // Check if Google Sheets already has this order (Case C Recovery Scenario)
+      let existingInSheets = false
       try {
-        const gasPayload = {
-          action: 'saveOrder',
-          orderId: cleanId,
-          name: orderDoc.name,
-          fileName: orderDoc.fileName,
-          totalPages: String(orderDoc.totalPages),
-          copies: String(orderDoc.copies),
-          colorMode: orderDoc.colorMode,
-          printType: orderDoc.printType,
-          printSide: orderDoc.printSide,
-          duplex: String(orderDoc.duplex),
-          pageSize: orderDoc.pageSize,
-          paperSize: orderDoc.paperSize,
-          orientation: orderDoc.orientation,
-          amount: String(orderDoc.amount),
-          printingCost: String(orderDoc.printingCost),
-          serviceFee: String(orderDoc.serviceFee),
-          digitalProcessingFee: String(orderDoc.digitalProcessingFee),
-          transactionId: orderDoc.transactionId,
-          pageRange: orderDoc.pageRange,
-          pageRangeMode: orderDoc.pageRangeMode,
-          customPages: orderDoc.customPages,
-          printableCount: String(orderDoc.printableCount),
-          selectedPages: JSON.stringify(orderDoc.selectedPages),
-          selectedPageCount: String(orderDoc.selectedPageCount),
-          driveUrl: orderDoc.driveUrl,
+        const gasCheck = await writeToGoogleAppsScript({ action: 'getOrderStatus', orderId: cleanId })
+        if (gasCheck?.success && gasCheck?.order) {
+          existingInSheets = true
+          if (!isSameLogicalOrder(gasCheck.order, orderDoc)) {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: `Conflict: orderId ${cleanId} already exists in Google Sheet with different details`,
+            })
+          }
         }
-
-        const gasRes = await writeToGoogleAppsScript(gasPayload)
-        if (gasRes?.success) {
-          sheetsSaved = true
-          console.log(`[Google Sheet Dual-Write] Order ${cleanId} successfully synced to Google Sheet`)
-        } else {
-          sheetsError = gasRes?.error || 'Unknown GAS response'
-        }
-      } catch (sErr) {
-        sheetsError = sErr.message
-        console.error(`[Google Sheet Write Failed] Order ${cleanId}: ${sErr.message}`)
+      } catch (gasCheckErr) {
+        // Network timeout checking GAS status, proceed to standard dual-write
       }
 
-      // Step C: Dual-Write Discrepancy & Success Handling
+      let mongoSaved = false
+      let sheetsSaved = existingInSheets
+      let mongoError = mongoConnectError
+      let sheetsError = null
+
+      // Step A: Save to MongoDB
+      if (ordersCollection) {
+        try {
+          orderDoc.mongoSaved = true
+          orderDoc.sheetsSaved = existingInSheets
+          orderDoc.syncStatus = existingInSheets ? 'synced' : 'pending'
+          await ordersCollection.insertOne(orderDoc)
+          mongoSaved = true
+          console.log(`[MongoDB Insert] Order ${cleanId} successfully saved to MongoDB Atlas`)
+        } catch (mErr) {
+          mongoError = mErr.message
+          console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
+        }
+      }
+
+      // Step B: Save to Google Sheets (if not already existing in sheet)
+      if (!existingInSheets) {
+        try {
+          const gasRes = await writeToGoogleAppsScript(gasPayload)
+          if (gasRes?.success) {
+            sheetsSaved = true
+            console.log(`[Google Sheet Write] Order ${cleanId} successfully saved to Google Sheet`)
+          } else {
+            sheetsError = gasRes?.error || 'GAS write returned failure'
+          }
+        } catch (sErr) {
+          sheetsError = sErr.message
+          console.error(`[Google Sheet Write Failed] Order ${cleanId}: ${sErr.message}`)
+        }
+      }
+
+      // Step C: Update MongoDB sync state if both or either succeeded
+      if (ordersCollection && mongoSaved) {
+        try {
+          await ordersCollection.updateOne(
+            { orderId: cleanId },
+            {
+              $set: {
+                sheetsSaved,
+                syncStatus: sheetsSaved ? 'synced' : 'sheets_pending',
+                ...(sheetsError ? { syncError: sheetsError } : {}),
+                updatedAt: new Date().toISOString(),
+              },
+            }
+          )
+        } catch {}
+      }
+
+      // Case A: Both succeeded
       if (mongoSaved && sheetsSaved) {
         return res.status(200).json({
           success: true,
           orderId: cleanId,
           mongoSaved: true,
           sheetsSaved: true,
-          message: 'Order saved in MongoDB Atlas and Google Sheets',
+          syncStatus: 'synced',
+          message: existingInSheets
+            ? 'MongoDB synchronized with existing Google Sheet order (Case C recovery)'
+            : 'Order saved in MongoDB Atlas and Google Sheets',
         })
       }
 
+      // Case B: Mongo succeeded, Google Sheet failed
       if (mongoSaved && !sheetsSaved) {
-        console.warn(`[Dual-Write Mismatch] MongoDB saved ${cleanId} but Google Sheet write failed: ${sheetsError}`)
+        console.warn(`[Sync Mismatch] Mongo saved ${cleanId} but Sheet failed: ${sheetsError}`)
         return res.status(502).json({
           success: false,
           orderId: cleanId,
           error: `Google Sheet dual-write failed: ${sheetsError}`,
           mongoSaved: true,
           sheetsSaved: false,
+          syncStatus: 'sheets_pending',
         })
       }
 
+      // Case C: Google Sheet succeeded, Mongo failed
       if (!mongoSaved && sheetsSaved) {
-        console.warn(`[Dual-Write Mismatch] Google Sheet saved ${cleanId} but MongoDB write failed: ${mongoError}`)
+        console.warn(`[Sync Mismatch] Sheet saved ${cleanId} but Mongo failed: ${mongoError}`)
         return res.status(502).json({
           success: false,
           orderId: cleanId,
           error: `MongoDB dual-write failed: ${mongoError}`,
           mongoSaved: false,
           sheetsSaved: true,
+          syncStatus: 'mongo_pending',
         })
       }
 
+      // Both failed
       return res.status(500).json({
         success: false,
         orderId: cleanId,
         error: `Both data stores failed. MongoDB: ${mongoError} | Sheets: ${sheetsError}`,
         mongoSaved: false,
         sheetsSaved: false,
+        syncStatus: 'failed',
       })
     }
 
-    // ── 2. GET ORDER STATUS ─────────────────────────────────────────────────
+    // ── 2. GET ORDER STATUS (PHASE 1: GOOGLE APPS SCRIPT / ORDERS SHEET ONLY) ─
     if (action === 'getOrderStatus') {
       const orderId = String(req.query?.orderId || req.body?.orderId || '').trim().toUpperCase()
       if (!orderId) {
         return res.status(400).json({ success: false, error: 'orderId is required' })
       }
 
-      try {
-        const { db } = await connectToDatabase()
-        const order = await db.collection('orders').findOne({ orderId })
-        if (order) {
-          console.log(`[MongoDB Lookup] Order ${orderId} retrieved from MongoDB`)
-          return res.status(200).json({ success: true, order })
-        }
-      } catch (err) {
-        console.warn(`[MongoDB Lookup Notice] Fallback for ${orderId}: ${err.message}`)
-      }
-
-      // Fallback query to Google Apps Script
+      // CRITICAL PHASE 1 CONSTRAINT: Production reads come strictly from Google Apps Script / Orders Sheet
       const gasOrder = await writeToGoogleAppsScript({ action: 'getOrderStatus', orderId })
       return res.status(200).json(gasOrder)
     }
 
-    // ── 3. LIST ORDERS ──────────────────────────────────────────────────────
+    // ── 3. LIST ORDERS (PHASE 1: GOOGLE APPS SCRIPT / ORDERS SHEET ONLY) ──────
     if (action === 'listOrders') {
-      try {
-        const { db } = await connectToDatabase()
-        const orders = await db.collection('orders').find({}).sort({ createdAt: -1 }).limit(100).toArray()
-        return res.status(200).json({ success: true, orders })
-      } catch (err) {
-        console.warn(`[MongoDB listOrders Notice]: ${err.message}`)
-        const gasList = await writeToGoogleAppsScript({ action: 'listOrders' })
-        return res.status(200).json(gasList)
-      }
+      // CRITICAL PHASE 1 CONSTRAINT: Production reads come strictly from Google Apps Script / Orders Sheet
+      const gasList = await writeToGoogleAppsScript({ action: 'listOrders' })
+      return res.status(200).json(gasList)
     }
 
     // ── 4. UPDATE ORDER STATUS (WITH RACE-CONDITION SAFE PRINT RELEASE) ────
