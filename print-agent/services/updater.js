@@ -32,7 +32,7 @@ async function updatePrintStatus(orderIdOrRowIndex, statusOrRow, statusParam) {
   // 1. Sync to active GAS (Google Sheets live ground truth)
   if (orderId) {
     try {
-      await axios.get(`${GAS_URL}?action=updateOrderStatus&key=${API_KEY}&orderId=${encodeURIComponent(orderId)}&printStatus=${encodeURIComponent(status)}`, { timeout: 6000 })
+      await axios.get(`${GAS_URL}?action=updateOrderStatus&key=${API_KEY}&orderId=${encodeURIComponent(orderId)}&printStatus=${encodeURIComponent(status)}`, { timeout: 15000 })
       logger.success(`Order ${orderId} -> Print Status: "${status}" (GAS)`)
     } catch (err) {
       logger.warn(`updateOrderStatus GAS notice for ${orderId}: ${err.message}`)
@@ -74,7 +74,7 @@ async function updateReleaseStatus(orderIdOrRowIndex, statusOrRow, statusParam) 
 
   if (orderId) {
     try {
-      await axios.get(`${GAS_URL}?action=updateOrderStatus&key=${API_KEY}&orderId=${encodeURIComponent(orderId)}&printStatus=Ready`, { timeout: 6000 })
+      await axios.get(`${GAS_URL}?action=updateOrderStatus&key=${API_KEY}&orderId=${encodeURIComponent(orderId)}&printStatus=Ready`, { timeout: 15000 })
     } catch {}
   }
 

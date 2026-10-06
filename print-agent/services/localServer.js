@@ -305,12 +305,14 @@ app.post('/release-print', async (req, res) => {
   if (!global._activePrints) global._activePrints = {}
   global._activePrints[id] = Date.now()
 
-  await updateReleaseStatus(order.orderId, order.rowIndex, 'Released')
-  await updatePrintStatus(order.orderId, order.rowIndex, 'Printing')
   logger.success(`Releasing: ${id} | ${order.fileName || 'document'} | ${order.copies || 1} copy`)
   
-  // Respond immediately so booth UI shows success
+  // Respond immediately to booth so UI shows instant confirmation without waiting for cloud sync
   res.json({ success: true, message: `Printing started for ${id}` })
+
+  // Sync statuses in background asynchronously (fire-and-forget)
+  updateReleaseStatus(order.orderId, order.rowIndex, 'Released').catch(() => {})
+  updatePrintStatus(order.orderId, order.rowIndex, 'Printing').catch(() => {})
 
   try {
     const settings = loadSettings(order.orderId)

@@ -33,7 +33,7 @@ function getAuth() {
 
 async function getWaitingOrders() {
   try {
-    const res = await axios.get(`${GAS_URL}?action=listOrders&key=${API_KEY}`, { timeout: 8000 })
+    const res = await axios.get(`${GAS_URL}?action=listOrders&key=${API_KEY}`, { timeout: 15000 })
     if (res.data?.success && Array.isArray(res.data.orders)) {
       return res.data.orders.filter(o => (o.printStatus || '').toLowerCase().includes('wait'))
     }
@@ -83,7 +83,7 @@ async function getPdfUrlFromGas(orderId, fileName) {
       fileName: orderId + '_' + fileName,
       mimeType: 'application/pdf',
     })
-    const res  = await axios.get(`${GAS_URL}?${params.toString()}`, { timeout: 10000 })
+    const res  = await axios.get(`${GAS_URL}?${params.toString()}`, { timeout: 15000 })
     const data = res.data
     if (data.success && data.fileUrl) {
       logger.success(`Got PDF URL from GAS: ${data.fileUrl}`)
@@ -100,7 +100,7 @@ async function getOrderByIdForRelease(orderId) {
 
   // 1. Try active Google Apps Script getOrderStatus first
   try {
-    const res = await axios.get(`${GAS_URL}?action=getOrderStatus&key=${API_KEY}&orderId=${encodeURIComponent(cleanId)}`, { timeout: 8000 })
+    const res = await axios.get(`${GAS_URL}?action=getOrderStatus&key=${API_KEY}&orderId=${encodeURIComponent(cleanId)}`, { timeout: 15000 })
     if (res.data?.success && res.data?.order) {
       const o = res.data.order
       logger.success(`Got order ${cleanId} from active GAS ground truth`)
@@ -187,7 +187,7 @@ async function getAllOrders() {
 
   // 1. Try active GAS listOrders first
   try {
-    const res = await axios.get(`${GAS_URL}?action=listOrders&key=${API_KEY}`, { timeout: 8000 })
+    const res = await axios.get(`${GAS_URL}?action=listOrders&key=${API_KEY}`, { timeout: 15000 })
     if (res.data?.success && Array.isArray(res.data.orders)) {
       _cachedOrders = res.data.orders.map((o, idx) => ({
         rowIndex:      o.rowIndex || idx + 2,
