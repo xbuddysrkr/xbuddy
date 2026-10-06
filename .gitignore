@@ -9,4 +9,9 @@ credentials.json
 # Security safeguards
 *.keystore
 *.jks
-
+credentials.json
+print-agent/credentials.json
+*.exe
+print-agent/bin/
+print-agent/downloads/
+print-agent/tunnel*.log
