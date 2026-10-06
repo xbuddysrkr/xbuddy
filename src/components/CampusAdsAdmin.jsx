@@ -142,23 +142,88 @@ export default function CampusAdsAdmin({ onBack, onNavigateToStatus }) {
     setLocalFilePreview(null)
   }
 
+function optimizeImageDataUrl(dataUrl, maxDim = 720, quality = 0.75) {
+  return new Promise((resolve) => {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      return resolve(dataUrl)
+    }
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        let width = img.width
+        let height = img.height
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width)
+            width = maxDim
+          } else {
+            width = Math.round((width * maxDim) / height)
+            height = maxDim
+          }
+        }
+
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+
+        const compressed = canvas.toDataURL('image/jpeg', quality)
+        resolve(compressed)
+      } catch {
+        resolve(dataUrl)
+      }
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const result = event.target?.result
-      if (result) {
-        setLocalFilePreview(result)
-        // Store dataURL for instant local preview
-        setFormData(prev => ({
-          ...prev,
-          mediaUrl: result,
-          mediaType: file.type.startsWith('video') ? 'video' : 'image',
-        }))
+
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = async (event) => {
+        const raw = event.target?.result
+        if (raw) {
+          // Optimize to ensure it fits comfortably within Google Sheets cell limits & transfers fast
+          const optimized = await optimizeImageDataUrl(raw, 720, 0.75)
+          setLocalFilePreview(optimized)
+          setFormData(prev => ({
+            ...prev,
+            mediaUrl: optimized,
+            mediaType: 'image',
+          }))
+        }
       }
+      reader.readAsDataURL(file)
+    } else {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const result = event.target?.result
+        if (result) {
+          setLocalFilePreview(result)
+          setFormData(prev => ({
+            ...prev,
+            mediaUrl: result,
+            mediaType: 'video',
+          }))
+        }
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
+  }
+
+  const handleClearLocalFile = () => {
+    setLocalFilePreview(null)
+    setFormData(prev => ({
+      ...prev,
+      mediaUrl: '/assets/campus-ads/hackathon-2026.jpg',
+      mediaType: 'image',
+    }))
   }
 
   const handleSubmit = async (e) => {
@@ -172,14 +237,23 @@ export default function CampusAdsAdmin({ onBack, onNavigateToStatus }) {
     setSubmitResult(null)
 
     try {
-      const res = await createCampusAd(formData)
+      let finalMediaUrl = formData.mediaUrl
+      if (finalMediaUrl && finalMediaUrl.startsWith('data:image/')) {
+        finalMediaUrl = await optimizeImageDataUrl(finalMediaUrl, 720, 0.75)
+      }
+
+      const payload = {
+        ...formData,
+        mediaUrl: finalMediaUrl,
+      }
+
+      const res = await createCampusAd(payload)
       if (res && res.success) {
         setSubmitResult({
           success: true,
           adId: res.adId,
           message: `Ad successfully published to XBuddy Ads Google Sheet! ID: ${res.adId}`,
         })
-        // Refresh live list
         loadExistingAds()
       } else {
         setSubmitResult({
@@ -421,12 +495,19 @@ export default function CampusAdsAdmin({ onBack, onNavigateToStatus }) {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Banner Image URL / Poster Link
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Banner Image URL / Poster Link
+                      </label>
+                      {formData.mediaUrl?.startsWith('data:') && (
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          ✓ Local File Loaded & Compressed
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
-                      value={formData.mediaUrl}
+                      value={formData.mediaUrl?.startsWith('data:') ? '[Local Poster: Auto-Compressed for Google Sheets]' : formData.mediaUrl}
                       onChange={(e) => handleChange('mediaUrl', e.target.value)}
                       placeholder="https://... or /assets/campus-ads/hackathon-2026.jpg"
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#F7931E] focus:ring-2 focus:ring-orange-200 text-xs sm:text-sm outline-hidden font-mono text-slate-700 transition-all"
@@ -438,17 +519,32 @@ export default function CampusAdsAdmin({ onBack, onNavigateToStatus }) {
                 <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-xl flex items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-2 text-amber-900">
                     <UploadCloud className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Or choose local poster file for instant preview:</span>
+                    <span>
+                      {localFilePreview
+                        ? 'Local poster ready! It will be optimized and saved to Google Sheets.'
+                        : 'Or choose local poster file from your device (Auto-optimized):'}
+                    </span>
                   </div>
-                  <label className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] cursor-pointer shrink-0 transition-colors shadow-xs">
-                    Browse File
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {localFilePreview && (
+                      <button
+                        type="button"
+                        onClick={handleClearLocalFile}
+                        className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold text-[11px] cursor-pointer transition-colors"
+                      >
+                        Reset / Use URL
+                      </button>
+                    )}
+                    <label className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] cursor-pointer shrink-0 transition-colors shadow-xs">
+                      {localFilePreview ? 'Change File' : 'Browse File'}
+                      <input
+                        type="file"
+                        accept="image/*,video/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {/* Action URL & Button Text */}

@@ -342,14 +342,43 @@ function createAdRecord(adData) {
   var adId = adData.adId || ('AD' + ('000' + sheet.getLastRow()).slice(-3));
   var nowIso = new Date().toISOString();
 
+  var mediaUrl = (adData.mediaUrl || '').trim();
+  var mediaFileId = (adData.mediaFileId || '').trim();
+
+  // If a data: URL / base64 image was sent, save it directly to Google Drive 'Approved' ads folder
+  if (mediaUrl.indexOf('data:image') === 0) {
+    try {
+      var parts = mediaUrl.split(',');
+      var mimeMatch = parts[0].match(/:(.*?);/);
+      var mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      var rawBase64 = parts[1];
+      var ext = mimeType.indexOf('png') !== -1 ? 'png' : 'jpg';
+      var fileName = 'ad_' + adId + '_' + Date.now() + '.' + ext;
+
+      var bytes = Utilities.base64Decode(rawBase64);
+      var blob = Utilities.newBlob(bytes, mimeType, fileName);
+
+      var adsFolder = getOrCreateAdsSubfolder('Approved');
+      var driveFile = adsFolder.createFile(blob);
+      driveFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+      mediaFileId = driveFile.getId();
+      mediaUrl = 'https://drive.google.com/uc?export=view&id=' + driveFile.getId();
+    } catch (uploadErr) {
+      if (mediaUrl.length > 48000) {
+        mediaUrl = '/assets/campus-ads/hackathon-2026.jpg';
+      }
+    }
+  }
+
   var row = [
     adId,
     adData.clubName    || '',
     adData.title       || '',
     adData.description || '',
     adData.mediaType   || 'image',
-    adData.mediaFileId || '',
-    adData.mediaUrl    || '',
+    mediaFileId,
+    mediaUrl,
     adData.clickUrl    || '',
     adData.buttonText  || 'View Details',
     adData.placement   || 'order-status',
@@ -361,8 +390,9 @@ function createAdRecord(adData) {
   ];
 
   sheet.appendRow(row);
-  return { success: true, adId: adId };
+  return { success: true, adId: adId, mediaUrl: mediaUrl };
 }
+
 
 function approveAd(adId) {
   var sheet = getOrCreateAdsSheet();

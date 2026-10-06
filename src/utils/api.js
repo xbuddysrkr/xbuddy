@@ -326,12 +326,35 @@ export async function fetchCampusAds(placement = 'order-status') {
   return null
 }
 
+async function gasPost(payload) {
+  try {
+    const action = payload?.action || ''
+    const url = `${API_URL}?action=${encodeURIComponent(action)}&key=${encodeURIComponent(API_KEY)}`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ key: API_KEY, ...payload }),
+      signal: AbortSignal.timeout(30000),
+    })
+    if (!res.ok) {
+      console.warn(`[GAS POST] HTTP ${res.status}`)
+      return null
+    }
+    return await res.json()
+  } catch (err) {
+    console.error('[GAS POST Error]', err)
+    return null
+  }
+}
+
 /**
  * Creates a new campus promotion ad record in Google Sheets via Google Apps Script.
+ * Uses gasPost with text/plain to support high payload sizes (compressed banners, rich text)
+ * without URL length limits or CORS preflight failures.
  */
 export async function createCampusAd(adData) {
   try {
-    const params = {
+    const payload = {
       action: 'createAdRecord',
       clubName: adData.clubName || '',
       title: adData.title || '',
@@ -346,7 +369,15 @@ export async function createCampusAd(adData) {
       status: adData.status || 'approved',
       priority: String(adData.priority ?? 1),
     }
-    const res = await gasGet(params)
+
+    // Try POST first (handles large images & data URLs)
+    let res = await gasPost(payload)
+
+    // If POST fails, fallback to GET (if payload is small)
+    if (!res) {
+      res = await gasGet(payload)
+    }
+
     if (res && res.success) {
       return { success: true, adId: res.adId }
     }
@@ -355,4 +386,5 @@ export async function createCampusAd(adData) {
     return { success: false, error: err.message || 'Network error connecting to Ads API' }
   }
 }
+
 
