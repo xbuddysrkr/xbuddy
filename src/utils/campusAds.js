@@ -31,7 +31,13 @@ export function resolveMediaUrl(ad) {
   
   if (ad.mediaUrl && typeof ad.mediaUrl === 'string') {
     const trimmed = ad.mediaUrl.trim()
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/')) {
+    if (
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('/') ||
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('blob:')
+    ) {
       return trimmed
     }
     // If it's a Drive file ID rather than a full URL

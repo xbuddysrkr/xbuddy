@@ -31,6 +31,13 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
     return getActiveCampusAd(placement)
   })
 
+  // Synchronize when customAd changes (live preview form updates)
+  useEffect(() => {
+    if (customAd) {
+      setAd(customAd)
+    }
+  }, [customAd])
+
   // Fetch live ads from Google Apps Script / Google Sheets backend
   useEffect(() => {
     let isMounted = true
@@ -62,18 +69,20 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
     }
   }, [placement, customAd])
 
+  const activeAd = customAd || ad
+
   // Record impression once when ad is rendered
   useEffect(() => {
-    if (ad?.adId) {
-      recordAdImpression(ad.adId, placement)
+    if (!customAd && activeAd?.adId) {
+      recordAdImpression(activeAd.adId, placement)
     }
-  }, [ad?.adId, placement])
+  }, [customAd, activeAd?.adId, placement])
 
   // If no active approved ad is available, render nothing (no empty card or broken layout)
-  if (!ad) return null
+  if (!activeAd) return null
 
-  const resolvedMedia = resolveMediaUrl(ad)
-  const hasValidLink = isValidAdUrl(ad.clickUrl)
+  const resolvedMedia = resolveMediaUrl(activeAd)
+  const hasValidLink = isValidAdUrl(activeAd.clickUrl)
 
   const handleActionClick = (e) => {
     if (!hasValidLink) {
@@ -97,12 +106,12 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-100/80 border border-orange-200 text-orange-900 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
           <span className="w-1.5 h-1.5 rounded-full bg-[#F78C25] animate-pulse" />
-          <span>{ad.badgeText || 'CAMPUS PROMOTION'}</span>
+          <span>{activeAd.badgeText || 'CAMPUS PROMOTION'}</span>
         </div>
 
-        {ad.clubName && (
+        {activeAd.clubName && (
           <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate max-w-[180px] sm:max-w-xs text-right">
-            {ad.clubName}
+            {activeAd.clubName}
           </span>
         )}
       </div>
@@ -110,10 +119,10 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
       {/* Media: Image or Video */}
       {resolvedMedia && (
         <div className="mb-3.5 rounded-2xl overflow-hidden bg-slate-900/5 border border-orange-100/80 flex items-center justify-center relative">
-          {ad.mediaType === 'video' ? (
+          {activeAd.mediaType === 'video' ? (
             <video
               src={resolvedMedia}
-              poster={ad.posterUrl || undefined}
+              poster={activeAd.posterUrl || undefined}
               muted
               playsInline
               controls
@@ -125,7 +134,7 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
           ) : (
             <img
               src={resolvedMedia}
-              alt={ad.title || 'Campus Promotion'}
+              alt={activeAd.title || 'Campus Promotion'}
               loading="lazy"
               className="w-full max-h-52 sm:max-h-60 object-cover sm:object-contain rounded-2xl transition-transform hover:scale-[1.01] duration-300"
               onError={(e) => {
@@ -140,11 +149,11 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
       {/* Title & Description (rendered strictly as plain text for security) */}
       <div className="space-y-1 mb-3.5">
         <h4 className="text-sm sm:text-base font-extrabold text-slate-900 leading-snug">
-          {ad.title}
+          {activeAd.title}
         </h4>
-        {ad.description && (
+        {activeAd.description && (
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-normal">
-            {ad.description}
+            {activeAd.description}
           </p>
         )}
       </div>
@@ -153,13 +162,13 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
       {hasValidLink && (
         <div className="flex items-center justify-end pt-1">
           <a
-            href={ad.clickUrl}
+            href={activeAd.clickUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={handleActionClick}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white text-xs font-bold shadow-xs hover:shadow-md transition-all active:scale-95 cursor-pointer"
           >
-            <span>{ad.buttonText || 'View Details'}</span>
+            <span>{activeAd.buttonText || 'View Details'}</span>
             <svg
               viewBox="0 0 24 24"
               fill="none"
