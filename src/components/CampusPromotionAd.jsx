@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
   getActiveCampusAd,
@@ -20,6 +20,8 @@ import { fetchCampusAds } from '../utils/api'
  * - Strictly validates approval status (status === "approved") and active date range
  * - Respects priority ordering (priority 1 appears before priority 2)
  * - Supports responsive Image (JPG, PNG, WEBP) and Video (MP4, WebM) media
+ * - Autoplays video muted, loops continuously, plays inline on mobile with no native controls
+ * - Provides a clean custom Mute / Unmute toggle button
  * - Isolated from order status polling & payment flow (errors will NEVER break printing)
  * - Safe external link navigation (target="_blank" rel="noopener noreferrer")
  * - Completely hides (returns null) when no approved active advertisement exists
@@ -30,6 +32,9 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
     // Initial sync load from verified catalog
     return getActiveCampusAd(placement)
   })
+
+  const videoRef = useRef(null)
+  const [isMuted, setIsMuted] = useState(true)
 
   // Synchronize when customAd changes (live preview form updates)
   useEffect(() => {
@@ -78,11 +83,65 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
     }
   }, [customAd, activeAd?.adId, placement])
 
+  const resolvedMedia = resolveMediaUrl(activeAd)
+  const hasValidLink = isValidAdUrl(activeAd?.clickUrl)
+
+  // Programmatic Autoplay Enforcement with Safe Retry
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || activeAd?.mediaType !== 'video') return
+
+    video.muted = true
+    video.loop = true
+    video.playsInline = true
+    video.controls = false
+
+    const tryPlay = () => {
+      const playPromise = video.play()
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // Autoplay may be temporarily blocked by browser policy.
+          // Keep the ad UI stable without breaking the page.
+        })
+      }
+    }
+
+    if (video.readyState >= 2) {
+      tryPlay()
+    } else {
+      video.addEventListener('canplay', tryPlay, { once: true })
+      video.addEventListener('loadeddata', tryPlay, { once: true })
+    }
+
+    const handleVisibility = () => {
+      if (!document.hidden && video.paused) {
+        tryPlay()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      video.removeEventListener('canplay', tryPlay)
+      video.removeEventListener('loadeddata', tryPlay)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [resolvedMedia, activeAd?.mediaType])
+
+  const toggleMute = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const video = videoRef.current
+    if (!video) return
+    const nextMuted = !isMuted
+    video.muted = nextMuted
+    setIsMuted(nextMuted)
+    if (video.paused) {
+      video.play().catch(() => {})
+    }
+  }
+
   // If no active approved ad is available, render nothing (no empty card or broken layout)
   if (!activeAd) return null
-
-  const resolvedMedia = resolveMediaUrl(activeAd)
-  const hasValidLink = isValidAdUrl(activeAd.clickUrl)
 
   const handleActionClick = (e) => {
     if (!hasValidLink) {
@@ -120,17 +179,51 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
       {resolvedMedia && (
         <div className="mb-3.5 rounded-2xl overflow-hidden bg-slate-900/5 border border-orange-100/80 flex items-center justify-center relative">
           {activeAd.mediaType === 'video' ? (
-            <video
-              src={resolvedMedia}
-              poster={activeAd.posterUrl || undefined}
-              muted
-              playsInline
-              controls
-              preload="metadata"
-              className="w-full max-h-56 sm:max-h-64 object-contain rounded-2xl bg-black"
-            >
-              Your browser does not support the video tag.
-            </video>
+            <>
+              <video
+                ref={videoRef}
+                src={resolvedMedia}
+                poster={activeAd.posterUrl || undefined}
+                autoPlay
+                muted={isMuted}
+                loop
+                playsInline
+                controls={false}
+                preload="auto"
+                className="w-full max-h-56 sm:max-h-64 object-contain rounded-2xl bg-black"
+              >
+                Your browser does not support the video tag.
+              </video>
+
+              {/* Only Mute and Unmute Option - Floating Corner Toggle */}
+              <button
+                type="button"
+                onClick={toggleMute}
+                aria-label={isMuted ? 'Unmute video' : 'Mute video'}
+                title={isMuted ? 'Unmute video' : 'Mute video'}
+                className="absolute bottom-2.5 right-2.5 z-10 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/65 hover:bg-black/85 text-white text-[11px] font-semibold backdrop-blur-md shadow-md border border-white/20 transition-all active:scale-95 cursor-pointer select-none"
+              >
+                {isMuted ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 text-white/90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <line x1="23" y1="9" x2="17" y2="15" />
+                      <line x1="17" y1="9" x2="23" y2="15" />
+                    </svg>
+                    <span>Unmute</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5 text-white/90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                    </svg>
+                    <span>Mute</span>
+                  </>
+                )}
+              </button>
+            </>
           ) : (
             <img
               src={resolvedMedia}

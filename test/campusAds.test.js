@@ -76,4 +76,18 @@ assert.equal(isValidAdUrl('javascript:alert(1)'), false, 'javascript: must be re
 assert.equal(isValidAdUrl('data:text/html,<script>alert(1)</script>'), false, 'data: must be rejected')
 console.log('✓ TEST 10 PASSED: URL security correctly allows web links and rejects script protocols')
 
+// TEST 11: Video ad media resolution & attributes
+const videoDriveAd = {
+  adId: 'AD-VIDEO-01',
+  mediaType: 'video',
+  mediaFileId: '1AbC_videoDriveId12345678901234567',
+  status: 'approved',
+  startDate: '2026-01-01',
+  endDate: '2026-12-31',
+  priority: 1,
+}
+assert.equal(isAdActive(videoDriveAd, 'order-status'), true, 'Video ad should be active')
+assert.equal(resolveMediaUrl(videoDriveAd), 'https://drive.google.com/uc?export=view&id=1AbC_videoDriveId12345678901234567', 'Drive video ID should resolve to view link')
+console.log('✓ TEST 11 PASSED: Campus video ad format resolves correctly')
+
 console.log('--- ALL XBUDDY CAMPUS ADS TESTS PASSED SUCCESSFULLY! ---')
