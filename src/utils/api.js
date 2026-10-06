@@ -294,41 +294,94 @@ export async function submitOrder(orderData, { onStep } = {}) {
     serviceFee:        orderData.serviceFee        || 0,
   }
 
-  // ── Step 1: Save order to GAS ─────────────────────────────────────────────
+  // ── Step 1: Save order via Dual-Write API (MongoDB Atlas + Google Sheets) ─
   onStep?.('save_order')
-  let gasResult
+  let orderResult = null
+  let orderId = clientOrderId
+
   try {
-    const res = await fetch(`${API_URL}?${new URLSearchParams({
-      action: 'saveOrder', key: API_KEY, orderId: clientOrderId,
-      name: orderData.name, fileName: orderData.fileName,
-      totalPages: String(orderData.totalPages), copies: String(printSettings.copies),
+    const dualWritePayload = {
+      action: 'saveOrder',
+      orderId: clientOrderId,
+      name: orderData.name,
+      fileName: orderData.fileName,
+      totalPages: orderData.totalPages,
+      copies: printSettings.copies,
       colorMode: normalizedColor,
       printType: printSettings.printType,
       printSide: printSettings.printSide,
-      duplex: String(isDuplex),
+      duplex: isDuplex,
       pageSize: resolvedPaperSize,
       paperSize: resolvedPaperSize,
       orientation: printSettings.orientation,
-      amount: String(orderData.amount),
-      printingCost: String(orderData.printingCost || ''),
-      serviceFee: String(orderData.serviceFee || ''),
-      digitalProcessingFee: String(orderData.digitalProcessingFee || orderData.serviceFee || ''),
+      amount: orderData.amount,
+      printingCost: orderData.printingCost || 0,
+      serviceFee: orderData.serviceFee || 0,
+      digitalProcessingFee: orderData.digitalProcessingFee || orderData.serviceFee || 0,
       transactionId: orderData.transactionId,
       pageRange: printSettings.pageRange,
       pageRangeMode: printSettings.pageRangeMode,
       customPages: printSettings.customPages,
-      printableCount: String(printSettings.printableCount),
-      selectedPages: JSON.stringify(printSettings.selectedPages),
-      selectedPageCount: String(printSettings.selectedPageCount),
-    }).toString()}`, { signal: AbortSignal.timeout(20000) })
-    if (!res.ok) throw { step: 'save_order', reason: `HTTP ${res.status}` }
-    gasResult = await res.json()
-  } catch (err) {
-    if (err?.step) throw err
-    throw { step: 'save_order', reason: err.name === 'TimeoutError' ? 'Request Timed Out' : (err.message || 'Network Error') }
+      printableCount: printSettings.printableCount,
+      selectedPages: printSettings.selectedPages,
+      selectedPageCount: printSettings.selectedPageCount,
+    }
+
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dualWritePayload),
+      signal: AbortSignal.timeout(20000),
+    })
+
+    if (res.ok) {
+      orderResult = await res.json()
+      if (orderResult?.success) {
+        orderId = orderResult.orderId || clientOrderId
+      }
+    } else {
+      const errData = await res.json().catch(() => null)
+      console.warn('[Dual-Write API Warning]:', errData || res.status)
+    }
+  } catch (apiErr) {
+    console.warn('[Dual-Write Serverless Call Notice]:', apiErr.message)
   }
-  if (!gasResult?.success) throw { step: 'save_order', reason: gasResult?.error || 'Unable to Save Order' }
-  const orderId = gasResult.orderId || clientOrderId
+
+  // Fallback to direct Google Apps Script if serverless endpoint is not ready
+  if (!orderResult?.success) {
+    try {
+      const res = await fetch(`${API_URL}?${new URLSearchParams({
+        action: 'saveOrder', key: API_KEY, orderId: clientOrderId,
+        name: orderData.name, fileName: orderData.fileName,
+        totalPages: String(orderData.totalPages), copies: String(printSettings.copies),
+        colorMode: normalizedColor,
+        printType: printSettings.printType,
+        printSide: printSettings.printSide,
+        duplex: String(isDuplex),
+        pageSize: resolvedPaperSize,
+        paperSize: resolvedPaperSize,
+        orientation: printSettings.orientation,
+        amount: String(orderData.amount),
+        printingCost: String(orderData.printingCost || ''),
+        serviceFee: String(orderData.serviceFee || ''),
+        digitalProcessingFee: String(orderData.digitalProcessingFee || orderData.serviceFee || ''),
+        transactionId: orderData.transactionId,
+        pageRange: printSettings.pageRange,
+        pageRangeMode: printSettings.pageRangeMode,
+        customPages: printSettings.customPages,
+        printableCount: String(printSettings.printableCount),
+        selectedPages: JSON.stringify(printSettings.selectedPages),
+        selectedPageCount: String(printSettings.selectedPageCount),
+      }).toString()}`, { signal: AbortSignal.timeout(20000) })
+      if (!res.ok) throw { step: 'save_order', reason: `HTTP ${res.status}` }
+      const gasResult = await res.json()
+      if (!gasResult?.success) throw { step: 'save_order', reason: gasResult?.error || 'Unable to Save Order' }
+      orderId = gasResult.orderId || clientOrderId
+    } catch (err) {
+      if (err?.step) throw err
+      throw { step: 'save_order', reason: err.name === 'TimeoutError' ? 'Request Timed Out' : (err.message || 'Network Error') }
+    }
+  }
 
   // ── Step 2: Deliver PDF to agent ──────────────────────────────────────────
   onStep?.('print_agent')
