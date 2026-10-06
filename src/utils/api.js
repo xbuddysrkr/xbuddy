@@ -99,6 +99,29 @@ async function postToAgent(baseUrl, orderId, orderData, printSettings) {
 export async function getOrderStatus(orderId) {
   if (!orderId) return null
   const cleanId = String(orderId).trim().toUpperCase()
+
+  // 1. PRIMARY READ: Serverless Orders API (MongoDB Atlas primary with GAS fallback)
+  try {
+    const res = await fetch(`/api/orders?action=getOrderStatus&orderId=${cleanId}`, {
+      signal: AbortSignal.timeout(10000),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.success && data?.order) {
+        return {
+          ...data,
+          ...data.order,
+          orderId: data.order.orderId || cleanId,
+          printStatus: data.order.printStatus || data.printStatus || 'waiting_for_shopkeeper',
+          paymentStatus: data.order.paymentStatus || data.paymentStatus || 'pending',
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[getOrderStatus] Primary API notice:', err.message)
+  }
+
+  // 2. SAFE FALLBACK: Direct Google Apps Script
   const res = await gasGet({ action: 'getOrderStatus', orderId: cleanId })
   if (res?.success && res?.order) {
     return {
@@ -115,28 +138,71 @@ export async function getOrderStatus(orderId) {
 export async function fetchAdminOrders() {
   const orderMap = new Map()
 
-  // 1. Live Google Sheets Ground Truth (Always captures all student orders including mobile/remote)
+  // 1. PRIMARY READ: Serverless Orders API (MongoDB Atlas primary with deduplicated GAS fallback)
+  let ordersList = null
   try {
-    const gas = await gasGet({ action: 'listOrders' })
-    if (gas?.success && Array.isArray(gas.orders)) {
-      for (const o of gas.orders) {
-        const id = String(o.orderId || o.id || '').trim().toUpperCase()
-        if (id) {
-          orderMap.set(id, {
-            ...o,
-            id,
-            orderId: id,
-            timestamp: o.createdAt || o.timestamp,
-            date: o.createdAt ? o.createdAt.split('T')[0] : (o.date || ''),
-          })
-        }
+    const res = await fetch('/api/orders?action=listOrders', { signal: AbortSignal.timeout(15000) })
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.success && Array.isArray(data.orders)) {
+        ordersList = data.orders
       }
     }
   } catch (err) {
-    console.warn('[fetchAdminOrders] GAS listOrders notice:', err)
+    console.warn('[fetchAdminOrders] Primary /api/orders list notice:', err.message)
   }
 
-  // 2. Merge local print agent queue
+  // 2. SAFE FALLBACK: Direct Google Apps Script (deduplicated by orderId)
+  if (!ordersList) {
+    try {
+      const gas = await gasGet({ action: 'listOrders' })
+      if (gas?.success && Array.isArray(gas.orders)) {
+        const STATUS_PRIORITY = { printed: 3, printing: 2, waiting_for_shopkeeper: 1 }
+        const map = new Map()
+        for (const o of gas.orders) {
+          const id = String(o.orderId || o.id || '').trim().toUpperCase()
+          if (!id) continue
+          if (!map.has(id)) {
+            map.set(id, o)
+          } else {
+            const bestRow = map.get(id)
+            const bestPrio = STATUS_PRIORITY[String(bestRow.printStatus || '').toLowerCase()] || 0
+            const candPrio = STATUS_PRIORITY[String(o.printStatus || '').toLowerCase()] || 0
+            if (candPrio > bestPrio) {
+              map.set(id, o)
+            } else if (candPrio === bestPrio) {
+              const bestTime = new Date(bestRow.createdAt || 0).getTime()
+              const candTime = new Date(o.createdAt || 0).getTime()
+              if (candTime > 0 && (bestTime === 0 || candTime < bestTime)) {
+                map.set(id, o)
+              }
+            }
+          }
+        }
+        ordersList = Array.from(map.values())
+      }
+    } catch (err) {
+      console.warn('[fetchAdminOrders] GAS fallback notice:', err.message)
+    }
+  }
+
+  // Populate map with orders
+  if (Array.isArray(ordersList)) {
+    for (const o of ordersList) {
+      const id = String(o.orderId || o.id || '').trim().toUpperCase()
+      if (id) {
+        orderMap.set(id, {
+          ...o,
+          id,
+          orderId: id,
+          timestamp: o.createdAt || o.timestamp,
+          date: o.createdAt ? o.createdAt.split('T')[0] : (o.date || ''),
+        })
+      }
+    }
+  }
+
+  // 3. Merge local print agent queue
   try {
     const local = await localGet('/admin/orders')
     if (local?.success && Array.isArray(local.orders)) {
@@ -155,7 +221,7 @@ export async function fetchAdminOrders() {
     }
   } catch {}
 
-  // 3. Merge tunnel queue if available
+  // 4. Merge tunnel queue if available
   try {
     const tunnelUrl = await getTunnelUrl()
     if (tunnelUrl) {
@@ -229,7 +295,7 @@ export async function validateAndRelease(orderId) {
 }
 
 export async function updateOrderStatus(orderId, printStatus) {
-  // Try local print agent first if running
+  // 1. Try local print agent first if running
   try {
     const res = await fetch(`${LOCAL_API}/update-order-status`, {
       method: 'POST',
@@ -239,11 +305,19 @@ export async function updateOrderStatus(orderId, printStatus) {
     })
     if (res.ok) {
       const data = await res.json()
-      if (data?.success) return data
+      if (data?.success) {
+        // Also sync to serverless dual-write endpoint in background
+        fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
+        }).catch(() => {})
+        return data
+      }
     }
   } catch {}
 
-  // Try tunnel URL if available
+  // 2. Try tunnel URL if available
   const tunnelUrl = await getTunnelUrl()
   if (tunnelUrl) {
     try {
@@ -255,16 +329,56 @@ export async function updateOrderStatus(orderId, printStatus) {
       })
       if (res.ok) {
         const data = await res.json()
-        if (data?.success) return data
+        if (data?.success) {
+          fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
+          }).catch(() => {})
+          return data
+        }
       }
     } catch {}
   }
 
-  // Fallback to Google Apps Script
+  // 3. Update via serverless dual-write endpoint (atomic print release lock in MongoDB + GAS sync)
+  try {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.success) return data
+    }
+  } catch (err) {
+    console.warn('[updateOrderStatus] /api/orders notice:', err.message)
+  }
+
+  // 4. Fallback to direct Google Apps Script
   return await gasGet({ action: 'updateOrderStatus', orderId, printStatus })
 }
 
 export async function updatePaymentStatus(orderId, paymentStatus) {
+  // Update via serverless dual-write endpoint (updates MongoDB and syncs to Google Sheets)
+  try {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'updatePaymentStatus', orderId, paymentStatus }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.success) return data
+    }
+  } catch (err) {
+    console.warn('[updatePaymentStatus] /api/orders notice:', err.message)
+  }
+
+  // Direct GAS fallback
   return await gasGet({ action: 'updatePaymentStatus', orderId, paymentStatus })
 }
 
