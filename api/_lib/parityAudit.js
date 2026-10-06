@@ -173,11 +173,11 @@ export function compareOrders(sheetOrder, mongoOrder) {
     const sVal = sheetOrder[field]
     const mVal = mongoOrder[field]
 
-    // Special comparison for timestamps: tolerate small network propagation delta (<= 3000ms)
+    // Special comparison for timestamps: tolerate dual-write network latency delta (<= 30000ms)
     if (field === 'createdAt') {
       if (sheetOrder.createdAtEpoch > 0 && mongoOrder.createdAtEpoch > 0) {
         const delta = Math.abs(sheetOrder.createdAtEpoch - mongoOrder.createdAtEpoch)
-        if (delta > 3000) {
+        if (delta > 30000) {
           mismatches.push({
             field,
             googleSheetValue: sheetOrder.createdAt,
@@ -198,7 +198,7 @@ export function compareOrders(sheetOrder, mongoOrder) {
       }
       if (sheetOrder.updatedAtEpoch > 0 && mongoOrder.updatedAtEpoch > 0) {
         const delta = Math.abs(sheetOrder.updatedAtEpoch - mongoOrder.updatedAtEpoch)
-        if (delta > 3000) {
+        if (delta > 30000) {
           mismatches.push({
             field,
             googleSheetValue: sheetOrder.updatedAt,

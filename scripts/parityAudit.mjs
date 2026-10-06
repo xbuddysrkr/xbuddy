@@ -3,6 +3,7 @@ import { runParityAudit, formatAuditReport } from '../api/_lib/parityAudit.js'
 
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
 const GAS_API_KEY = process.env.GAS_API_KEY || 'XB_API_SECRET_KEY_2026'
+const VERCEL_API_URL = 'https://xbuddysrkr.vercel.app/api/orders'
 
 async function fetchGoogleSheetOrders() {
   console.log('[Parity Audit] Fetching live Orders from Google Sheet...')
@@ -14,7 +15,7 @@ async function fetchGoogleSheetOrders() {
 }
 
 async function fetchMongoOrders() {
-  console.log('[Parity Audit] Connecting to MongoDB Atlas (Cluster: XBuddyCluster, DB: xbuddy, Coll: orders)...')
+  console.log('[Parity Audit] Connecting directly to MongoDB Atlas (Cluster: XBuddyCluster, DB: xbuddy, Coll: orders)...')
   const { db } = await connectToDatabase()
   const ordersCollection = db.collection('orders')
   
@@ -47,55 +48,23 @@ async function main() {
       const mongoRes = await fetchMongoOrders()
       mongoOrders = mongoRes.mongoOrders
       isUniqueIndexVerified = mongoRes.isUniqueIndexVerified
-      console.log(`[Parity Audit] Retrieved ${mongoOrders.length} order documents from MongoDB Atlas.`)
+      console.log(`[Parity Audit] Retrieved ${mongoOrders.length} order documents directly from MongoDB Atlas.`)
     } catch (err) {
       console.warn(`[Parity Audit] MongoDB connection notice: ${err.message}`)
     } finally {
       await closeDatabaseConnection()
     }
   } else {
-    console.log('[Parity Audit] Notice: MONGODB_URI is not set in local CLI environment.')
-    console.log('[Parity Audit] Note: Live credentials are kept secure in Vercel.')
-    console.log('[Parity Audit] You can run with MONGODB_URI set, or access /api/orders?action=parityAudit in Vercel.\n')
-    
-    // For local evaluation without direct URI, find the recent dual-written order (e.g. XB5649)
-    const realOrderInSheet = sheetOrders.find(o => (o.orderId || o.id) === 'XB5649')
-    if (realOrderInSheet) {
-      console.log(`[Parity Audit] Detected real Phase 1 verified order XB5649 in Google Sheet:`)
-      console.log(JSON.stringify(realOrderInSheet, null, 2))
-      mongoOrders = [
-        {
-          orderId: realOrderInSheet.orderId,
-          name: realOrderInSheet.name,
-          fileName: realOrderInSheet.fileName,
-          totalPages: realOrderInSheet.totalPages,
-          copies: realOrderInSheet.copies,
-          colorMode: realOrderInSheet.colorMode,
-          printType: realOrderInSheet.printType,
-          printSide: realOrderInSheet.printSide,
-          duplex: false,
-          pageSize: 'A4',
-          paperSize: 'A4',
-          orientation: 'portrait',
-          amount: realOrderInSheet.amount,
-          printingCost: realOrderInSheet.printingCost,
-          serviceFee: realOrderInSheet.serviceFee,
-          digitalProcessingFee: realOrderInSheet.digitalProcessingFee,
-          transactionId: realOrderInSheet.transactionId,
-          pageRange: 'all',
-          pageRangeMode: 'all',
-          customPages: '',
-          printableCount: 1,
-          selectedPages: [1],
-          selectedPageCount: 1,
-          driveUrl: '',
-          paymentStatus: realOrderInSheet.paymentStatus || 'pending',
-          printStatus: realOrderInSheet.printStatus || 'waiting_for_shopkeeper',
-          createdAt: realOrderInSheet.createdAt,
-          updatedAt: realOrderInSheet.createdAt,
-        }
-      ]
-      isUniqueIndexVerified = true
+    console.log('[Parity Audit] Querying live MongoDB Atlas state via secure Vercel production endpoint...\n')
+    try {
+      const vRes = await fetch(`${VERCEL_API_URL}?action=parityAudit`, { signal: AbortSignal.timeout(30000) })
+      const vData = await vRes.json()
+      if (vData?.success && vData?.report) {
+        console.log(vData.report)
+        return
+      }
+    } catch (vErr) {
+      console.warn(`[Parity Audit] Remote notice: ${vErr.message}`)
     }
   }
 

@@ -4,6 +4,7 @@ import { runParityAudit, formatAuditReport } from '../api/_lib/parityAudit.js'
 
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
 const GAS_API_KEY = process.env.GAS_API_KEY || 'XB_API_SECRET_KEY_2026'
+const VERCEL_API_URL = 'https://xbuddysrkr.vercel.app/api/orders'
 
 async function fetchGoogleSheetOrders() {
   console.log('[Backfill] Fetching live Orders from Google Sheet...')
@@ -19,7 +20,6 @@ async function main() {
   const isExecute = args.includes('--execute')
   const isDryRun = args.includes('--dry-run') || !isExecute
 
-  // Check for custom URI passed via CLI
   const uriArg = args.find(a => a.startsWith('--uri='))
   if (uriArg) {
     process.env.MONGODB_URI = uriArg.split('=')[1]
@@ -34,7 +34,7 @@ async function main() {
   const sheetOrders = await fetchGoogleSheetOrders()
   console.log(`[Backfill] Retrieved ${sheetOrders.length} rows from Google Sheet.\n`)
 
-  // Step 2: Fetch MongoDB Orders
+  // Step 2: Determine execution mode (Direct MongoClient vs Vercel Serverless Endpoint)
   let mongoOrders = []
   let ordersCollection = null
   let isUniqueIndexVerified = false
@@ -46,98 +46,105 @@ async function main() {
       const indexes = await ordersCollection.indexes()
       isUniqueIndexVerified = !!indexes.find(idx => idx.key?.orderId === 1 && idx.unique === true)
       mongoOrders = await ordersCollection.find({}).toArray()
-      console.log(`[Backfill] Connected to MongoDB Atlas. Found ${mongoOrders.length} existing orders.`)
+      console.log(`[Backfill] Connected directly to MongoDB Atlas. Found ${mongoOrders.length} existing orders.`)
     } catch (err) {
       console.error(`[Backfill] MongoDB Connection Error: ${err.message}`)
       process.exit(1)
     }
   } else {
-    console.log('[Backfill] Notice: MONGODB_URI is not set in local environment.')
-    console.log('[Backfill] Simulating existing MongoDB state with verified Phase 1 order (XB5649)...')
-    const realOrderInSheet = sheetOrders.find(o => (o.orderId || o.id) === 'XB5649')
-    if (realOrderInSheet) {
-      mongoOrders = [{
-        orderId: 'XB5649',
-        name: realOrderInSheet.name,
-        fileName: realOrderInSheet.fileName,
-        totalPages: realOrderInSheet.totalPages,
-        copies: realOrderInSheet.copies,
-        colorMode: realOrderInSheet.colorMode,
-        printType: realOrderInSheet.printType,
-        printSide: realOrderInSheet.printSide,
-        duplex: false,
-        pageSize: 'A4',
-        paperSize: 'A4',
-        orientation: 'portrait',
-        amount: realOrderInSheet.amount,
-        printingCost: realOrderInSheet.printingCost,
-        serviceFee: realOrderInSheet.serviceFee,
-        digitalProcessingFee: realOrderInSheet.digitalProcessingFee,
-        transactionId: realOrderInSheet.transactionId,
-        pageRange: 'all',
-        pageRangeMode: 'all',
-        customPages: '',
-        printableCount: 1,
-        selectedPages: [1],
-        selectedPageCount: 1,
-        driveUrl: '',
-        paymentStatus: realOrderInSheet.paymentStatus || 'pending',
-        printStatus: realOrderInSheet.printStatus || 'waiting_for_shopkeeper',
-        createdAt: realOrderInSheet.createdAt,
-        updatedAt: realOrderInSheet.createdAt,
-      }]
-      isUniqueIndexVerified = true
+    // If running in CLI without local MONGODB_URI, query live Vercel API for existing MongoDB orders
+    console.log('[Backfill] Connecting to MongoDB Atlas via secure Vercel production endpoint...')
+    try {
+      const vRes = await fetch(`${VERCEL_API_URL}?action=parityAudit`, { signal: AbortSignal.timeout(30000) })
+      const vData = await vRes.json()
+      if (vData?.success) {
+        console.log(`[Backfill] Connected to MongoDB Atlas. Current collection has ${vData.audit.mongoOrderCount} orders.`)
+        isUniqueIndexVerified = vData.audit.mongoUniqueIndexVerified
+      }
+    } catch (vErr) {
+      console.warn(`[Backfill] Notice: ${vErr.message}`)
     }
   }
 
   // Step 3: Plan Backfill
-  const plan = planBackfill({ sheetOrders, mongoOrders })
+  if (ordersCollection) {
+    const plan = planBackfill({ sheetOrders, mongoOrders })
 
-  if (isDryRun) {
-    const dryRunReport = formatBackfillReport(plan, null)
-    console.log('\n' + dryRunReport)
-    console.log('\nTo execute this migration against MongoDB Atlas, run:')
-    console.log('node scripts/backfillOrders.mjs --execute\n')
-    await closeDatabaseConnection()
-    return
-  }
+    if (isDryRun) {
+      const dryRunReport = formatBackfillReport(plan, null)
+      console.log('\n' + dryRunReport)
+      console.log('\nTo execute this migration against MongoDB Atlas, run:')
+      console.log('node scripts/backfillOrders.mjs --execute\n')
+      await closeDatabaseConnection()
+      return
+    }
 
-  // Step 4: Execute Backfill (if --execute)
-  if (isExecute) {
-    if (!ordersCollection) {
-      console.error('\n[Backfill Error] Cannot execute backfill without live MONGODB_URI.')
-      console.log('Please provide MONGODB_URI via environment variable or --uri parameter.')
+    if (isExecute) {
+      console.log(`\n[Backfill Execution] Beginning insertion of ${plan.historicalOrdersToInsertCount} unique historical orders...`)
+      const execResult = await executeBackfill({ ordersCollection, plan })
+
+      for (const ins of execResult.inserted) {
+        console.log(`✓ Inserted: ${ins.orderId} (from Sheet Row ${ins.sourceRow})`)
+      }
+      for (const skp of execResult.skipped) {
+        console.log(`- Skipped:  ${skp.orderId} (${skp.reason})`)
+      }
+      for (const err of execResult.errors) {
+        console.error(`✗ Error on ${err.orderId}: ${err.error}`)
+      }
+
+      const execReport = formatBackfillReport(plan, execResult)
+      console.log('\n' + execReport)
+
+      console.log('\n[Backfill] Re-running Parity Audit after execution...\n')
+      const updatedMongoOrders = await ordersCollection.find({}).toArray()
+      const auditResult = runParityAudit({
+        sheetOrders,
+        mongoOrders: updatedMongoOrders,
+        mongoUniqueIndexVerified: isUniqueIndexVerified,
+      })
+      console.log(formatAuditReport(auditResult))
+
+      await closeDatabaseConnection()
+    }
+  } else {
+    // Execute through secure Vercel backend
+    const endpointMode = isExecute ? 'execute' : 'dry-run'
+    console.log(`[Backfill] Invoking Vercel production serverless execution endpoint (${endpointMode})...`)
+    const vRes = await fetch(`${VERCEL_API_URL}?action=backfillOrders&mode=${endpointMode}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(60000),
+    })
+    const data = await vRes.json()
+
+    if (!data?.success) {
+      console.error('[Backfill Error]:', data?.error || 'Unknown error')
       process.exit(1)
     }
 
-    console.log(`\n[Backfill Execution] Beginning insertion of ${plan.historicalOrdersToInsertCount} unique historical orders...`)
-    const execResult = await executeBackfill({ ordersCollection, plan })
-
-    for (const ins of execResult.inserted) {
-      console.log(`✓ Inserted: ${ins.orderId} (from Sheet Row ${ins.sourceRow})`)
+    if (isExecute && data.execution) {
+      console.log(`\n[Backfill Execution] Log of processed orders:`)
+      for (const ins of data.execution.inserted || []) {
+        console.log(`✓ Inserted: ${ins.orderId} (from Sheet Row ${ins.sourceRow})`)
+      }
+      for (const skp of data.execution.skipped || []) {
+        console.log(`- Skipped:  ${skp.orderId} (${skp.reason})`)
+      }
+      for (const err of data.execution.errors || []) {
+        console.error(`✗ Error on ${err.orderId}: ${err.error}`)
+      }
     }
-    for (const skp of execResult.skipped) {
-      console.log(`- Skipped:  ${skp.orderId} (${skp.reason})`)
+
+    console.log('\n' + data.report)
+
+    if (isExecute && data.updatedAudit) {
+      console.log('\n[Backfill] Re-running Parity Audit after execution...\n')
+      console.log(formatAuditReport(data.updatedAudit))
+    } else if (isDryRun) {
+      console.log('\nTo execute this migration against MongoDB Atlas, run:')
+      console.log('node scripts/backfillOrders.mjs --execute\n')
     }
-    for (const err of execResult.errors) {
-      console.error(`✗ Error on ${err.orderId}: ${err.error}`)
-    }
-
-    const execReport = formatBackfillReport(plan, execResult)
-    console.log('\n' + execReport)
-
-    // Step 5: Automatically re-run parity audit
-    console.log('\n[Backfill] Re-running Parity Audit after execution...\n')
-    const updatedMongoOrders = await ordersCollection.find({}).toArray()
-    const auditResult = runParityAudit({
-      sheetOrders,
-      mongoOrders: updatedMongoOrders,
-      mongoUniqueIndexVerified: isUniqueIndexVerified,
-    })
-    const auditReport = formatAuditReport(auditResult)
-    console.log(auditReport)
-
-    await closeDatabaseConnection()
   }
 }
 
