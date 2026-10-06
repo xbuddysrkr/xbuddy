@@ -9,7 +9,7 @@ const VERCEL_API_URL = 'https://xbuddysrkr.vercel.app/api/orders'
 async function fetchGoogleSheetOrders() {
   console.log('[Backfill] Fetching live Orders from Google Sheet...')
   const url = `${GAS_API_URL}?${new URLSearchParams({ action: 'listOrders', key: GAS_API_KEY }).toString()}`
-  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(20000) })
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60000) })
   if (!res.ok) throw new Error(`Google Apps Script HTTP ${res.status}`)
   const data = await res.json()
   return data?.orders || []
