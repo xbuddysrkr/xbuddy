@@ -121,6 +121,9 @@ export default function AdminDashboard() {
               dateStr = o.date || ''
             }
 
+            let currentStatus = o.status || o.printStatus || 'Waiting'
+            if (currentStatus === 'waiting_for_shopkeeper') currentStatus = 'Order Received'
+
             return {
               id: o.id || o.orderId,
               studentName,
@@ -132,11 +135,12 @@ export default function AdminDashboard() {
               printSide: o.printSide || 'Single',
               customPages: o.customPages || '',
               amount: Number(o.amount || 0),
-              paymentStatus: o.paymentStatus || 'Paid',
-              status: o.status || o.printStatus || 'Accepted',
+              paymentStatus: o.paymentStatus || 'Pending',
+              status: currentStatus,
               time: timeStr || 'Just now',
               date: dateStr || new Date().toISOString().split('T')[0],
-              pdfUrl: o.pdfUrl || '',
+              pdfUrl: o.pdfUrl || o.driveUrl || '',
+              driveUrl: o.driveUrl || '',
               transactionId: o.transactionId ? String(o.transactionId) : '',
               releaseStatus: o.releaseStatus || '',
             }

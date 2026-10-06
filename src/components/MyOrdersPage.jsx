@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getMyOrders } from '../utils/orderStore'
+import { getMyOrders, saveOrder } from '../utils/orderStore'
 import { getOrderStatus } from '../utils/api'
-import { Bell, Copy, Check, Store, FileText, ArrowRight } from 'lucide-react'
+import { Bell, Copy, Check, Store, FileText, ArrowRight, Search, Loader2 } from 'lucide-react'
 
 // Status mappings for comprehensive lifecycle
 const STATUS_MAP = {
@@ -27,6 +27,8 @@ export default function MyOrdersPage({ onStartPrinting }) {
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [shopModalOrder, setShopModalOrder] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [cloudSearching, setCloudSearching] = useState(false)
+  const [cloudSearchError, setCloudSearchError] = useState('')
   const pollRef = useRef(null)
 
   // Load orders from localStorage
@@ -49,8 +51,9 @@ export default function MyOrdersPage({ onStartPrinting }) {
         if (!order.orderId) continue
         try {
           const res = await getOrderStatus(order.orderId)
-          if (res?.success && res?.printStatus) {
-            updates[order.orderId] = res.printStatus
+          if (res?.success) {
+            const st = res.printStatus || res.order?.printStatus
+            if (st) updates[order.orderId] = st
           }
         } catch {}
       }
@@ -61,6 +64,45 @@ export default function MyOrdersPage({ onStartPrinting }) {
     pollRef.current = setInterval(pollStatuses, 5000)
     return () => clearInterval(pollRef.current)
   }, [orders])
+
+  async function handleCloudSearch(targetId) {
+    const id = (targetId || searchQuery).trim().toUpperCase()
+    if (!id) return
+    setCloudSearching(true)
+    setCloudSearchError('')
+    try {
+      const res = await getOrderStatus(id)
+      if (res?.success && (res?.order || res?.orderId)) {
+        const ord = res.order || res
+        const newOrder = {
+          orderId: ord.orderId || id,
+          fileName: ord.fileName || 'Document.pdf',
+          totalPages: Number(ord.totalPages || 1),
+          printableCount: Number(ord.printableCount || ord.totalPages || 1),
+          copies: Number(ord.copies || 1),
+          colorMode: ord.colorMode || 'bw',
+          printType: ord.colorMode === 'color' ? 'Color' : 'B&W',
+          printSide: ord.printSide || (ord.duplex ? 'Double' : 'Single'),
+          duplex: ord.duplex === true || ord.printSide === 'Double',
+          pageSize: ord.pageSize || 'A4',
+          amount: Number(ord.amount || 0),
+          status: ord.printStatus || 'Order Received',
+          paymentStatus: ord.paymentStatus || 'Pending',
+          transactionId: ord.transactionId || '',
+          savedAt: Date.now(),
+        }
+        saveOrder(newOrder)
+        loadOrders()
+        setSearchQuery('')
+      } else {
+        setCloudSearchError(`Order "${id}" was not found in Google Sheets.`)
+      }
+    } catch {
+      setCloudSearchError(`Network error while searching for "${id}".`)
+    } finally {
+      setCloudSearching(false)
+    }
+  }
 
   // Client-side filter by orderId or fileName
   const filteredOrders = orders.filter(o => {
@@ -152,36 +194,70 @@ export default function MyOrdersPage({ onStartPrinting }) {
         </button>
       </div>
 
-      {/* Search Filter Bar */}
-      {orders.length > 0 && (
-        <div className="mb-6">
-          <div className="relative max-w-md">
+      {/* Search Filter Bar (Always visible to look up any Order ID) */}
+      <div className="mb-6">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (filteredOrders.length === 0 && searchQuery.trim()) {
+              handleCloudSearch(searchQuery)
+            }
+          }}
+          className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 max-w-lg"
+        >
+          <div className="relative flex-1">
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Order ID (e.g. XB1234) or file name..."
-              className="w-full bg-[#FAFAFA] border border-orange-200 rounded-xl pl-10 pr-4 py-2.5 text-[#222222] text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all"
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setCloudSearchError('')
+              }}
+              placeholder="Search by Order ID (e.g. XB8709) or file name..."
+              className="w-full bg-[#FAFAFA] border border-orange-200 rounded-xl pl-10 pr-9 py-2.5 text-[#222222] text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all uppercase"
             />
-            <svg
-              className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 text-xs"
+                type="button"
+                onClick={() => {
+                  setSearchQuery('')
+                  setCloudSearchError('')
+                }}
+                className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
               >
                 ✕
               </button>
             )}
           </div>
-        </div>
-      )}
+          {searchQuery.trim().length >= 3 && (
+            <button
+              type="button"
+              disabled={cloudSearching}
+              onClick={() => handleCloudSearch(searchQuery)}
+              className="px-4 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            >
+              {cloudSearching ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Looking up...</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Find Order</span>
+                </>
+              )}
+            </button>
+          )}
+        </form>
+
+        {cloudSearchError && (
+          <p className="mt-2 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg max-w-lg">
+            ⚠️ {cloudSearchError}
+          </p>
+        )}
+      </div>
 
       {/* Empty State */}
       {orders.length === 0 ? (
@@ -194,27 +270,42 @@ export default function MyOrdersPage({ onStartPrinting }) {
             📋
           </div>
           <h3 className="text-lg font-bold text-[#222222] mb-1">
-            You haven't placed any orders yet.
+            No local orders stored yet.
           </h3>
           <p className="text-gray-500 text-xs mb-6 max-w-xs mx-auto leading-relaxed">
-            Upload your documents, choose your print settings, and your order history will appear right here.
+            Placed an order on another device or phone? Enter your Order ID above (e.g. <strong>XB8709</strong>) to track it live!
           </p>
           <button
             onClick={onStartPrinting}
-            className="px-6 py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-sm rounded-xl shadow-md shadow-orange-500/20 hover:shadow-lg transition-all"
+            className="px-6 py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-sm rounded-xl shadow-md shadow-orange-500/20 hover:shadow-lg transition-all cursor-pointer"
           >
             Start Printing
           </button>
         </motion.div>
       ) : filteredOrders.length === 0 ? (
-        <div className="bg-[#FFFDF9] border border-orange-100 rounded-2xl p-8 text-center my-6">
-          <p className="text-gray-500 text-sm">No orders match "{searchQuery}"</p>
-          <button
-            onClick={() => setSearchQuery('')}
-            className="mt-2 text-[#F78C25] text-xs font-bold hover:underline"
-          >
-            Clear Search Filter
-          </button>
+        <div className="bg-[#FFFDF9] border border-orange-100 rounded-2xl p-8 text-center my-6 max-w-lg">
+          <p className="text-gray-600 text-sm font-semibold">
+            No saved order matches "{searchQuery}"
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Check the Google Sheets database to pull this order into your tracking dashboard:
+          </p>
+          <div className="mt-4 flex items-center justify-center gap-3">
+            <button
+              disabled={cloudSearching}
+              onClick={() => handleCloudSearch(searchQuery)}
+              className="px-4 py-2 bg-[#F78C25] hover:bg-[#e07010] text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              {cloudSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+              <span>Find "{searchQuery.toUpperCase()}" on Server</span>
+            </button>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="px-3 py-2 text-slate-500 hover:text-slate-800 text-xs font-semibold"
+            >
+              Clear Filter
+            </button>
+          </div>
         </div>
       ) : (
         /* Orders List */

@@ -97,33 +97,91 @@ async function postToAgent(baseUrl, orderId, orderData, printSettings) {
 }
 
 export async function getOrderStatus(orderId) {
-  return await gasGet({ action: 'getOrderStatus', orderId })
+  if (!orderId) return null
+  const cleanId = String(orderId).trim().toUpperCase()
+  const res = await gasGet({ action: 'getOrderStatus', orderId: cleanId })
+  if (res?.success && res?.order) {
+    return {
+      ...res,
+      ...res.order,
+      orderId: res.order.orderId || cleanId,
+      printStatus: res.order.printStatus || res.printStatus || 'waiting_for_shopkeeper',
+      paymentStatus: res.order.paymentStatus || res.paymentStatus || 'pending',
+    }
+  }
+  return res
 }
 
 export async function fetchAdminOrders() {
-  // Try local print agent first if running
+  const orderMap = new Map()
+
+  // 1. Live Google Sheets Ground Truth (Always captures all student orders including mobile/remote)
+  try {
+    const gas = await gasGet({ action: 'listOrders' })
+    if (gas?.success && Array.isArray(gas.orders)) {
+      for (const o of gas.orders) {
+        const id = String(o.orderId || o.id || '').trim().toUpperCase()
+        if (id) {
+          orderMap.set(id, {
+            ...o,
+            id,
+            orderId: id,
+            timestamp: o.createdAt || o.timestamp,
+            date: o.createdAt ? o.createdAt.split('T')[0] : (o.date || ''),
+          })
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[fetchAdminOrders] GAS listOrders notice:', err)
+  }
+
+  // 2. Merge local print agent queue
   try {
     const local = await localGet('/admin/orders')
-    if (local?.success && Array.isArray(local.orders) && local.orders.length > 0) return local
-  } catch {}
-
-  // Try tunnel URL if available
-  try {
-    const tunnelUrl = await getTunnelUrl()
-    if (tunnelUrl) {
-      const res = await fetch(`${tunnelUrl}/admin/orders`, { signal: AbortSignal.timeout(4000) })
-      if (res.ok) {
-        const data = await res.json()
-        if (data?.success && Array.isArray(data.orders) && data.orders.length > 0) return data
+    if (local?.success && Array.isArray(local.orders)) {
+      for (const o of local.orders) {
+        const id = String(o.orderId || o.id || '').trim().toUpperCase()
+        if (id) {
+          const existing = orderMap.get(id) || {}
+          orderMap.set(id, {
+            ...existing,
+            ...o,
+            id,
+            orderId: id,
+          })
+        }
       }
     }
   } catch {}
 
-  // Live fallback to Google Apps Script
-  const gas = await gasGet({ action: 'listOrders' })
-  if (gas?.success && Array.isArray(gas.orders)) return gas
+  // 3. Merge tunnel queue if available
+  try {
+    const tunnelUrl = await getTunnelUrl()
+    if (tunnelUrl) {
+      const res = await fetch(`${tunnelUrl}/admin/orders`, { signal: AbortSignal.timeout(3000) })
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.success && Array.isArray(data.orders)) {
+          for (const o of data.orders) {
+            const id = String(o.orderId || o.id || '').trim().toUpperCase()
+            if (id) {
+              const existing = orderMap.get(id) || {}
+              orderMap.set(id, {
+                ...existing,
+                ...o,
+                id,
+                orderId: id,
+              })
+            }
+          }
+        }
+      }
+    }
+  } catch {}
 
-  return { success: true, orders: [] }
+  const merged = Array.from(orderMap.values())
+  return { success: true, orders: merged }
 }
 
 export async function fetchAdminStats() {

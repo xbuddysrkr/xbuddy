@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { getOrderStatus, updateOrderStatus } from '../utils/api'
 
 const SESSION_KEY   = 'xbuddy_booth_auth'
 const AGENT_URL     = 'http://localhost:3001'
@@ -146,12 +147,34 @@ function ReleasePrint({ onLock }) {
     if (!id) return
     setLoading(true)
     setResult(null)
-    const res = await apiPost('/release-print', { orderId: id })
+    
+    // 1. Try local agent print release first
+    let res = await apiPost('/release-print', { orderId: id })
+
+    // 2. If order not in local agent memory, check authoritative Google Sheet
+    if (!res || !res.success) {
+      try {
+        const cloudOrder = await getOrderStatus(id)
+        if (cloudOrder?.success && cloudOrder?.order) {
+          const ord = cloudOrder.order
+          // Mark as ready / verified in Google Sheets
+          await updateOrderStatus(id, 'Ready')
+          res = {
+            success: true,
+            orderId: id,
+            message: `Order ${id} Verified! File: ${ord.fileName || 'Doc'} (${ord.copies || 1} copies, ₹${ord.amount || 0}) — Status updated to Ready!`,
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback status check failed:', err)
+      }
+    }
+
     setResult(res)
     setLoading(false)
-    if (res.success) {
+    if (res && res.success) {
       setLastPrint({ orderId: id, time: new Date().toLocaleTimeString() })
-      setOrderId('')
+      setOrderId('XB')
     }
     // Re-focus after result
     setTimeout(() => inputRef.current?.focus(), 300)
