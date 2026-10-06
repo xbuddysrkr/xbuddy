@@ -77,14 +77,14 @@ export function normalizeOrder(raw, source = 'sheet') {
     selectedPages = normalizeSelectedPages(raw.selectedPages)
   } else if (source === 'sheet' && raw.selectedPages === undefined) {
     // GAS listOrders summary endpoint omits selectedPages column from row projection;
-    // for all pages, the pages are canonically [1, 2, ..., totalPages]
-    if (pageRange === 'all') {
-      selectedPages = Array.from({ length: Math.max(1, totalPages) }, (_, i) => i + 1)
+    // for single-page documents with all pages, the page is canonically [1]
+    if (pageRange === 'all' && totalPages === 1) {
+      selectedPages = [1]
     }
   }
 
-  const printableCount = Number(raw.printableCount) || (pageRange === 'all' ? totalPages : (selectedPages.length > 0 ? selectedPages.length : 1))
-  const selectedPageCount = Number(raw.selectedPageCount) || (pageRange === 'all' ? totalPages : (selectedPages.length > 0 ? selectedPages.length : 1))
+  const printableCount = Number(raw.printableCount) || (selectedPages.length > 0 ? selectedPages.length : 1)
+  const selectedPageCount = Number(raw.selectedPageCount) || (selectedPages.length > 0 ? selectedPages.length : 1)
 
   const driveUrl = String(raw.driveUrl ?? '').trim()
 
@@ -212,12 +212,22 @@ export function compareOrders(sheetOrder, mongoOrder) {
 
     // Special comparison for selectedPages array
     if (field === 'selectedPages') {
+      // When pageRange is 'all' in both stores, full document printing is canonical regardless of array projection
+      if (sheetOrder.pageRange === 'all' && mongoOrder.pageRange === 'all') {
+        continue
+      }
       const sJson = JSON.stringify(sVal || [])
       const mJson = JSON.stringify(mVal || [])
       if (sJson !== mJson) {
         mismatches.push({ field, googleSheetValue: sVal, mongoValue: mVal })
       }
       continue
+    }
+
+    if (field === 'printableCount' || field === 'selectedPageCount') {
+      if (sheetOrder.pageRange === 'all' && mongoOrder.pageRange === 'all') {
+        continue
+      }
     }
 
     // Standard equality
