@@ -2,6 +2,8 @@ const API_URL    = 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUD
 const LOCAL_API  = 'http://localhost:3001'
 const GITHUB_RAW = 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
 const API_KEY    = import.meta.env.VITE_API_KEY || 'XB_API_SECRET_KEY_2026'
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '')
+const ORDERS_ENDPOINT = `${BACKEND_URL}/api/orders`
 
 let _tunnelUrl = null
 let _tunnelFetchedAt = 0
@@ -102,7 +104,7 @@ export async function getOrderStatus(orderId) {
 
   // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
   try {
-    const res = await fetch(`/api/orders?action=getOrderStatus&orderId=${cleanId}`, {
+    const res = await fetch(`${ORDERS_ENDPOINT}?action=getOrderStatus&orderId=${cleanId}`, {
       signal: AbortSignal.timeout(10000),
     })
     if (res.ok) {
@@ -133,7 +135,7 @@ export async function fetchAdminOrders() {
   // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
   let ordersList = null
   try {
-    const res = await fetch('/api/orders?action=listOrders', { signal: AbortSignal.timeout(15000) })
+    const res = await fetch(`${ORDERS_ENDPOINT}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
     if (res.ok) {
       const data = await res.json()
       if (data?.success && Array.isArray(data.orders)) {
@@ -265,7 +267,7 @@ export async function updateOrderStatus(orderId, printStatus) {
       const data = await res.json()
       if (data?.success) {
         // Also sync to serverless dual-write endpoint in background
-        fetch('/api/orders', {
+        fetch(ORDERS_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
@@ -288,7 +290,7 @@ export async function updateOrderStatus(orderId, printStatus) {
       if (res.ok) {
         const data = await res.json()
         if (data?.success) {
-          fetch('/api/orders', {
+          fetch(ORDERS_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
@@ -301,7 +303,7 @@ export async function updateOrderStatus(orderId, printStatus) {
 
   // 3. Update via authoritative serverless endpoint (atomic print release lock in MongoDB)
   try {
-    const res = await fetch('/api/orders', {
+    const res = await fetch(ORDERS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
@@ -322,7 +324,7 @@ export async function updateOrderStatus(orderId, printStatus) {
 export async function updatePaymentStatus(orderId, paymentStatus) {
   // Update via authoritative serverless endpoint (updates MongoDB)
   try {
-    const res = await fetch('/api/orders', {
+    const res = await fetch(ORDERS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'updatePaymentStatus', orderId, paymentStatus }),
@@ -406,7 +408,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
       paymentStatus: 'pending',
     }
 
-    const res = await fetch('/api/orders', {
+    const res = await fetch(ORDERS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(orderPayload),

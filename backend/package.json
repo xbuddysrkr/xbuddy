@@ -4,12 +4,17 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
     "test": "node test/order_creation_guard.test.js && node test/agent_orders.test.js && node test/phase4_cutover.test.js && node test/parity_audit.test.js && node test/backfill_orders.test.js",
     "agent": "node print-agent/index.js",
     "backfill": "node scripts/backfillOrders.mjs",
     "audit": "node scripts/parityAudit.mjs"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "mongodb": "^7.7.0"
   }
 }

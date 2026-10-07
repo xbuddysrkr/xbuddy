@@ -22,7 +22,7 @@ async function runTests() {
   const apiSrc = fs.readFileSync(findPath('src/utils/api.js'), 'utf8')
   assert.ok(
     apiSrc.includes("onStep?.('save_order')") &&
-    apiSrc.includes("fetch('/api/orders'") &&
+    (apiSrc.includes("fetch('/api/orders'") || apiSrc.includes("ORDERS_ENDPOINT")) &&
     apiSrc.includes("orderResult?.mongoSaved"),
     'submitOrder must call /api/orders and check mongoSaved before proceeding to PDF delivery'
   )

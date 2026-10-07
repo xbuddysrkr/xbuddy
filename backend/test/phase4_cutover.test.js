@@ -104,10 +104,12 @@ assert.ok(
   'TEST 5 FAILED: listOrders must query MongoDB orders collection'
 )
 assert.ok(
+  clientApiContent.includes("fetch(`${ORDERS_ENDPOINT}?action=getOrderStatus&orderId=") ||
   clientApiContent.includes("fetch(`/api/orders?action=getOrderStatus&orderId="),
   'TEST 5 FAILED: Client getOrderStatus must query /api/orders'
 )
 assert.ok(
+  clientApiContent.includes("fetch(`${ORDERS_ENDPOINT}?action=listOrders`") ||
   clientApiContent.includes("fetch('/api/orders?action=listOrders'"),
   'TEST 5 FAILED: Client fetchAdminOrders must query /api/orders'
 )

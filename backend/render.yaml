@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: xbuddy-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ORDERS_STORAGE_MODE
+        value: mongo
+      - key: MONGODB_DB_NAME
+        value: xbuddy
+      - key: AGENT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: GAS_API_KEY
+        value: XB_API_SECRET_KEY_2026
+      - key: GAS_ORDERS_URL
+        value: https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec

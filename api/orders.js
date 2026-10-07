@@ -1,4 +1,0 @@
-// Authoritative Vercel Serverless Function entry point
-// Re-exports from backend/api/orders.js
-export { default } from '../backend/api/orders.js'
-export * from '../backend/api/orders.js'
