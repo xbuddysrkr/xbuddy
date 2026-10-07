@@ -1,0 +1,15 @@
+{
+  "name": "xbuddy-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node test/order_creation_guard.test.js && node test/agent_orders.test.js && node test/phase4_cutover.test.js && node test/parity_audit.test.js && node test/backfill_orders.test.js",
+    "agent": "node print-agent/index.js",
+    "backfill": "node scripts/backfillOrders.mjs",
+    "audit": "node scripts/parityAudit.mjs"
+  },
+  "dependencies": {
+    "mongodb": "^7.7.0"
+  }
+}

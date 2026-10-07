@@ -1,17 +1,48 @@
+# Dependencies
 node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Production Build Output
 dist/
+frontend/dist/
+
+# Local Environment Variables & Secrets
 .env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
 credentials.json
 *.local
 
+# Vercel Project State
 .vercel
+frontend/.vercel
 
-# Security safeguards
+# Mobile / Android Keystores & Build Artifacts
 *.keystore
 *.jks
-credentials.json
-print-agent/credentials.json
+android/app/build/
+android/.gradle/
+android/build/
+frontend/android/app/build/
+frontend/android/.gradle/
+frontend/android/build/
+
+# Binaries & Print Agent Downloads
 *.exe
+print-agent/credentials.json
 print-agent/bin/
 print-agent/downloads/
 print-agent/tunnel*.log
+print-agent/agent_*.log
+backend/print-agent/credentials.json
+backend/print-agent/bin/
+backend/print-agent/downloads/
+backend/print-agent/tunnel*.log
+backend/print-agent/agent_*.log

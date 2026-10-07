@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Local Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.local
+credentials.json
+
+# Print Agent Downloads & Temporary Files
+print-agent/credentials.json
+print-agent/downloads/*.pdf
+print-agent/downloads/*.png
+print-agent/downloads/*.jpg
+print-agent/downloads/*.b64
+print-agent/downloads/*.json
+print-agent/tunnel.log
+print-agent/tunnel-url.txt
+print-agent/agent_*.log
+
+# Binaries
+*.exe
+print-agent/bin/*.exe

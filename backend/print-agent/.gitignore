@@ -1,0 +1,11 @@
+node_modules/
+credentials.json
+downloads/*.pdf
+downloads/*.png
+downloads/*.jpg
+downloads/*.b64
+downloads/*.json
+tunnel.log
+tunnel-url.txt
+bin/*.exe
+agent_*.log

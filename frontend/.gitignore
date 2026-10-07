@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Production Build Output
+dist/
+
+# Local Environment Variables
+.env
+.env.local
+.env.*.local
+*.local
+
+# Vercel Project State
+.vercel
+
+# Android / Mobile Keystores & Build Artifacts
+*.keystore
+*.jks
+android/app/build/
+android/.gradle/
+android/build/
+android/app/release/

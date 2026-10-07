@@ -1,0 +1,16 @@
+{
+  "name": "xbuddy-print-agent",
+  "version": "1.0.0",
+  "description": "X Buddy local print agent — reads Google Sheets and auto-prints PDFs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "googleapis": "^140.0.0",
+    "pdf-to-printer": "^5.0.1"
+  }
+}
