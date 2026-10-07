@@ -4,7 +4,7 @@ const fs       = require('fs')
 const path     = require('path')
 const https    = require('https')
 const logger   = require('../utils/logger')
-const { getOrderByIdForRelease, getAllOrders } = require('./sheets')
+const { getOrderByIdForRelease, getAllOrders, claimOrder } = require('./sheets')
 const { updatePrintStatus, updateReleaseStatus } = require('./updater')
 const { printPdf, getDefaultPrinter } = require('./printer')
 const { deletePdf } = require('./downloader')
@@ -273,9 +273,10 @@ app.post('/release-print', async (req, res) => {
   const id = orderId.trim().toUpperCase()
   logger.info(`Booth release request: ${id}`)
 
+  // 1. Retrieve order from MongoDB primary (or legacy fallback if configured)
   let order = await getOrderByIdForRelease(id)
   
-  // Local disk fallback: if not in Sheets or Sheets slow, check if files exist locally!
+  // Local disk fallback: if not in cloud, check if files exist locally
   const filePath = path.join(PENDING_DIR, `${id}.pdf`)
   const b64Path  = path.join(PENDING_DIR, `${id}_pending.b64`)
   const setPath  = path.join(PENDING_DIR, `${id}_settings.json`)
@@ -288,8 +289,9 @@ app.post('/release-print', async (req, res) => {
         orderId:       id,
         fileName:      localSet.fileName || `${id}.pdf`,
         copies:        Number(localSet.copies) || 1,
-        printType:     localSet.colorMode === 'color' ? 'Color' : 'B&W',
-        printStatus:   'Waiting',
+        colorMode:     (localSet.colorMode === 'color' || localSet.printType === 'Color') ? 'color' : 'bw',
+        printType:     (localSet.colorMode === 'color' || localSet.printType === 'Color') ? 'Color' : 'B&W',
+        printStatus:   'waiting_for_shopkeeper',
         releaseStatus: 'Waiting',
         isLocalOnly:   true,
       }
@@ -298,71 +300,102 @@ app.post('/release-print', async (req, res) => {
     }
   }
 
-  // Prevent rapid double-clicks within 15 seconds
+  // Prevent rapid double-clicks within 15 seconds locally
   if (global._activePrints && global._activePrints[id] && (Date.now() - global._activePrints[id]) < 15000) {
     return res.json({ success: false, error: 'Print command already sent. Please wait for printer.' })
   }
   if (!global._activePrints) global._activePrints = {}
   global._activePrints[id] = Date.now()
 
+  // 2. ATOMIC CLAIM in MongoDB (TASK 4): only one claimant transitions pending -> Printing
+  if (!order.isLocalOnly) {
+    logger.info(`[AGENT] Claiming order ${id}`)
+    const claimRes = await claimOrder(id)
+    if (!claimRes.success && claimRes.conflict) {
+      delete global._activePrints[id]
+      logger.warn(`[AGENT] Order ${id} is already claimed or printing`)
+      return res.json({
+        success: false,
+        error: 'Order is already printing or was previously released.',
+        conflict: true,
+      })
+    }
+  }
+
   logger.success(`Releasing: ${id} | ${order.fileName || 'document'} | ${order.copies || 1} copy`)
   
-  // Respond immediately to booth so UI shows instant confirmation without waiting for cloud sync
+  // Respond immediately to booth so UI shows instant confirmation without waiting for physical completion
   res.json({ success: true, message: `Printing started for ${id}` })
-
-  // Sync statuses in background asynchronously (fire-and-forget)
-  updateReleaseStatus(order.orderId, order.rowIndex, 'Released').catch(() => {})
-  updatePrintStatus(order.orderId, order.rowIndex, 'Printing').catch(() => {})
 
   try {
     const settings = loadSettings(order.orderId)
-    logger.info(`Settings: ${JSON.stringify(settings)}`)
 
     // 1. Try local PDF or decode b64 file
     let pdfReady = fs.existsSync(filePath)
     if (!pdfReady) {
       pdfReady = decodePendingPdf(order.orderId, filePath)
     }
-    if (pdfReady) { logger.success(`PDF loaded from local storage`) }
-
-    // 2. Try driveUrl from settings
-    if (!pdfReady && settings.driveUrl) {
-      logger.info(`Downloading PDF from Drive...`)
-      try { await downloadFile(settings.driveUrl, filePath); pdfReady = true; logger.success(`PDF downloaded from Drive`) }
-      catch (e) { logger.error(`Drive download failed: ${e.message}`) }
+    if (pdfReady) {
+      logger.success(`[AGENT] PDF loaded from local storage`)
     }
 
-    // 3. Try pdfUrl from GAS sheet
+    // 2. Try driveUrl from settings or order
+    const driveUrl = settings.driveUrl || order.driveUrl
+    if (!pdfReady && driveUrl) {
+      logger.info(`Downloading PDF from Drive...`)
+      try {
+        await downloadFile(driveUrl, filePath)
+        pdfReady = true
+        logger.success(`[AGENT] PDF downloaded from Drive`)
+      } catch (e) {
+        logger.error(`Drive download failed: ${e.message}`)
+      }
+    }
+
+    // 3. Try pdfUrl from order
     if (!pdfReady && order.pdfUrl) {
-      logger.info(`Downloading PDF from GAS sheet URL...`)
-      try { await downloadFile(order.pdfUrl, filePath); pdfReady = true; logger.success(`PDF downloaded from sheet URL`) }
-      catch (e) { logger.error(`Sheet URL download failed: ${e.message}`) }
+      logger.info(`Downloading PDF from cloud URL...`)
+      try {
+        await downloadFile(order.pdfUrl, filePath)
+        pdfReady = true
+        logger.success(`[AGENT] PDF downloaded from cloud URL`)
+      } catch (e) {
+        logger.error(`Cloud URL download failed: ${e.message}`)
+      }
     }
 
     if (!pdfReady) {
       logger.warn(`No PDF found for ${id} - cannot print`)
-      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed - No PDF')
+      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
       return
     }
 
-    let printPages = settings.pageRange || 'all'
+    let printPages = settings.pageRange || order.pageRange || 'all'
     if (printPages === 'custom') {
       if (settings.customPages && String(settings.customPages).trim()) {
         printPages = String(settings.customPages).trim()
+      } else if (order.customPages && String(order.customPages).trim()) {
+        printPages = String(order.customPages).trim()
       } else if (Array.isArray(settings.selectedPages) && settings.selectedPages.length > 0) {
         printPages = settings.selectedPages.join(',')
+      } else if (Array.isArray(order.selectedPages) && order.selectedPages.length > 0) {
+        printPages = order.selectedPages.join(',')
       } else {
         printPages = 'all'
       }
     }
 
-    const resolvedColorMode = settings.colorMode || (order.printType === 'Color' ? 'color' : 'bw') || 'bw'
+    const resolvedColorMode = settings.colorMode || order.colorMode || (order.printType === 'Color' ? 'color' : 'bw') || 'bw'
     const resolvedCopies = Number(settings.copies || order.copies || 1)
-    const resolvedPageSize = settings.pageSize || settings.paperSize || order.pageSize || 'A4'
+    const resolvedPageSize = settings.pageSize || settings.paperSize || order.pageSize || order.paperSize || 'A4'
     const resolvedOrientation = settings.orientation || order.orientation || 'portrait'
-    const resolvedPrintSide = settings.printSide || (order.printType === 'Double' ? 'Double' : 'Single')
+    const resolvedPrintSide = settings.printSide || order.printSide || (order.duplex ? 'Double' : 'Single') || 'Single'
 
-    logger.info(`Sending to printer: ${order.fileName || 'document'} (pages: ${printPages}, colorMode: ${resolvedColorMode})`)
+    logger.info(`[AGENT] Print settings: copies=${resolvedCopies}, colorMode=${resolvedColorMode}, orientation=${resolvedOrientation}, paperSize=${resolvedPageSize}, pageRange=${printPages}`)
+
+    logger.info(`[AGENT] Sending to printer...`)
+    await updatePrintStatus(order.orderId, order.rowIndex, 'Printing')
+
     const printer = await getDefaultPrinter()
     if (printer) {
       const ok = await printPdf(filePath, {
@@ -374,10 +407,15 @@ app.post('/release-print', async (req, res) => {
         pageRange:   printPages,
         orderId:     order.orderId,
       })
-      logger.success(`Print job ${ok ? 'sent to printer OK' : 'FAILED'}`)
-      await updatePrintStatus(order.orderId, order.rowIndex, ok ? 'Printed' : 'Failed')
+      if (ok) {
+        logger.success(`[AGENT] Physical print sent successfully`)
+        await updatePrintStatus(order.orderId, order.rowIndex, 'Printed')
+      } else {
+        logger.error(`[AGENT] Physical print failed`)
+        await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
+      }
     } else {
-      logger.warn('No printer - marking Printed anyway')
+      logger.warn('No printer detected — marking Printed anyway')
       await updatePrintStatus(order.orderId, order.rowIndex, 'Printed')
     }
   } catch (err) {

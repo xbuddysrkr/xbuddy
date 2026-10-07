@@ -419,39 +419,11 @@ export async function submitOrder(orderData, { onStep } = {}) {
     console.warn('[Dual-Write Serverless Call Notice]:', apiErr.message)
   }
 
-  // Fallback to direct Google Apps Script if serverless endpoint is not ready
+  // Phase 4: MongoDB is authoritative. Strictly reject writes to Google Apps Script / Orders Sheet.
   if (!orderResult?.success) {
-    try {
-      const res = await fetch(`${API_URL}?${new URLSearchParams({
-        action: 'saveOrder', key: API_KEY, orderId: clientOrderId,
-        name: orderData.name, fileName: orderData.fileName,
-        totalPages: String(orderData.totalPages), copies: String(printSettings.copies),
-        colorMode: normalizedColor,
-        printType: printSettings.printType,
-        printSide: printSettings.printSide,
-        duplex: String(isDuplex),
-        pageSize: resolvedPaperSize,
-        paperSize: resolvedPaperSize,
-        orientation: printSettings.orientation,
-        amount: String(orderData.amount),
-        printingCost: String(orderData.printingCost || ''),
-        serviceFee: String(orderData.serviceFee || ''),
-        digitalProcessingFee: String(orderData.digitalProcessingFee || orderData.serviceFee || ''),
-        transactionId: orderData.transactionId,
-        pageRange: printSettings.pageRange,
-        pageRangeMode: printSettings.pageRangeMode,
-        customPages: printSettings.customPages,
-        printableCount: String(printSettings.printableCount),
-        selectedPages: JSON.stringify(printSettings.selectedPages),
-        selectedPageCount: String(printSettings.selectedPageCount),
-      }).toString()}`, { signal: AbortSignal.timeout(20000) })
-      if (!res.ok) throw { step: 'save_order', reason: `HTTP ${res.status}` }
-      const gasResult = await res.json()
-      if (!gasResult?.success) throw { step: 'save_order', reason: gasResult?.error || 'Unable to Save Order' }
-      orderId = gasResult.orderId || clientOrderId
-    } catch (err) {
-      if (err?.step) throw err
-      throw { step: 'save_order', reason: err.name === 'TimeoutError' ? 'Request Timed Out' : (err.message || 'Network Error') }
+    throw {
+      step: 'save_order',
+      reason: orderResult?.error || 'Unable to save order to MongoDB orders service',
     }
   }
 
