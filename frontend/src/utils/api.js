@@ -2,7 +2,7 @@ const API_URL    = import.meta.env.VITE_GAS_URL || 'https://script.google.com/ma
 const LOCAL_API  = import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:3001'
 const GITHUB_RAW = import.meta.env.VITE_GITHUB_TUNNEL_URL || 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
 const API_KEY    = import.meta.env.VITE_API_KEY || 'XB_API_SECRET_KEY_2026'
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '')
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const ORDERS_ENDPOINT = `${BACKEND_URL}/api/orders`
 
 let _tunnelUrl = null
@@ -225,8 +225,29 @@ export async function fetchHealthStatus() {
 }
 
 export async function boothLogin(pin) {
+  // 1. Try Cloud Backend first (allows unlocking from any device or phone)
+  if (BACKEND_URL) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/booth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify({ pin }),
+        signal: AbortSignal.timeout(6000),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) return data
+      } else if (res.status === 401) {
+        return { success: false, error: 'Wrong PIN. Try again.' }
+      }
+    } catch {
+      // Fall through to tunnel and local agent
+    }
+  }
+
+  // 2. Try Tunnel and Local Agent
   const tunnelUrl = await getTunnelUrl()
-  const endpoints = [LOCAL_API, tunnelUrl].filter(Boolean)
+  const endpoints = [tunnelUrl, LOCAL_API].filter(Boolean)
   for (const base of endpoints) {
     try {
       const res = await fetch(`${base}/booth-login`, {
@@ -236,7 +257,7 @@ export async function boothLogin(pin) {
       if (res.ok) return await res.json()
     } catch { continue }
   }
-  return { success: false, error: 'Could not connect to print agent.' }
+  return { success: false, error: 'Could not connect to booth service. Check internet or print agent.' }
 }
 
 export async function validateAndRelease(orderId) {

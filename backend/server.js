@@ -73,6 +73,18 @@ app.all('/api/agent/orders/:route(*)', async (req, res) => {
   }
 })
 
+// Booth Operator Authentication (Validates against BOOTH_PIN)
+const handleBoothLogin = (req, res) => {
+  const { pin } = req.body || {}
+  const validPin = process.env.BOOTH_PIN || '4921'
+  if (pin && String(pin).trim() === String(validPin).trim()) {
+    return res.json({ success: true, message: 'Booth authenticated' })
+  }
+  return res.status(401).json({ success: false, error: 'Wrong PIN. Try again.' })
+}
+app.post('/api/booth/login', handleBoothLogin)
+app.post('/booth-login', handleBoothLogin)
+
 // Start server
 app.listen(PORT, () => {
   console.log(`=======================================================`)

@@ -1,24 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getOrderStatus, updateOrderStatus } from '../utils/api'
+import { getOrderStatus, updateOrderStatus, boothLogin, validateAndRelease } from '../utils/api'
 
 const SESSION_KEY   = 'xbuddy_booth_auth'
-const AGENT_URL     = import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:3001'
 
 function isAuthed() { return sessionStorage.getItem(SESSION_KEY) === 'true' }
-
-async function apiPost(path, body) {
-  try {
-    const res = await fetch(`${AGENT_URL}${path}`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
-    })
-    return await res.json()
-  } catch {
-    return { success: false, error: 'Cannot connect to print agent. Is it running?' }
-  }
-}
 
 // ── PIN Login ─────────────────────────────────────────────────────────────────
 function PinLogin({ onSuccess }) {
@@ -34,7 +20,7 @@ function PinLogin({ onSuccess }) {
     e.preventDefault()
     if (pin.length < 4) return
     setLoading(true)
-    const res = await apiPost('/booth-login', { pin })
+    const res = await boothLogin(pin)
     if (res.success) {
       sessionStorage.setItem(SESSION_KEY, 'true')
       onSuccess()
@@ -148,10 +134,10 @@ function ReleasePrint({ onLock }) {
     setLoading(true)
     setResult(null)
     
-    // 1. Try local agent print release first
-    let res = await apiPost('/release-print', { orderId: id })
+    // 1. Try agent print release (via Cloudflare tunnel / local agent)
+    let res = await validateAndRelease(id)
 
-    // 2. If order not in local agent memory, check authoritative Google Sheet
+    // 2. If order not in local agent memory, check authoritative MongoDB/Cloud Order
     if (!res || !res.success) {
       try {
         const cloudOrder = await getOrderStatus(id)

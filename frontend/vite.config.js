@@ -11,7 +11,7 @@ function serverlessDevPlugin() {
           // If MONGODB_URI is not configured locally, proxy to deployed Vercel cloud API
           if (!process.env.MONGODB_URI) {
             try {
-              const baseUrl = (process.env.VITE_BACKEND_URL || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
+              const baseUrl = (process.env.VITE_BACKEND_URL || process.env.VITE_API_URL || 'https://xbuddy.onrender.com').replace(/\/$/, '')
               const targetUrl = `${baseUrl}${req.url}`
               const buffers = []
               for await (const chunk of req) buffers.push(chunk)
