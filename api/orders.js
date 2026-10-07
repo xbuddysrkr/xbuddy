@@ -4,10 +4,18 @@ const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmU
 const GAS_API_KEY = process.env.GAS_API_KEY || 'XB_API_SECRET_KEY_2026'
 
 /**
- * Feature flag for Orders read source: 'mongo' (default for Phase 3) or 'gas' (rollback).
+ * Feature flag for Orders read source: 'mongo' (default for Phase 4) or 'gas' (rollback).
  * Does NOT affect Campus Ads.
  */
 export const getOrdersReadSource = () => (process.env.ORDERS_READ_SOURCE || 'mongo').trim().toLowerCase()
+
+/**
+ * Feature flag for Orders Sheet write mode: 'mongo' (default for Phase 4) or 'dual' (rollback).
+ * In 'mongo' mode, Google Sheet writes are disabled and the Sheet acts as a frozen historical archive.
+ * In 'dual' mode, orders and statuses dual-write to both MongoDB Atlas and Google Sheets.
+ * Does NOT affect Campus Ads.
+ */
+export const getOrdersSheetWriteMode = () => (process.env.ORDERS_SHEET_WRITE_MODE || 'mongo').trim().toLowerCase()
 
 const STATUS_PRIORITY = {
   printed: 3,
@@ -246,6 +254,13 @@ export default async function handler(req, res) {
         }
       }
 
+      const sheetWriteMode = getOrdersSheetWriteMode()
+      const isSheetWriteEnabled = sheetWriteMode === 'dual'
+
+      if (!isSheetWriteEnabled) {
+        console.log(`[SHEET_WRITE_DISABLED] Google Sheet writes disabled (ORDERS_SHEET_WRITE_MODE=${sheetWriteMode}). MongoDB is authoritative write target.`)
+      }
+
       // ── CHECK 1: Existing MongoDB Document (Idempotency vs Conflict) ──────
       if (existingMongo) {
         // Conflicting duplicate orderId payload
@@ -259,20 +274,20 @@ export default async function handler(req, res) {
         }
 
         // Same orderId + same logical order => IDEMPOTENT RETRY
-        if (existingMongo.sheetsSaved || existingMongo.syncStatus === 'synced') {
+        if (!isSheetWriteEnabled || existingMongo.sheetsSaved || existingMongo.syncStatus === 'synced') {
           console.log(`[Idempotent Retry] Order ${cleanId} already synchronized.`)
           return res.status(200).json({
             success: true,
             orderId: cleanId,
             idempotent: true,
             mongoSaved: true,
-            sheetsSaved: true,
-            syncStatus: 'synced',
+            sheetsSaved: !!existingMongo.sheetsSaved,
+            syncStatus: isSheetWriteEnabled ? 'synced' : 'mongo_only',
             message: 'Order already synchronized (idempotent retry)',
           })
         }
 
-        // Case B Reconciliation: Mongo saved previously, but Google Sheet was pending/failed.
+        // Dual-write rollback mode: Case B Reconciliation (Mongo saved previously, but Sheet was pending/failed)
         try {
           const gasRes = await writeToGoogleAppsScript(gasPayload)
           if (gasRes?.success) {
@@ -332,7 +347,41 @@ export default async function handler(req, res) {
       }
 
       // ── CHECK 2: MongoDB document does not exist yet. ─────────────────────
-      // Check if Google Sheets already has this order (Case C Recovery Scenario)
+      // Phase 4 default: MongoDB Authoritative Only (Google Sheet writes disabled)
+      if (!isSheetWriteEnabled) {
+        if (!ordersCollection) {
+          return res.status(500).json({
+            success: false,
+            orderId: cleanId,
+            error: `MongoDB unavailable: ${mongoConnectError}`,
+          })
+        }
+
+        try {
+          orderDoc.mongoSaved = true
+          orderDoc.sheetsSaved = false
+          orderDoc.syncStatus = 'mongo_only'
+          await ordersCollection.insertOne(orderDoc)
+          console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} successfully saved to MongoDB Atlas`)
+          return res.status(200).json({
+            success: true,
+            orderId: cleanId,
+            mongoSaved: true,
+            sheetsSaved: false,
+            syncStatus: 'mongo_only',
+            message: 'Order saved in MongoDB Atlas (authoritative; Google Sheet writes disabled)',
+          })
+        } catch (mErr) {
+          console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
+          return res.status(500).json({
+            success: false,
+            orderId: cleanId,
+            error: `MongoDB write failed: ${mErr.message}`,
+          })
+        }
+      }
+
+      // Dual-write mode (Rollback path): check Google Sheets and dual-write
       let existingInSheets = false
       try {
         const gasCheck = await writeToGoogleAppsScript({ action: 'getOrderStatus', orderId: cleanId })
@@ -363,7 +412,7 @@ export default async function handler(req, res) {
           orderDoc.syncStatus = existingInSheets ? 'synced' : 'pending'
           await ordersCollection.insertOne(orderDoc)
           mongoSaved = true
-          console.log(`[MongoDB Insert] Order ${cleanId} successfully saved to MongoDB Atlas`)
+          console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} saved to MongoDB Atlas (dual-write mode)`)
         } catch (mErr) {
           mongoError = mErr.message
           console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
@@ -454,7 +503,7 @@ export default async function handler(req, res) {
       })
     }
 
-    // ── 2. GET ORDER STATUS (PHASE 3: MONGODB PRIMARY + SAFE GAS FALLBACK) ──
+    // ── 2. GET ORDER STATUS (PHASE 4: MONGODB PRIMARY & AUTHORITATIVE) ──────
     if (action === 'getOrderStatus') {
       const orderId = String(req.query?.orderId || req.body?.orderId || '').trim().toUpperCase()
       if (!orderId) {
@@ -464,84 +513,66 @@ export default async function handler(req, res) {
       const readSource = getOrdersReadSource()
       console.log(`[ORDER_STATUS_READ] Request for ${orderId} (source=${readSource})`)
 
-      // Feature flag / Rollback check
+      // Emergency Rollback check
       if (readSource === 'gas') {
-        console.log(`[MONGO_READ_FALLBACK_GAS] ORDERS_READ_SOURCE=gas active. Reading ${orderId} from Google Sheets.`)
-        const gasOrder = await writeToGoogleAppsScript({ action: 'getOrderStatus', orderId })
-        return res.status(200).json(gasOrder)
-      }
-
-      // PRIMARY: MongoDB Atlas
-      try {
-        const { db } = await connectToDatabase()
-        const order = await db.collection('orders').findOne({ orderId })
-        if (order) {
-          console.log(`[MONGO_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
-          return res.status(200).json({ success: true, order, source: 'mongo' })
-        } else {
-          // MongoDB successfully queried and record does not exist
-          console.log(`[ORDER_STATUS_READ] Order ${orderId} not found in MongoDB Atlas`)
-          return res.status(404).json({ success: false, error: 'Order not found', source: 'mongo' })
-        }
-      } catch (mongoErr) {
-        console.error(`[MONGO_READ_ERROR] MongoDB getOrderStatus error for ${orderId}: ${mongoErr.message}`)
-      }
-
-      // SAFE FALLBACK: Google Apps Script / Orders Sheet (only when MongoDB service/query fails)
-      try {
-        console.log(`[MONGO_READ_FALLBACK_GAS] Order ${orderId} falling back to Google Apps Script due to Mongo error`)
-        const gasOrder = await writeToGoogleAppsScript({ action: 'getOrderStatus', orderId })
-        return res.status(200).json({ ...gasOrder, source: 'gas_fallback' })
-      } catch (gasErr) {
-        console.error(`[GAS_READ_ERROR] Fallback failed for ${orderId}: ${gasErr.message}`)
-        return res.status(404).json({ success: false, error: 'Order not found' })
-      }
-    }
-
-    // ── 3. LIST ORDERS (PHASE 3: MONGODB PRIMARY + DEDUPLICATED GAS FALLBACK) 
-    if (action === 'listOrders') {
-      const readSource = getOrdersReadSource()
-      console.log(`[ORDER_LIST_READ] Request for orders list (source=${readSource})`)
-
-      // Feature flag / Rollback check
-      if (readSource === 'gas') {
-        console.log('[MONGO_READ_FALLBACK_GAS] ORDERS_READ_SOURCE=gas active. Reading list from Google Sheets.')
+        console.warn(`[ORDER_ARCHIVE_MODE] WARNING: ORDERS_READ_SOURCE=gas active. Reading ${orderId} from archived Google Sheets (may be stale).`)
         try {
-          const gasList = await writeToGoogleAppsScript({ action: 'listOrders' })
-          const deduplicated = deduplicateSheetOrders(gasList?.orders || [])
-          return res.status(200).json({ success: true, orders: deduplicated, source: 'gas_rollback' })
+          const gasOrder = await writeToGoogleAppsScript({ action: 'getOrderStatus', orderId })
+          return res.status(200).json({ ...gasOrder, source: 'gas_archive' })
         } catch (gasErr) {
           return res.status(500).json({ success: false, error: gasErr.message })
         }
       }
 
-      // PRIMARY: MongoDB Atlas
+      // PRIMARY & AUTHORITATIVE: MongoDB Atlas
+      try {
+        const { db } = await connectToDatabase()
+        const order = await db.collection('orders').findOne({ orderId })
+        if (order) {
+          console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
+          return res.status(200).json({ success: true, order, source: 'mongo' })
+        } else {
+          console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} not found in MongoDB Atlas`)
+          return res.status(404).json({ success: false, error: 'Order not found', source: 'mongo' })
+        }
+      } catch (mongoErr) {
+        console.error(`[MONGO_READ_ERROR] MongoDB getOrderStatus error for ${orderId}: ${mongoErr.message}`)
+        return res.status(503).json({ success: false, error: 'Orders service temporarily unavailable', details: mongoErr.message })
+      }
+    }
+
+    // ── 3. LIST ORDERS (PHASE 4: MONGODB PRIMARY & AUTHORITATIVE) ───────────
+    if (action === 'listOrders') {
+      const readSource = getOrdersReadSource()
+      console.log(`[ORDER_LIST_READ] Request for orders list (source=${readSource})`)
+
+      // Emergency Rollback check
+      if (readSource === 'gas') {
+        console.warn('[ORDER_ARCHIVE_MODE] WARNING: ORDERS_READ_SOURCE=gas active. Reading list from archived Google Sheets (may be stale).')
+        try {
+          const gasList = await writeToGoogleAppsScript({ action: 'listOrders' })
+          const deduplicated = deduplicateSheetOrders(gasList?.orders || [])
+          return res.status(200).json({ success: true, orders: deduplicated, source: 'gas_archive' })
+        } catch (gasErr) {
+          return res.status(500).json({ success: false, error: gasErr.message })
+        }
+      }
+
+      // PRIMARY & AUTHORITATIVE: MongoDB Atlas
       try {
         const { db } = await connectToDatabase()
         const orders = await db.collection('orders').find({}).sort({ createdAt: -1 }).limit(100).toArray()
         if (Array.isArray(orders)) {
-          console.log(`[MONGO_READ_PRIMARY] Successfully retrieved ${orders.length} orders from MongoDB Atlas`)
+          console.log(`[MONGO_ORDER_READ_PRIMARY] Successfully retrieved ${orders.length} orders from MongoDB Atlas`)
           return res.status(200).json({ success: true, orders, source: 'mongo' })
         }
       } catch (mongoErr) {
         console.error(`[MONGO_READ_ERROR] MongoDB listOrders error: ${mongoErr.message}`)
-      }
-
-      // SAFE FALLBACK: Google Apps Script with canonical deduplication
-      try {
-        console.log('[MONGO_READ_FALLBACK_GAS] MongoDB service unavailable. Falling back to Google Sheets listOrders with deduplication.')
-        const gasList = await writeToGoogleAppsScript({ action: 'listOrders' })
-        const rawOrders = gasList?.orders || []
-        const deduplicated = deduplicateSheetOrders(rawOrders)
-        console.log(`[MONGO_READ_FALLBACK_GAS] Deduplicated ${rawOrders.length} sheet rows to ${deduplicated.length} unique orders.`)
-        return res.status(200).json({ success: true, orders: deduplicated, source: 'gas_fallback' })
-      } catch (gasErr) {
-        console.error(`[GAS_READ_ERROR] Fallback failed for listOrders: ${gasErr.message}`)
-        return res.status(500).json({ success: false, error: gasErr.message })
+        return res.status(503).json({ success: false, error: 'Orders service temporarily unavailable', details: mongoErr.message })
       }
     }
 
-    // ── 4. UPDATE ORDER STATUS (DUAL-WRITE + ATOMIC RELEASE LOCK) ───────────
+    // ── 4. UPDATE ORDER STATUS (MONGODB PRIMARY + ATOMIC RELEASE LOCK) ──────
     if (action === 'updateOrderStatus') {
       const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
       const printStatus = String(req.body?.printStatus || req.query?.printStatus || '').trim()
@@ -549,7 +580,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'orderId and printStatus required' })
       }
 
-      console.log(`[ORDER_STATUS_WRITE_SYNC] Updating ${orderId} to printStatus "${printStatus}"`)
+      const sheetWriteMode = getOrdersSheetWriteMode()
+      console.log(`[ORDER_STATUS_WRITE_MONGO] Updating ${orderId} to printStatus "${printStatus}" in MongoDB (sheetWriteMode=${sheetWriteMode})`)
 
       const nowIso = new Date().toISOString()
       let mongoUpdated = false
@@ -589,20 +621,26 @@ export default async function handler(req, res) {
           mongoUpdated = true
         }
       } catch (mErr) {
-        console.warn(`[MONGO_WRITE_ERROR] MongoDB updateOrderStatus notice for ${orderId}: ${mErr.message}`)
+        console.error(`[MONGO_WRITE_ERROR] MongoDB updateOrderStatus error for ${orderId}: ${mErr.message}`)
+        return res.status(500).json({ success: false, error: mErr.message })
       }
 
-      // Sync status update to Google Apps Script in background/dual-write
-      try {
-        await writeToGoogleAppsScript({ action: 'updateOrderStatus', orderId, printStatus })
-      } catch (gErr) {
-        console.warn(`[GAS_WRITE_ERROR] GAS updateOrderStatus notice for ${orderId}: ${gErr.message}`)
+      // Check sheet write mode: only sync if dual-write is explicitly enabled
+      if (sheetWriteMode === 'dual') {
+        console.log(`[ORDER_STATUS_WRITE_SYNC] Dual-writing updateOrderStatus for ${orderId} to Google Sheets`)
+        try {
+          await writeToGoogleAppsScript({ action: 'updateOrderStatus', orderId, printStatus })
+        } catch (gErr) {
+          console.warn(`[GAS_WRITE_ERROR] GAS updateOrderStatus notice for ${orderId}: ${gErr.message}`)
+        }
+      } else {
+        console.log(`[SHEET_WRITE_DISABLED] updateOrderStatus skipped for Google Sheets (ORDERS_SHEET_WRITE_MODE=${sheetWriteMode})`)
       }
 
-      return res.status(200).json({ success: true, orderId, printStatus, mongoUpdated })
+      return res.status(200).json({ success: true, orderId, printStatus, mongoUpdated, sheetWriteMode })
     }
 
-    // ── 5. UPDATE PAYMENT STATUS (DUAL-WRITE) ────────────────────────────────
+    // ── 5. UPDATE PAYMENT STATUS (MONGODB PRIMARY) ──────────────────────────
     if (action === 'updatePaymentStatus') {
       const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
       const paymentStatus = String(req.body?.paymentStatus || req.query?.paymentStatus || '').trim()
@@ -610,7 +648,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'orderId and paymentStatus required' })
       }
 
-      console.log(`[PAYMENT_STATUS_WRITE_SYNC] Updating ${orderId} to paymentStatus "${paymentStatus}"`)
+      const sheetWriteMode = getOrdersSheetWriteMode()
+      console.log(`[PAYMENT_STATUS_WRITE_MONGO] Updating ${orderId} to paymentStatus "${paymentStatus}" in MongoDB (sheetWriteMode=${sheetWriteMode})`)
 
       const nowIso = new Date().toISOString()
       let mongoUpdated = false
@@ -623,16 +662,23 @@ export default async function handler(req, res) {
         )
         mongoUpdated = true
       } catch (mErr) {
-        console.warn(`[MONGO_WRITE_ERROR] MongoDB updatePaymentStatus notice for ${orderId}: ${mErr.message}`)
+        console.error(`[MONGO_WRITE_ERROR] MongoDB updatePaymentStatus error for ${orderId}: ${mErr.message}`)
+        return res.status(500).json({ success: false, error: mErr.message })
       }
 
-      try {
-        await writeToGoogleAppsScript({ action: 'updatePaymentStatus', orderId, paymentStatus })
-      } catch (gErr) {
-        console.warn(`[GAS_WRITE_ERROR] GAS updatePaymentStatus notice for ${orderId}: ${gErr.message}`)
+      // Check sheet write mode: only sync if dual-write is explicitly enabled
+      if (sheetWriteMode === 'dual') {
+        console.log(`[PAYMENT_STATUS_WRITE_SYNC] Dual-writing updatePaymentStatus for ${orderId} to Google Sheets`)
+        try {
+          await writeToGoogleAppsScript({ action: 'updatePaymentStatus', orderId, paymentStatus })
+        } catch (gErr) {
+          console.warn(`[GAS_WRITE_ERROR] GAS updatePaymentStatus notice for ${orderId}: ${gErr.message}`)
+        }
+      } else {
+        console.log(`[SHEET_WRITE_DISABLED] updatePaymentStatus skipped for Google Sheets (ORDERS_SHEET_WRITE_MODE=${sheetWriteMode})`)
       }
 
-      return res.status(200).json({ success: true, orderId, paymentStatus, mongoUpdated })
+      return res.status(200).json({ success: true, orderId, paymentStatus, mongoUpdated, sheetWriteMode })
     }
 
     // ── 6. PHASE 2: READ-ONLY ORDERS PARITY AUDIT ───────────────────────────

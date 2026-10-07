@@ -100,7 +100,7 @@ export async function getOrderStatus(orderId) {
   if (!orderId) return null
   const cleanId = String(orderId).trim().toUpperCase()
 
-  // 1. PRIMARY READ: Serverless Orders API (MongoDB Atlas primary with GAS fallback)
+  // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
   try {
     const res = await fetch(`/api/orders?action=getOrderStatus&orderId=${cleanId}`, {
       signal: AbortSignal.timeout(10000),
@@ -116,29 +116,21 @@ export async function getOrderStatus(orderId) {
           paymentStatus: data.order.paymentStatus || data.paymentStatus || 'pending',
         }
       }
+      if (data?.error === 'Order not found') {
+        return { success: false, error: 'Order not found' }
+      }
     }
   } catch (err) {
     console.warn('[getOrderStatus] Primary API notice:', err.message)
   }
 
-  // 2. SAFE FALLBACK: Direct Google Apps Script
-  const res = await gasGet({ action: 'getOrderStatus', orderId: cleanId })
-  if (res?.success && res?.order) {
-    return {
-      ...res,
-      ...res.order,
-      orderId: res.order.orderId || cleanId,
-      printStatus: res.order.printStatus || res.printStatus || 'waiting_for_shopkeeper',
-      paymentStatus: res.order.paymentStatus || res.paymentStatus || 'pending',
-    }
-  }
-  return res
+  return null
 }
 
 export async function fetchAdminOrders() {
   const orderMap = new Map()
 
-  // 1. PRIMARY READ: Serverless Orders API (MongoDB Atlas primary with deduplicated GAS fallback)
+  // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
   let ordersList = null
   try {
     const res = await fetch('/api/orders?action=listOrders', { signal: AbortSignal.timeout(15000) })
@@ -152,41 +144,7 @@ export async function fetchAdminOrders() {
     console.warn('[fetchAdminOrders] Primary /api/orders list notice:', err.message)
   }
 
-  // 2. SAFE FALLBACK: Direct Google Apps Script (deduplicated by orderId)
-  if (!ordersList) {
-    try {
-      const gas = await gasGet({ action: 'listOrders' })
-      if (gas?.success && Array.isArray(gas.orders)) {
-        const STATUS_PRIORITY = { printed: 3, printing: 2, waiting_for_shopkeeper: 1 }
-        const map = new Map()
-        for (const o of gas.orders) {
-          const id = String(o.orderId || o.id || '').trim().toUpperCase()
-          if (!id) continue
-          if (!map.has(id)) {
-            map.set(id, o)
-          } else {
-            const bestRow = map.get(id)
-            const bestPrio = STATUS_PRIORITY[String(bestRow.printStatus || '').toLowerCase()] || 0
-            const candPrio = STATUS_PRIORITY[String(o.printStatus || '').toLowerCase()] || 0
-            if (candPrio > bestPrio) {
-              map.set(id, o)
-            } else if (candPrio === bestPrio) {
-              const bestTime = new Date(bestRow.createdAt || 0).getTime()
-              const candTime = new Date(o.createdAt || 0).getTime()
-              if (candTime > 0 && (bestTime === 0 || candTime < bestTime)) {
-                map.set(id, o)
-              }
-            }
-          }
-        }
-        ordersList = Array.from(map.values())
-      }
-    } catch (err) {
-      console.warn('[fetchAdminOrders] GAS fallback notice:', err.message)
-    }
-  }
-
-  // Populate map with orders
+  // Populate map with orders from MongoDB
   if (Array.isArray(ordersList)) {
     for (const o of ordersList) {
       const id = String(o.orderId || o.id || '').trim().toUpperCase()
@@ -341,7 +299,7 @@ export async function updateOrderStatus(orderId, printStatus) {
     } catch {}
   }
 
-  // 3. Update via serverless dual-write endpoint (atomic print release lock in MongoDB + GAS sync)
+  // 3. Update via authoritative serverless endpoint (atomic print release lock in MongoDB)
   try {
     const res = await fetch('/api/orders', {
       method: 'POST',
@@ -352,17 +310,17 @@ export async function updateOrderStatus(orderId, printStatus) {
     if (res.ok) {
       const data = await res.json()
       if (data?.success) return data
+      return data
     }
   } catch (err) {
     console.warn('[updateOrderStatus] /api/orders notice:', err.message)
   }
 
-  // 4. Fallback to direct Google Apps Script
-  return await gasGet({ action: 'updateOrderStatus', orderId, printStatus })
+  return { success: false, error: 'Failed to update order status' }
 }
 
 export async function updatePaymentStatus(orderId, paymentStatus) {
-  // Update via serverless dual-write endpoint (updates MongoDB and syncs to Google Sheets)
+  // Update via authoritative serverless endpoint (updates MongoDB)
   try {
     const res = await fetch('/api/orders', {
       method: 'POST',
@@ -373,13 +331,13 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
     if (res.ok) {
       const data = await res.json()
       if (data?.success) return data
+      return data
     }
   } catch (err) {
     console.warn('[updatePaymentStatus] /api/orders notice:', err.message)
   }
 
-  // Direct GAS fallback
-  return await gasGet({ action: 'updatePaymentStatus', orderId, paymentStatus })
+  return { success: false, error: 'Failed to update payment status' }
 }
 
 export async function submitOrder(orderData, { onStep } = {}) {
