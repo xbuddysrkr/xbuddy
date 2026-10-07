@@ -498,9 +498,23 @@ export async function submitOrder(orderData, { onStep } = {}) {
     } catch {}
   }
 
-  // Fallback: upload PDF to Drive, send metadata to agent
+  // Fallback: upload PDF to Drive, send metadata to agent, and persist driveUrl in MongoDB
   try {
     const driveUrl = await uploadPdfViaGas(orderId, orderData.fileName, orderData.pdfBase64 || '')
+    // Persist driveUrl in MongoDB authoritative store
+    try {
+      await fetch(ORDERS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+        body: JSON.stringify({
+          action: 'updateOrderStatus',
+          orderId,
+          printStatus: 'waiting_for_shopkeeper',
+          driveUrl,
+        }),
+      })
+    } catch {}
+
     // Notify agent via local or tunnel with just the driveUrl (tiny payload)
     const metaBody = JSON.stringify({ orderId, driveUrl, screenshotBase64: orderData.screenshotBase64 || '', ...printSettings })
     for (const base of [LOCAL_API, tunnelUrl].filter(Boolean)) {

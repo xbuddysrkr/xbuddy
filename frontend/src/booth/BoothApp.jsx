@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Lock, Unlock, AlertTriangle, Printer, CheckCircle2 } from 'lucide-react'
 import { getOrderStatus, updateOrderStatus, boothLogin, validateAndRelease } from '../utils/api'
 
 const SESSION_KEY   = 'xbuddy_booth_auth'
@@ -58,7 +59,7 @@ function PinLogin({ onSuccess }) {
       >
         <div className="text-center mb-8">
           <div className="w-20 h-20 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center mx-auto mb-4">
-            <span className="text-4xl">🔐</span>
+            <Lock className="w-10 h-10 text-[#F78C25]" />
           </div>
           <h2 className="text-2xl font-bold text-[#222222]">Shopkeeper Access</h2>
           <p className="text-[#6B7280] text-sm mt-1">Enter your PIN to unlock the print terminal</p>
@@ -86,9 +87,10 @@ function PinLogin({ onSuccess }) {
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-center"
+                className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-center flex items-center justify-center gap-1.5"
               >
-                ⚠️ {error}
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
+                <span>{error}</span>
               </motion.p>
             )}
           </AnimatePresence>
@@ -98,10 +100,14 @@ function PinLogin({ onSuccess }) {
             disabled={loading || pin.length < 4}
             className="w-full py-4 bg-[#F78C25] hover:bg-[#e07010] disabled:bg-orange-200 disabled:cursor-not-allowed text-white font-bold text-lg rounded-xl transition-all flex items-center justify-center gap-2"
           >
-            {loading
-              ? <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              : '🔓 Unlock Terminal'
-            }
+            {loading ? (
+              <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>
+                <Unlock className="w-5 h-5" />
+                <span>Unlock Terminal</span>
+              </>
+            )}
           </button>
         </motion.form>
       </motion.div>
@@ -137,22 +143,26 @@ function ReleasePrint({ onLock }) {
     // 1. Try agent print release (via Cloudflare tunnel / local agent)
     let res = await validateAndRelease(id)
 
-    // 2. If order not in local agent memory, check authoritative MongoDB/Cloud Order
+    // 2. If order could not be sent to agent, check cloud order and alert operator
     if (!res || !res.success) {
       try {
         const cloudOrder = await getOrderStatus(id)
         if (cloudOrder?.success && cloudOrder?.order) {
           const ord = cloudOrder.order
-          // Mark as ready / verified in Google Sheets
-          await updateOrderStatus(id, 'Ready')
           res = {
-            success: true,
+            success: false,
             orderId: id,
-            message: `Order ${id} Verified! File: ${ord.fileName || 'Doc'} (${ord.copies || 1} copies, ₹${ord.amount || 0}) — Status updated to Ready!`,
+            error: `Order ${id} found in cloud (${ord.fileName || 'Doc'}), but Print Agent on kiosk is unreachable. Check local server or tunnel connection.`,
+          }
+        } else {
+          res = {
+            success: false,
+            orderId: id,
+            error: res?.error || `Order ${id} not found in database.`,
           }
         }
       } catch (err) {
-        console.warn('Fallback status check failed:', err)
+        res = { success: false, error: 'Could not connect to printer or orders service.' }
       }
     }
 
@@ -191,9 +201,10 @@ function ReleasePrint({ onLock }) {
           </div>
           <button
             onClick={handleLock}
-            className="px-4 py-2 rounded-lg text-xs font-semibold bg-orange-50 text-[#6B7280] hover:bg-red-50 hover:text-red-500 transition-all border border-orange-200"
+            className="px-4 py-2 rounded-lg text-xs font-semibold bg-orange-50 text-[#6B7280] hover:bg-red-50 hover:text-red-500 transition-all border border-orange-200 inline-flex items-center gap-1.5"
           >
-            🔒 Lock
+            <Lock className="w-3.5 h-3.5" />
+            <span>Lock</span>
           </button>
         </div>
       </div>
@@ -208,7 +219,7 @@ function ReleasePrint({ onLock }) {
           {/* Title */}
           <div className="text-center mb-10">
             <div className="w-20 h-20 rounded-full bg-orange-50 border border-orange-200 flex items-center justify-center mx-auto mb-4">
-              <span className="text-4xl">🖨️</span>
+              <Printer className="w-10 h-10 text-[#F78C25]" />
             </div>
             <h1 className="text-3xl font-bold text-[#222222]">Release Print</h1>
             <p className="text-[#6B7280] mt-2">Enter the student's Order ID to start printing</p>
@@ -244,7 +255,11 @@ function ReleasePrint({ onLock }) {
                       : 'bg-red-50 border border-red-200 text-red-500'
                   }`}
                 >
-                  <span className="text-2xl">{result.success ? '✅' : '⚠️'}</span>
+                  {result.success ? (
+                    <CheckCircle2 className="w-6 h-6 text-green-500 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-6 h-6 text-red-500 shrink-0" />
+                  )}
                   <span>{result.success ? result.message : result.error}</span>
                 </motion.div>
               )}
@@ -260,9 +275,14 @@ function ReleasePrint({ onLock }) {
               {loading ? (
                 <>
                   <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Verifying & Printing...
+                  <span>Verifying & Printing...</span>
                 </>
-              ) : '🖨️ Release Print'}
+              ) : (
+                <>
+                  <Printer className="w-6 h-6" />
+                  <span>Release Print</span>
+                </>
+              )}
             </motion.button>
           </form>
 
@@ -286,12 +306,12 @@ function ReleasePrint({ onLock }) {
           {/* Status legend */}
           <div className="mt-8 grid grid-cols-3 gap-3">
             {[
-              ['✅', 'Valid Order', 'Prints immediately'],
-              ['⚠️', 'Wrong ID',    'Rejected'],
-              ['🔒', 'Duplicate',   'Blocked'],
-            ].map(([icon, label, desc]) => (
+              { Icon: CheckCircle2, iconCls: 'text-green-500', label: 'Valid Order', desc: 'Prints immediately' },
+              { Icon: AlertTriangle, iconCls: 'text-red-500', label: 'Wrong ID',    desc: 'Rejected' },
+              { Icon: Lock, iconCls: 'text-amber-500', label: 'Duplicate',   desc: 'Blocked' },
+            ].map(({ Icon, iconCls, label, desc }) => (
               <div key={label} className="text-center p-3 rounded-xl bg-white border border-orange-100 shadow-sm">
-                <p className="text-xl mb-1">{icon}</p>
+                <Icon className={`w-6 h-6 mx-auto mb-1 ${iconCls}`} />
                 <p className="text-[#222222] text-xs font-medium">{label}</p>
                 <p className="text-[#6B7280] text-xs">{desc}</p>
               </div>
