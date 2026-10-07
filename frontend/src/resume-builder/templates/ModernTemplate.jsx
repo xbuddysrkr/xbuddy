@@ -1,4 +1,5 @@
 import React from 'react'
+import { Phone, Mail, MapPin, Link, GitBranch, Globe } from 'lucide-react'
 import EditableText from '../components/EditableText'
 import { useResume } from '../resumeStore'
 
@@ -61,12 +62,12 @@ export default function ModernTemplate({ data, fontScale = 1 }) {
           />
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '6px', fontSize: '9.5px', color: '#555' }}>
-          <span>📞 <EditableText value={personal.phone} placeholder="+91 9876543210" onChange={v => updatePersonal('phone', v)} /></span>
-          <span>✉ <EditableText value={personal.email} placeholder="your.email@example.com" onChange={v => updatePersonal('email', v)} /></span>
-          <span>📍 <EditableText value={personal.location} placeholder="City, Country" onChange={v => updatePersonal('location', v)} /></span>
-          <span>🔗 <EditableText value={personal.linkedin} placeholder="linkedin.com/in/you" onChange={v => updatePersonal('linkedin', v)} /></span>
-          <span>⌥ <EditableText value={personal.github} placeholder="github.com/you" onChange={v => updatePersonal('github', v)} /></span>
-          <span>🌐 <EditableText value={personal.portfolio} placeholder="yourportfolio.com" onChange={v => updatePersonal('portfolio', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Phone size={10} strokeWidth={2} /> <EditableText value={personal.phone} placeholder="+91 9876543210" onChange={v => updatePersonal('phone', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Mail size={10} strokeWidth={2} /> <EditableText value={personal.email} placeholder="your.email@example.com" onChange={v => updatePersonal('email', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><MapPin size={10} strokeWidth={2} /> <EditableText value={personal.location} placeholder="City, Country" onChange={v => updatePersonal('location', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Link size={10} strokeWidth={2} /> <EditableText value={personal.linkedin} placeholder="linkedin.com/in/you" onChange={v => updatePersonal('linkedin', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><GitBranch size={10} strokeWidth={2} /> <EditableText value={personal.github} placeholder="github.com/you" onChange={v => updatePersonal('github', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Globe size={10} strokeWidth={2} /> <EditableText value={personal.portfolio} placeholder="yourportfolio.com" onChange={v => updatePersonal('portfolio', v)} /></span>
         </div>
       </div>
 

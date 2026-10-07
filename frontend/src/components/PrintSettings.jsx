@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { CircleDot, Palette, FileText, Copy, Check, Settings, ChevronDown, ArrowUpDown, ArrowLeftRight } from 'lucide-react'
+import FileTypeIcon from './FileTypeIcon'
 import { parsePageRange } from '../utils/pageRangeParser'
 import { calcPriceBreakdown } from '../utils/pricing'
 
@@ -66,7 +68,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
         <div className="w-12 h-14 rounded-xl border border-orange-200 bg-orange-50 flex-shrink-0 overflow-hidden flex items-center justify-center">
           {fileInfo.thumbnail
             ? <img src={fileInfo.thumbnail} alt="preview" className="w-full h-full object-cover" />
-            : <span className="text-2xl">{fileInfo.typeInfo?.icon || '📄'}</span>
+            : <FileTypeIcon typeInfo={fileInfo.typeInfo} className="w-6 h-6 text-[#F78C25]" />
           }
         </div>
         <div className="flex-1 min-w-0">
@@ -93,19 +95,38 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
         {/* Color Mode */}
         <SettingCard title="Print Type">
           <div className="flex gap-2">
-            <OptionButton active={colorMode === 'bw'} onClick={() => set('colorMode', 'bw')}>⬛ B&W — ₹2/page</OptionButton>
-            <OptionButton active={colorMode === 'color'} onClick={() => set('colorMode', 'color')}>🎨 Color — ₹5/page</OptionButton>
+            <OptionButton active={colorMode === 'bw'} onClick={() => set('colorMode', 'bw')}>
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <CircleDot className="w-3.5 h-3.5" /> B&amp;W — ₹2/page
+              </span>
+            </OptionButton>
+            <OptionButton active={colorMode === 'color'} onClick={() => set('colorMode', 'color')}>
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Palette className="w-3.5 h-3.5" /> Color — ₹5/page
+              </span>
+            </OptionButton>
           </div>
         </SettingCard>
 
         {/* Side Mode */}
         <SettingCard title="Print Side">
           <div className="flex gap-2">
-            <OptionButton active={sideMode === 'single'} onClick={() => set('sideMode', 'single')}>📄 Single Side</OptionButton>
-            <OptionButton active={sideMode === 'double'} onClick={() => set('sideMode', 'double')}>📋 Double Side</OptionButton>
+            <OptionButton active={sideMode === 'single'} onClick={() => set('sideMode', 'single')}>
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" /> Single Side
+              </span>
+            </OptionButton>
+            <OptionButton active={sideMode === 'double'} onClick={() => set('sideMode', 'double')}>
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Copy className="w-3.5 h-3.5" /> Double Side
+              </span>
+            </OptionButton>
           </div>
           {sideMode === 'double' && (
-            <p className="text-[#F78C25] text-xs mt-2">✓ Double side prints both sides — halves paper sheets!</p>
+            <p className="text-[#F78C25] text-xs mt-2 flex items-center gap-1.5">
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span>Double side prints both sides — halves paper sheets!</span>
+            </p>
           )}
         </SettingCard>
 
@@ -134,16 +155,16 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
           className="w-full py-3.5 px-5 rounded-2xl bg-white border border-orange-200 text-[#F78C25] font-bold text-sm flex items-center justify-between shadow-xs hover:bg-orange-50/70 transition-all duration-200"
         >
           <span className="flex items-center gap-2">
-            ⚙️ More Options
+            <Settings className="w-4 h-4 text-[#F78C25]" /> More Options
             {hasCustomAdvanced && (
               <span className="px-2 py-0.5 rounded-full bg-orange-100 text-[#F78C25] text-[10px] font-extrabold uppercase tracking-wide">
                 Custom
               </span>
             )}
           </span>
-          <span className="text-gray-400 font-extrabold text-sm transition-transform duration-200" style={{ transform: showMoreOptions ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-            ▼
-          </span>
+          <ChevronDown
+            className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${showMoreOptions ? 'rotate-180' : ''}`}
+          />
         </button>
 
         {/* Collapsible Advanced Options */}
@@ -167,8 +188,16 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                 </SettingCard>
                 <SettingCard title="Orientation">
                   <div className="flex flex-col gap-2">
-                    <OptionButton active={orientation === 'portrait'} onClick={() => set('orientation', 'portrait')}>↕ Portrait</OptionButton>
-                    <OptionButton active={orientation === 'landscape'} onClick={() => set('orientation', 'landscape')}>↔ Landscape</OptionButton>
+                    <OptionButton active={orientation === 'portrait'} onClick={() => set('orientation', 'portrait')}>
+                      <span className="inline-flex items-center justify-center gap-1.5">
+                        <ArrowUpDown className="w-3.5 h-3.5" /> Portrait
+                      </span>
+                    </OptionButton>
+                    <OptionButton active={orientation === 'landscape'} onClick={() => set('orientation', 'landscape')}>
+                      <span className="inline-flex items-center justify-center gap-1.5">
+                        <ArrowLeftRight className="w-3.5 h-3.5" /> Landscape
+                      </span>
+                    </OptionButton>
                   </div>
                 </SettingCard>
               </div>

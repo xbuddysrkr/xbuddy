@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Store, AlertTriangle, Unlock, Lock, Printer, CheckCircle2 } from 'lucide-react'
 import { boothLogin, validateAndRelease } from '../utils/api'
 
 const SESSION_KEY     = 'xbuddy_booth_auth'
@@ -43,7 +44,7 @@ function BoothLogin({ onSuccess }) {
     >
       <div className="text-center mb-8">
         <div className="w-16 h-16 rounded-full bg-orange-500/20 border border-orange-500/30 flex items-center justify-center mx-auto mb-4">
-          <span className="text-3xl">🏪</span>
+          <Store className="w-8 h-8 text-[#F7931E]" />
         </div>
         <h2 className="text-2xl font-bold text-white">Xerox Shop Terminal</h2>
         <p className="text-gray-400 text-sm mt-1">Enter shopkeeper PIN to access print release</p>
@@ -69,9 +70,10 @@ function BoothLogin({ onSuccess }) {
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-center"
+              className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-center flex items-center justify-center gap-1.5"
             >
-              ⚠️ {error}
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>{error}</span>
             </motion.p>
           )}
         </AnimatePresence>
@@ -85,7 +87,12 @@ function BoothLogin({ onSuccess }) {
         >
           {loading ? (
             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : '🔓 Unlock Booth'}
+          ) : (
+            <>
+              <Unlock className="w-4 h-4" />
+              <span>Unlock Booth</span>
+            </>
+          )}
         </motion.button>
       </form>
     </motion.section>
@@ -143,14 +150,18 @@ function BoothPanel({ onLogout }) {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-bold text-white">🖨️ Xerox Shop Terminal</h2>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Printer className="w-6 h-6 text-[#F7931E]" />
+            <span>Xerox Shop Terminal</span>
+          </h2>
           <p className="text-gray-400 text-sm mt-0.5">Enter student's Order ID to print</p>
         </div>
         <button
           onClick={handleLogout}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-all"
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 text-gray-400 hover:bg-red-500/20 hover:text-red-400 transition-all inline-flex items-center gap-1.5"
         >
-          🔒 Lock
+          <Lock className="w-3.5 h-3.5" />
+          <span>Lock</span>
         </button>
       </div>
 
@@ -181,7 +192,11 @@ function BoothPanel({ onLogout }) {
                   : 'bg-red-500/10 border border-red-500/30 text-red-400'
               }`}
             >
-              <span>{result.success ? '✅' : '⚠️'}</span>
+              {result.success ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-green-400" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+              )}
               <span>{result.success ? result.message : result.error}</span>
             </motion.div>
           )}
@@ -199,19 +214,24 @@ function BoothPanel({ onLogout }) {
               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               Verifying & Printing...
             </>
-          ) : '🖨️ Release Print'}
+          ) : (
+            <>
+              <Printer className="w-4 h-4" />
+              <span>Release Print</span>
+            </>
+          )}
         </motion.button>
       </form>
 
       {/* Info */}
       <div className="mt-6 space-y-2">
         {[
-          ['✅', 'Valid Order ID', 'Print starts immediately'],
-          ['⚠️', 'Wrong Order ID', 'Rejected with error'],
-          ['🔒', 'Already Printed', 'Blocked — no duplicate print'],
-        ].map(([icon, label, desc]) => (
+          { Icon: CheckCircle2, iconCls: 'text-green-400', label: 'Valid Order ID', desc: 'Print starts immediately' },
+          { Icon: AlertTriangle, iconCls: 'text-red-400', label: 'Wrong Order ID', desc: 'Rejected with error' },
+          { Icon: Lock, iconCls: 'text-amber-400', label: 'Already Printed', desc: 'Blocked — no duplicate print' },
+        ].map(({ Icon, iconCls, label, desc }) => (
           <div key={label} className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/3 border border-white/5">
-            <span>{icon}</span>
+            <Icon className={`w-4 h-4 shrink-0 ${iconCls}`} />
             <div>
               <p className="text-white text-xs font-medium">{label}</p>
               <p className="text-gray-600 text-xs">{desc}</p>

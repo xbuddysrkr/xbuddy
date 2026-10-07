@@ -1,5 +1,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
+import { Sparkles, Briefcase, Smile } from 'lucide-react'
 
 /**
  * XBuddyStudioMascot
@@ -12,11 +13,11 @@ export default function XBuddyStudioMascot({ completeness = 0, size = 38, showBu
   const isHighComplete = completeness >= 80
   const isMidComplete = completeness >= 40 && completeness < 80
 
-  const statusMessage = isHighComplete
-    ? '✨ Resume ready for print!'
+  const statusText = isHighComplete
+    ? 'Resume ready for print!'
     : isMidComplete
-    ? '💼 Looking sharp! Keep going.'
-    : '👋 Let\'s build a standout resume!'
+    ? 'Looking sharp! Keep going.'
+    : "Let's build a standout resume!"
 
   return (
     <div className="flex items-center gap-2 select-none">
@@ -113,8 +114,15 @@ export default function XBuddyStudioMascot({ completeness = 0, size = 38, showBu
       </motion.div>
 
       {showBubble && (
-        <div className="hidden sm:block text-[11px] font-medium text-slate-600 bg-orange-50/80 border border-orange-200/70 rounded-full px-2.5 py-0.5">
-          {statusMessage}
+        <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-medium text-slate-600 bg-orange-50/80 border border-orange-200/70 rounded-full px-2.5 py-0.5">
+          {isHighComplete ? (
+            <Sparkles className="w-3 h-3 text-amber-500" />
+          ) : isMidComplete ? (
+            <Briefcase className="w-3 h-3 text-orange-500" />
+          ) : (
+            <Smile className="w-3 h-3 text-orange-500" />
+          )}
+          <span>{statusText}</span>
         </div>
       )}
     </div>

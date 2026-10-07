@@ -79,3 +79,6 @@ export function generateDocument({ type, name, receiver, reason, days, weeks, ex
 export function getDocTitle(type) {
   return DOC_TYPES.find(d => d.id === type)?.label || 'Document'
 }
+
+export const LETTER_TYPES = DOC_TYPES
+export const generateLetter = generateDocument

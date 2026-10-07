@@ -7,7 +7,7 @@ const logger   = require('../utils/logger')
 const { getOrderByIdForRelease, getAllOrders, claimOrder } = require('./sheets')
 const { updatePrintStatus, updateReleaseStatus } = require('./updater')
 const { printPdf, getDefaultPrinter } = require('./printer')
-const { deletePdf } = require('./downloader')
+const { downloadPdf, deletePdf } = require('./downloader')
 const { getTunnelUrl } = require('./tunnel')
 
 const app         = express()
@@ -34,6 +34,9 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '150mb' }))
 app.use((req, res, next) => {
+  if (req.headers['access-control-request-private-network']) {
+    res.setHeader('Access-Control-Allow-Private-Network', 'true')
+  }
   const from = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'local'
   const via  = req.headers['x-forwarded-for'] ? 'tunnel' : 'local'
   logger.info(`${req.method} ${req.path} -> ${via} (${from})`)
@@ -62,14 +65,19 @@ function loadSettings(orderId) {
   } catch { return {} }
 }
 
-function downloadFile(url, destPath) {
-  return new Promise((resolve, reject) => {
+async function downloadFile(url, destPath) {
+  const axios = require('axios')
+  const response = await axios.get(url, {
+    responseType: 'stream',
+    timeout: 35000,
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    maxRedirects: 5,
+  })
+  await new Promise((resolve, reject) => {
     const file = fs.createWriteStream(destPath)
-    https.get(url, (res) => {
-      if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return }
-      res.pipe(file)
-      file.on('finish', () => { file.close(); resolve() })
-    }).on('error', (err) => { fs.unlink(destPath, () => {}); reject(err) })
+    response.data.pipe(file)
+    file.on('finish', () => { file.close(); resolve() })
+    file.on('error', (err) => { fs.unlink(destPath, () => {}); reject(err) })
   })
 }
 
@@ -359,11 +367,16 @@ app.post('/release-print', async (req, res) => {
     // 2. Try driveUrl from settings or order
     const driveUrl = settings.driveUrl || order.driveUrl
     if (!pdfReady && driveUrl) {
-      logger.info(`Downloading PDF from Drive...`)
+      logger.info(`Downloading PDF from Drive: ${driveUrl}`)
       try {
-        await downloadFile(driveUrl, filePath)
-        pdfReady = true
-        logger.success(`[AGENT] PDF downloaded from Drive`)
+        const dlPath = await downloadPdf(order.orderId, driveUrl)
+        if (dlPath && fs.existsSync(dlPath)) {
+          if (dlPath !== filePath) {
+            fs.copyFileSync(dlPath, filePath)
+          }
+          pdfReady = true
+          logger.success(`[AGENT] PDF downloaded from Drive`)
+        }
       } catch (e) {
         logger.error(`Drive download failed: ${e.message}`)
       }

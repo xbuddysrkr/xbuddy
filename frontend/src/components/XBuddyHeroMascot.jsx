@@ -7,10 +7,10 @@ import { motion, useReducedMotion } from 'framer-motion'
  * Living, interactive XBuddy character for the Hero section.
  * "Sphere-style" interactive living mascot that naturally notices the user,
  * tracks cursor smoothly with micro-physics, eagerly notices the Start Printing CTA,
- * and features the adorable top-edge "Don't leave me? 🥺" micro-interaction.
+ * and features the adorable top-edge "Don't leave me?" micro-interaction.
  * 
  * Hierarchy:
- * 1. Cursor near top edge of screen (<120px) -> "Are you leaving me? 🥺" sad/worried reaction
+ * 1. Cursor near top edge of screen (<120px) -> "Are you leaving me?" sad/worried reaction
  * 2. Start Printing button hovered / focused -> Eager, happy smile looking right at CTA
  * 3. Cursor approaching Start Printing -> Mascot smoothly focuses attention on CTA
  * 4. Cursor moving across Hero -> Natural, clamped eye tracking (3-3.5px max) with living lag
@@ -30,7 +30,7 @@ export default function XBuddyHeroMascot({
   const [eyeGaze, setEyeGaze] = useState({ x: 0, y: 0 })
   const [headTilt, setHeadTilt] = useState(0) // degrees (-3 to +3)
   const [proximity, setProximity] = useState(0) // 0 to 1 (near CTA)
-  const [sadness, setSadness] = useState(0) // 0 to 1 (top-edge "don't leave me 🥺")
+  const [sadness, setSadness] = useState(0) // 0 to 1 (top-edge "don't leave me")
   const [isBlinking, setIsBlinking] = useState(false)
   const [isWinking, setIsWinking] = useState(false)
 
@@ -259,7 +259,7 @@ export default function XBuddyHeroMascot({
     }
   }, [isHovered, buttonRef, shouldReduceMotion])
 
-  // Click mascot directly: cute wink interaction 😉
+  // Click mascot directly: cute wink interaction
   const handleMascotDirectClick = () => {
     if (shouldReduceMotion) return
     setIsWinking(true)
@@ -274,7 +274,7 @@ export default function XBuddyHeroMascot({
       return 'M 41 51 Q 50 63 59 51 Z'
     }
 
-    // Top-edge "Don't leave me" emotional curve 🥺
+    // Top-edge "Don't leave me" emotional curve
     if (sadness > 0.08) {
       const leftY = 53.5 + sadness * 2.8
       const midY = 59.5 - sadness * 9.2 // Moves upward above endpoints to form an adorable pout
@@ -362,7 +362,7 @@ export default function XBuddyHeroMascot({
               }
             : sadness > 0.12
             ? {
-                y: 2.2 * sadness, // Subtle hesitant drop when user might leave 🥺
+                y: 2.2 * sadness, // Subtle hesitant drop when user might leave
                 scaleX: 1 - 0.02 * sadness,
                 scaleY: 1 - 0.01 * sadness,
                 rotate: headTilt,
@@ -549,7 +549,7 @@ export default function XBuddyHeroMascot({
               style={{ transition: 'opacity 0.2s ease' }}
             />
 
-            {/* Cute Pleading Eyebrows (rendered when sadness > 0.08) 🥺 */}
+            {/* Cute Pleading Eyebrows (rendered when sadness > 0.08) */}
             {sadness > 0.08 && !isCelebrating && (
               <g opacity={Math.min(1, sadness * 1.25)}>
                 {/* Left eyebrow (inner corner raises up in gentle pleading curve) */}
@@ -597,7 +597,7 @@ export default function XBuddyHeroMascot({
                   fill="#FFFFFF"
                   opacity="0.9"
                 />
-                {/* Cute extra moist glint when looking up sadly 🥺 */}
+                {/* Cute extra moist glint when looking up sadly */}
                 {sadness > 0.25 && (
                   <circle
                     cx={37.5 + eyeGaze.x * 0.6}
@@ -611,7 +611,7 @@ export default function XBuddyHeroMascot({
 
               {/* RIGHT EYE (supports cute wink on direct tap) */}
               {isWinking ? (
-                // Wink curve 😉
+                // Wink curve
                 <path
                   d="M 57 44 Q 62 48 67 44"
                   stroke="#0F172A"
@@ -636,7 +636,7 @@ export default function XBuddyHeroMascot({
                     fill="#FFFFFF"
                     opacity="0.9"
                   />
-                  {/* Cute extra moist glint when looking up sadly 🥺 */}
+                  {/* Cute extra moist glint when looking up sadly */}
                   {sadness > 0.25 && (
                     <circle
                       cx={61.5 + eyeGaze.x * 0.6}

@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react'
+import { Download, Printer } from 'lucide-react'
 import { useResume } from '../resumeStore.jsx'
 import { getTemplate } from '../templates'
 
@@ -250,7 +251,8 @@ const ResumePreview = forwardRef(function ResumePreview(
             disabled={exporting}
             className="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
           >
-            <span>📥 Download PDF</span>
+            <Download className="w-3.5 h-3.5" />
+            <span>Download PDF</span>
           </button>
           <button
             type="button"
@@ -258,7 +260,8 @@ const ResumePreview = forwardRef(function ResumePreview(
             disabled={exporting}
             className="flex-[1.4] py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50"
           >
-            <span>🖨 Print with X Buddy</span>
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print with X Buddy</span>
           </button>
         </div>
       )}

@@ -205,14 +205,14 @@ function validateUpiUrlDev(url, appId) {
     console.group(`[X Buddy UPI Dev Diagnostic] ${appId.toUpperCase()}`)
     console.log('Final Launch Intent / URL:', url)
     console.log('Validation Checks:', {
-      'pa exists': hasPa ? '✓ PASS' : '✗ FAIL',
-      'pn exists': hasPn ? '✓ PASS' : '✗ FAIL',
-      'am is 2-decimal format': hasAm ? '✓ PASS' : '✗ FAIL',
-      'cu=INR exists': hasCu ? '✓ PASS' : '✗ FAIL',
-      'tr/reference': hasTr ? '✓ PRESENT' : '(not provided / optional)',
-      'no double encoding': !hasDoubleEncoding ? '✓ PASS' : '✗ FAIL (contains double %25 encoding)',
-      'no spaces': !hasSpaces ? '✓ PASS' : '✗ FAIL (contains literal spaces)',
-      'no null/undefined': !hasNullOrUndefined ? '✓ PASS' : '✗ FAIL (contains null or undefined)',
+      'pa exists': hasPa ? 'PASS' : 'FAIL',
+      'pn exists': hasPn ? 'PASS' : 'FAIL',
+      'am is 2-decimal format': hasAm ? 'PASS' : 'FAIL',
+      'cu=INR exists': hasCu ? 'PASS' : 'FAIL',
+      'tr/reference': hasTr ? 'PRESENT' : '(not provided / optional)',
+      'no double encoding': !hasDoubleEncoding ? 'PASS' : 'FAIL (contains double %25 encoding)',
+      'no spaces': !hasSpaces ? 'PASS' : 'FAIL (contains literal spaces)',
+      'no null/undefined': !hasNullOrUndefined ? 'PASS' : 'FAIL (contains null or undefined)',
     })
     console.groupEnd()
   } catch (e) {

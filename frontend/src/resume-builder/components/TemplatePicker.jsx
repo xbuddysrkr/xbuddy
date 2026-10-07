@@ -1,4 +1,5 @@
 import React from 'react'
+import { Check, Lightbulb } from 'lucide-react'
 import { useResume } from '../resumeStore.jsx'
 import { TEMPLATES } from '../templates'
 
@@ -165,7 +166,7 @@ export default function TemplatePicker({ layout = 'vertical' }) {
                   <MiniVisualResume templateId={tpl.id} accent={tpl.accent} />
                   {isSelected && (
                     <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[#F78C25] text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
-                      ✓
+                      <Check className="w-2.5 h-2.5" />
                     </span>
                   )}
                 </div>
@@ -212,8 +213,8 @@ export default function TemplatePicker({ layout = 'vertical' }) {
                     {tpl.label}
                   </span>
                   {isSelected && (
-                    <span className="shrink-0 text-[#F78C25] text-xs font-bold bg-orange-100/80 px-1.5 py-0.2 rounded-full">
-                      ✓ Selected
+                    <span className="shrink-0 text-[#F78C25] text-xs font-bold bg-orange-100/80 px-1.5 py-0.2 rounded-full inline-flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Selected
                     </span>
                   )}
                 </div>
@@ -229,7 +230,7 @@ export default function TemplatePicker({ layout = 'vertical' }) {
       {/* ATS Tip Banner */}
       <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-slate-700">
         <p className="text-emerald-700 text-xs font-bold mb-1 flex items-center gap-1.5">
-          <span>💡</span> ATS Tip
+          <Lightbulb className="w-3.5 h-3.5 text-emerald-600" /> ATS Tip
         </p>
         <p className="text-slate-600 text-[11px] leading-relaxed">
           Use <strong className="text-emerald-800">Minimal ATS</strong> or <strong className="text-emerald-800">ATS-Safe Elegant</strong> when applying to major corporations with automated scanners.

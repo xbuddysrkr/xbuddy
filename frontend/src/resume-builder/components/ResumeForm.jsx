@@ -1,4 +1,5 @@
 import React from 'react'
+import { Check, Trash2 } from 'lucide-react'
 import { useResume, SECTIONS, getSectionCompletion } from '../resumeStore.jsx'
 
 const inputCls = 'w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#F78C25] focus:ring-2 focus:ring-orange-500/20 transition-all shadow-2xs'
@@ -50,7 +51,7 @@ function ListSection({ section, items = [], template, renderItem, addLabel }) {
                 className="px-2 py-0.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-semibold flex items-center gap-1 transition-all active:scale-95"
                 title="Remove entry"
               >
-                ✕ Remove
+                <Trash2 className="w-3 h-3" /> Remove
               </button>
             )}
           </div>
@@ -86,12 +87,14 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
     }
   }
 
+  const SectionIcon = currentSectionMeta?.icon
+
   return (
     <div className="space-y-4">
       {/* Current Section Banner */}
       <div className="flex items-center justify-between p-3 rounded-xl bg-orange-50/80 border border-orange-100">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{currentSectionMeta.icon}</span>
+        <div className="flex items-center gap-2.5">
+          {SectionIcon && <SectionIcon className="w-5 h-5 text-[#F78C25]" />}
           <div>
             <span className="text-[11px] font-bold text-orange-600 block leading-tight">
               Section {currentIndex + 1} of {SECTIONS.length}
@@ -104,7 +107,7 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
         <div>
           {currentStatus.status === 'complete' ? (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">
-              ✓ Complete
+              <Check className="w-3 h-3" /> Complete
             </span>
           ) : currentStatus.status === 'in-progress' ? (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700">

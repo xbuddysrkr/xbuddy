@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { motion, AnimatePresence } from 'framer-motion'
+import { AlertTriangle } from 'lucide-react'
+import FileTypeIcon from './FileTypeIcon'
 import { processFile, resolveFileType, formatBytes, SUPPORTED_TYPES, MAX_FILE_SIZE } from '../utils/fileProcessor'
 
 const FORMAT_LABELS = ['PDF', 'DOCX', 'PPTX', 'XLSX', 'DOC', 'PPT', 'XLS', 'RTF', 'TXT', 'JPG', 'PNG', 'WEBP', 'BMP', 'TIFF', 'SVG', 'HTML']
@@ -115,7 +117,7 @@ export default function UploadSection({ onFileReady }) {
               <div className="w-16 h-20 rounded-xl border border-orange-200 bg-orange-50 flex-shrink-0 overflow-hidden flex items-center justify-center">
                 {preview.thumbnail
                   ? <img src={preview.thumbnail} alt="preview" className="w-full h-full object-cover" />
-                  : <span className="text-3xl">{preview.typeInfo.icon}</span>
+                  : <FileTypeIcon typeInfo={preview.typeInfo} className="w-8 h-8 text-[#F78C25]" />
                 }
               </div>
               <div className="flex-1 min-w-0">
@@ -159,9 +161,10 @@ export default function UploadSection({ onFileReady }) {
       <AnimatePresence>
         {error && (
           <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="mt-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-500 text-sm text-center"
+            className="mt-3 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-500 text-sm text-center flex items-center justify-center gap-1.5"
           >
-            ⚠️ {error}
+            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+            <span>{error}</span>
           </motion.div>
         )}
       </AnimatePresence>

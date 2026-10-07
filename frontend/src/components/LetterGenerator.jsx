@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { jsPDF } from 'jspdf'
+import { PenTool, Download, Printer } from 'lucide-react'
 import { LETTER_TYPES, generateLetter } from '../utils/letterTemplates'
 
 const EMPTY = { type: 'leave', name: '', receiver: '', department: '', rollNo: '', year: '', reason: '', days: '', extra: '' }
@@ -63,7 +64,7 @@ export default function LetterGenerator({ onPrintGenerated }) {
         className="text-center mb-12"
       >
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-orange-300 bg-orange-50 text-[#F78C25] text-sm font-medium mb-4">
-          <span>✍️</span> Smart Letter Generator
+          <PenTool className="w-4 h-4" /> Smart Letter Generator
         </div>
         <h2 className="text-3xl md:text-4xl font-bold text-[#222222] mb-3">
           Generate Letters <span className="gradient-text">Instantly</span>
@@ -140,9 +141,9 @@ export default function LetterGenerator({ onPrintGenerated }) {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
             onClick={handleGenerate}
-            className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold rounded-xl transition-all"
+            className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
           >
-            ✍️ Generate Letter
+            <PenTool className="w-4 h-4" /> Generate Letter
           </motion.button>
         </motion.div>
 
@@ -155,7 +156,7 @@ export default function LetterGenerator({ onPrintGenerated }) {
         >
           <div className="flex items-center justify-between mb-4">
             <p className="text-[#222222] font-semibold text-sm">
-              {selectedType?.icon} {selectedType?.label} Preview
+              {selectedType?.label} Preview
             </p>
             <AnimatePresence>
               {shown && (
@@ -166,15 +167,15 @@ export default function LetterGenerator({ onPrintGenerated }) {
                 >
                   <button
                     onClick={handleDownload}
-                    className="px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 border border-orange-200 text-gray-500 text-xs font-medium transition-all"
+                    className="px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 border border-orange-200 text-gray-500 text-xs font-medium transition-all inline-flex items-center gap-1.5"
                   >
-                    ↓ Download PDF
+                    <Download className="w-3.5 h-3.5" /> Download PDF
                   </button>
                   <button
                     onClick={handlePrint}
-                    className="px-3 py-1.5 rounded-lg bg-[#F78C25] hover:bg-[#e07010] text-white text-xs font-medium transition-all"
+                    className="px-3 py-1.5 rounded-lg bg-[#F78C25] hover:bg-[#e07010] text-white text-xs font-medium transition-all inline-flex items-center gap-1.5"
                   >
-                    🖨️ Print with X Buddy
+                    <Printer className="w-3.5 h-3.5" /> Print with X Buddy
                   </button>
                 </motion.div>
               )}

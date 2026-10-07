@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { AlertTriangle, Check } from 'lucide-react'
 import { fileToBase64 } from '../utils/fileToBase64'
 import { submitOrder } from '../utils/api'
 import { saveOrder } from '../utils/orderStore'
@@ -199,9 +200,10 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
         <AnimatePresence>
           {fieldError && (
             <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              className="text-amber-600 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"
+              className="text-amber-600 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5"
             >
-              ⚠ {fieldError}
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span>{fieldError}</span>
             </motion.p>
           )}
         </AnimatePresence>
@@ -226,9 +228,10 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
             type="submit"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
-            className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-sm rounded-xl transition-all duration-200"
+            className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-sm rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5"
           >
-            ✓ Confirm &amp; Submit Order
+            <Check className="w-4 h-4" />
+            <span>Confirm &amp; Submit Order</span>
           </motion.button>
         )}
       </form>

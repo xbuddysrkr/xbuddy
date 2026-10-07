@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
+import { CheckCircle2, XCircle, Clock, RotateCcw } from 'lucide-react'
 
 // Steps that map 1-to-1 with real network calls / backend responses
 const STEPS = [
@@ -55,9 +56,24 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
       <div className="p-4 space-y-3">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <p className="text-[#222222] font-semibold text-sm">
-            {isSuccess ? '✅ Order Confirmed!' : hasFailed ? '❌ Order Failed' : '⏳ Processing Order…'}
-          </p>
+          <div className="flex items-center gap-1.5 text-[#222222] font-semibold text-sm">
+            {isSuccess ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Order Confirmed!</span>
+              </>
+            ) : hasFailed ? (
+              <>
+                <XCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <span>Order Failed</span>
+              </>
+            ) : (
+              <>
+                <Clock className="w-4 h-4 text-[#F7931E] animate-pulse shrink-0" />
+                <span>Processing Order…</span>
+              </>
+            )}
+          </div>
           <span className="text-xs text-gray-400 font-mono">{progress}%</span>
         </div>
 
@@ -120,9 +136,10 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2 pt-1">
               <button
                 onClick={onRetry}
-                className="flex-1 py-2 bg-[#F7931E] hover:bg-[#e07010] text-white text-xs font-bold rounded-xl transition-colors"
+                className="flex-1 py-2 bg-[#F7931E] hover:bg-[#e07010] text-white text-xs font-bold rounded-xl transition-colors inline-flex items-center justify-center gap-1.5"
               >
-                ↺ Retry
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Retry</span>
               </button>
               <button
                 onClick={onCancel}

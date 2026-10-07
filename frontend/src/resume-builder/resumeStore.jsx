@@ -1,4 +1,13 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import {
+  User,
+  GraduationCap,
+  Zap,
+  Briefcase,
+  Rocket,
+  Award,
+  Trophy
+} from 'lucide-react'
 
 export const EMPTY_RESUME = {
   personal: {
@@ -23,13 +32,13 @@ export const EMPTY_RESUME = {
 }
 
 export const SECTIONS = [
-  { id: 'personal', num: '①', shortNum: '1', label: 'Personal Details', icon: '👤' },
-  { id: 'education', num: '②', shortNum: '2', label: 'Education', icon: '🎓' },
-  { id: 'skills', num: '③', shortNum: '3', label: 'Skills & Tech', icon: '⚡' },
-  { id: 'experience', num: '④', shortNum: '4', label: 'Experience', icon: '💼' },
-  { id: 'projects', num: '⑤', shortNum: '5', label: 'Projects', icon: '🚀' },
-  { id: 'certifications', num: '⑥', shortNum: '6', label: 'Certifications', icon: '🏆' },
-  { id: 'achievements', num: '⑦', shortNum: '7', label: 'Achievements', icon: '🥇' },
+  { id: 'personal', num: '①', shortNum: '1', label: 'Personal Details', icon: User },
+  { id: 'education', num: '②', shortNum: '2', label: 'Education', icon: GraduationCap },
+  { id: 'skills', num: '③', shortNum: '3', label: 'Skills & Tech', icon: Zap },
+  { id: 'experience', num: '④', shortNum: '4', label: 'Experience', icon: Briefcase },
+  { id: 'projects', num: '⑤', shortNum: '5', label: 'Projects', icon: Rocket },
+  { id: 'certifications', num: '⑥', shortNum: '6', label: 'Certifications', icon: Award },
+  { id: 'achievements', num: '⑦', shortNum: '7', label: 'Achievements', icon: Trophy },
 ]
 
 export function getSectionCompletion(resume, sectionId) {

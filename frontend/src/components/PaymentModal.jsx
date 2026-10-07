@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import PaymentProofForm from './PaymentProofForm'
-import { Smartphone, QrCode, Copy, Check, ArrowRight, RotateCcw, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import { Smartphone, QrCode, Copy, Check, ArrowRight, RotateCcw, ShieldCheck, CheckCircle2, Lightbulb, X } from 'lucide-react'
 import { detectPlatform, directLaunchUPI, buildUpiQuery, openPhonePeAppOnly, getPhonePeLaunchUrl } from '../utils/upiLauncher'
 
 const UPI_ID = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
@@ -209,8 +209,11 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
             </div>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-gray-400 transition-all cursor-pointer"
-            >✕</button>
+              className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all cursor-pointer"
+              aria-label="Close Payment Modal"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Amount breakdown badge */}
@@ -259,13 +262,17 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                 <div className="space-y-2.5 mb-4">
                   {fallbackNotice && (
                     <div className="mb-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium flex items-center justify-between shadow-2xs">
-                      <span>💡 {fallbackNotice}</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Lightbulb className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>{fallbackNotice}</span>
+                      </span>
                       <button
                         type="button"
                         onClick={() => setFallbackNotice('')}
-                        className="text-amber-700 hover:text-amber-900 text-xs font-bold ml-2 cursor-pointer"
+                        className="text-amber-700 hover:text-amber-900 text-xs font-bold ml-2 cursor-pointer p-0.5"
+                        aria-label="Dismiss notice"
                       >
-                        ✕
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   )}
@@ -334,12 +341,14 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               {viewMode === 'qr' && (
                 <div className="mb-4 text-center">
                   {fallbackNotice ? (
-                    <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium">
-                      💡 {fallbackNotice}
+                    <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium flex items-center justify-center gap-1.5">
+                      <Lightbulb className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>{fallbackNotice}</span>
                     </div>
                   ) : desktopNotice ? (
-                    <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium">
-                      📱 {desktopNotice}
+                    <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium flex items-center justify-center gap-1.5">
+                      <Smartphone className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>{desktopNotice}</span>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-500 mb-2">Scan using PhonePe, GPay, Paytm, or BHIM</p>
@@ -402,8 +411,9 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               </div>
 
               {/* Requirement: clear message if app couldn't be opened */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium text-left">
-                💡 PhonePe couldn't be opened. Please open PhonePe manually.
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium text-left flex items-start gap-2">
+                <Lightbulb className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>PhonePe couldn't be opened. Please open PhonePe manually.</span>
               </div>
 
               {/* Quick Manual Payment Details */}

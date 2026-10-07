@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { X, Check } from 'lucide-react'
 
 /**
  * XBuddyIntro
@@ -135,7 +136,7 @@ export default function XBuddyIntro({ onComplete }) {
             aria-label="Skip Intro Animation"
           >
             <span>Skip</span>
-            <span className="text-[10px] text-slate-400">✕</span>
+            <X className="w-3 h-3 text-slate-400" />
           </button>
 
           {/* REDUCED MOTION FALLBACK */}
@@ -698,7 +699,7 @@ export default function XBuddyIntro({ onComplete }) {
                                 >
                                   <div className="w-4 h-2 rounded-xs border-t border-[#D97706] mb-1" />
                                   <div className="w-2.5 h-2.5 rounded-full bg-white flex items-center justify-center">
-                                    <span className="text-[6px] font-bold text-[#D97706]">✓</span>
+                                    <Check className="w-2 h-2 text-[#D97706]" />
                                   </div>
                                 </motion.div>
                               </div>

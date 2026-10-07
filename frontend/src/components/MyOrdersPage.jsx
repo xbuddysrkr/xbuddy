@@ -2,22 +2,40 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getMyOrders, saveOrder } from '../utils/orderStore'
 import { getOrderStatus } from '../utils/api'
-import { Bell, Copy, Check, Store, FileText, ArrowRight, Search, Loader2 } from 'lucide-react'
+import {
+  Bell,
+  Copy,
+  Check,
+  Store,
+  FileText,
+  ArrowRight,
+  Search,
+  Loader2,
+  Clock,
+  CreditCard,
+  Inbox,
+  Printer,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  ClipboardList,
+  X,
+} from 'lucide-react'
 
 // Status mappings for comprehensive lifecycle
 const STATUS_MAP = {
-  'Pending':               { label: 'Pending',              cls: 'bg-slate-100 text-slate-700 border-slate-200', icon: '⏳' },
-  'Payment Submitted':     { label: 'Payment Submitted',    cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: '💳' },
-  'Order Received':        { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: '📥' },
-  'Accepted':              { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: '📥' },
-  'Waiting':               { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: '📥' },
-  'Printing':              { label: 'Printing...',          cls: 'bg-violet-50 text-violet-700 border-violet-200 animate-pulse', icon: '🖨️' },
-  'Ready for Collection':  { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: '🏪' },
-  'Ready':                 { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: '🏪' },
-  'Collected':             { label: 'Collected',            cls: 'bg-slate-100 text-slate-600 border-slate-200', icon: '✅' },
-  'Printed':               { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: '🏪' },
-  'Cancelled':             { label: 'Cancelled',            cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: '❌' },
-  'Failed':                { label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: '❌' },
+  'Pending':               { label: 'Pending',              cls: 'bg-slate-100 text-slate-700 border-slate-200', icon: Clock },
+  'Payment Submitted':     { label: 'Payment Submitted',    cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: CreditCard },
+  'Order Received':        { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'Accepted':              { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'Waiting':               { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'Printing':              { label: 'Printing...',          cls: 'bg-violet-50 text-violet-700 border-violet-200 animate-pulse', icon: Printer },
+  'Ready for Collection':  { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
+  'Ready':                 { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
+  'Collected':             { label: 'Collected',            cls: 'bg-slate-100 text-slate-600 border-slate-200', icon: CheckCircle2 },
+  'Printed':               { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
+  'Cancelled':             { label: 'Cancelled',            cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
+  'Failed':                { label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
 }
 
 export default function MyOrdersPage({ onStartPrinting }) {
@@ -225,8 +243,9 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   setCloudSearchError('')
                 }}
                 className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                aria-label="Clear Search"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -253,8 +272,9 @@ export default function MyOrdersPage({ onStartPrinting }) {
         </form>
 
         {cloudSearchError && (
-          <p className="mt-2 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg max-w-lg">
-            ⚠️ {cloudSearchError}
+          <p className="mt-2 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg max-w-lg flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>{cloudSearchError}</span>
           </p>
         )}
       </div>
@@ -266,8 +286,8 @@ export default function MyOrdersPage({ onStartPrinting }) {
           animate={{ opacity: 1, y: 0 }}
           className="bg-[#FFFDF9] border border-orange-200/80 rounded-3xl p-10 text-center max-w-md mx-auto my-12 shadow-sm"
         >
-          <div className="w-20 h-20 bg-orange-50 border border-orange-200 rounded-3xl flex items-center justify-center mx-auto mb-4 text-3xl shadow-inner">
-            📋
+          <div className="w-20 h-20 bg-orange-50 border border-orange-200 rounded-3xl flex items-center justify-center mx-auto mb-4 text-[#F78C25] shadow-inner">
+            <ClipboardList className="w-9 h-9" />
           </div>
           <h3 className="text-lg font-bold text-[#222222] mb-1">
             No local orders stored yet.
@@ -313,6 +333,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
           {filteredOrders.map((order) => {
             const rawStatus = liveStatuses[order.orderId] || order.status || 'Order Received'
             const statusInfo = STATUS_MAP[rawStatus] || STATUS_MAP['Order Received']
+            const StatusIcon = statusInfo.icon
 
             return (
               <motion.div
@@ -326,8 +347,8 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     <span className="font-mono font-bold text-[#F78C25] text-base">
                       {order.orderId}
                     </span>
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${statusInfo.cls}`}>
-                      <span>{statusInfo.icon}</span>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${statusInfo.cls}`}>
+                      <StatusIcon className="w-3.5 h-3.5 shrink-0" />
                       <span>{statusInfo.label}</span>
                     </span>
                   </div>
@@ -351,13 +372,14 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-orange-100">
                   <button
                     onClick={() => setShopModalOrder(order)}
-                    className="px-3.5 py-2 bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
+                    className="px-3.5 py-2 bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
-                    <span>🏪</span> Show Order ID
+                    <Store className="w-3.5 h-3.5 shrink-0" />
+                    <span>Show Order ID</span>
                   </button>
                   <button
                     onClick={() => setSelectedOrder(order)}
-                    className="px-3.5 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-semibold text-xs rounded-xl transition-colors"
+                    className="px-3.5 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
                   >
                     View Details
                   </button>
@@ -389,9 +411,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 <h3 className="text-lg font-bold text-[#222222]">Order Details</h3>
                 <button
                   onClick={() => setSelectedOrder(null)}
-                  className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 text-gray-400 flex items-center justify-center transition-colors"
+                  className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 text-gray-400 flex items-center justify-center transition-colors cursor-pointer"
+                  aria-label="Close Order Details"
                 >
-                  ✕
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -406,9 +429,16 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   </div>
                   <button
                     onClick={() => handleCopyId(selectedOrder.orderId)}
-                    className="px-3 py-1.5 bg-white border border-orange-200 text-[#F78C25] font-bold text-xs rounded-lg hover:bg-orange-50 transition-colors"
+                    className="px-3 py-1.5 bg-white border border-orange-200 text-[#F78C25] font-bold text-xs rounded-lg hover:bg-orange-50 transition-colors cursor-pointer inline-flex items-center gap-1"
                   >
-                    {copied ? '✓ Copied' : 'Copy ID'}
+                    {copied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      'Copy ID'
+                    )}
                   </button>
                 </div>
 
@@ -464,11 +494,16 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t border-gray-200">
                     <span className="text-gray-500 font-medium">Order Status:</span>
-                    <span className={`px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${
-                      (STATUS_MAP[liveStatuses[selectedOrder.orderId] || selectedOrder.status || 'Order Received'] || STATUS_MAP['Order Received']).cls
-                    }`}>
-                      {(STATUS_MAP[liveStatuses[selectedOrder.orderId] || selectedOrder.status || 'Order Received'] || STATUS_MAP['Order Received']).label}
-                    </span>
+                    {(() => {
+                      const curStatus = STATUS_MAP[liveStatuses[selectedOrder.orderId] || selectedOrder.status || 'Order Received'] || STATUS_MAP['Order Received']
+                      const CurIcon = curStatus.icon
+                      return (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${curStatus.cls}`}>
+                          <CurIcon className="w-3 h-3 shrink-0" />
+                          <span>{curStatus.label}</span>
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
 
@@ -478,9 +513,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     setSelectedOrder(null)
                     setShopModalOrder(ord)
                   }}
-                  className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>🏪</span> Show Order ID at Xerox Shop
+                  <Store className="w-4 h-4 shrink-0" />
+                  <span>Show Order ID at Xerox Shop</span>
                 </button>
               </div>
             </motion.div>
@@ -507,13 +543,14 @@ export default function MyOrdersPage({ onStartPrinting }) {
             >
               <button
                 onClick={() => setShopModalOrder(null)}
-                className="absolute right-4 top-4 w-8 h-8 rounded-full bg-orange-100 hover:bg-orange-200 text-gray-500 flex items-center justify-center text-xs transition-colors"
+                className="absolute right-4 top-4 w-8 h-8 rounded-full bg-orange-100 hover:bg-orange-200 text-gray-500 flex items-center justify-center text-xs transition-colors cursor-pointer"
+                aria-label="Close Modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
 
-              <div className="w-14 h-14 bg-orange-100 border border-orange-200 rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl">
-                🏪
+              <div className="w-14 h-14 bg-orange-100 border border-orange-200 rounded-2xl flex items-center justify-center mx-auto mb-3 text-[#F78C25]">
+                <Store className="w-7 h-7" />
               </div>
 
               <h3 className="text-base font-bold text-[#222222]">
@@ -536,10 +573,19 @@ export default function MyOrdersPage({ onStartPrinting }) {
               <div className="space-y-2">
                 <button
                   onClick={() => handleCopyId(shopModalOrder.orderId)}
-                  className="w-full py-2.5 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-1.5"
+                  className="w-full py-2.5 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span>{copied ? '✓' : '📋'}</span>
-                  <span>{copied ? 'Order ID Copied!' : 'Copy Order ID'}</span>
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 text-white" />
+                      <span>Order ID Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardList className="w-4 h-4 text-white" />
+                      <span>Copy Order ID</span>
+                    </>
+                  )}
                 </button>
                 <p className="text-[11px] text-gray-400 truncate">
                   File: <span className="font-medium text-gray-600">{shopModalOrder.fileName}</span>

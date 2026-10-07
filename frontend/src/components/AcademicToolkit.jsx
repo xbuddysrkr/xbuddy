@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { jsPDF } from 'jspdf'
+import { Zap, Check, FileEdit, Eye } from 'lucide-react'
 import { DOC_TYPES } from '../utils/letterTemplates'
 
 // ── SVG Icons (no emojis) ─────────────────────────────────────────────────────
@@ -258,8 +259,8 @@ function FormPanel({ fields, form, onChange, onGenerate }) {
         <p className="text-slate-900 text-xs sm:text-sm font-extrabold uppercase tracking-wider">
           Document Details
         </p>
-        <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">
-          Live Synced ⚡
+        <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+          Live Synced <Zap className="w-2.5 h-2.5" />
         </span>
       </div>
 
@@ -556,7 +557,7 @@ function DocModal({ docType, onClose, onPrint }) {
 
   function handleGenerate() {
     setMobileTab('preview')
-    showToast('✓ Document ready for download & print')
+    showToast('Document ready for download & print')
   }
 
   // Download PDF — exports the exact document layout on the canvas at true A4 scale
@@ -565,7 +566,7 @@ function DocModal({ docType, onClose, onPrint }) {
     try {
       const pdf = await exportToPdf(canvasRef.current, docType.id, { fontSize })
       pdf.save(`${docType.id}.pdf`)
-      showToast('✓ PDF downloaded in true A4 format!')
+      showToast('PDF downloaded in true A4 format!')
     } catch (err) {
       console.error(err)
       showToast('Export failed — try again')
@@ -640,13 +641,23 @@ function DocModal({ docType, onClose, onPrint }) {
               key={tab}
               type="button"
               onClick={() => setMobileTab(tab)}
-              className={`flex-1 py-2.5 text-xs font-bold capitalize transition-all cursor-pointer ${
+              className={`flex-1 py-2.5 text-xs font-bold capitalize transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 ${
                 mobileTab === tab
                   ? 'text-[#F78C25] border-b-2 border-[#F78C25] bg-orange-50/50'
                   : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              {tab === 'form' ? '📝 Fill Details' : '👁 Live Preview'}
+              {tab === 'form' ? (
+                <>
+                  <FileEdit className="w-3.5 h-3.5" />
+                  <span>Fill Details</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Live Preview</span>
+                </>
+              )}
             </button>
           ))}
         </div>

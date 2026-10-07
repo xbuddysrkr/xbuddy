@@ -1,5 +1,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
+import { Megaphone } from 'lucide-react'
 import XBuddyLogo from './XBuddyLogo'
 
 /**
@@ -173,9 +174,9 @@ export default function Footer({
                   <button
                     type="button"
                     onClick={onCampusAds}
-                    className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
+                    className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer flex items-center gap-1.5"
                   >
-                    📢 Campus Ads Manager
+                    <Megaphone className="w-3.5 h-3.5 text-[#F7931E]" /> Campus Ads Manager
                   </button>
                 </li>
               )}

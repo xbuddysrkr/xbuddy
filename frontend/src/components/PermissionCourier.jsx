@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { Lock, Rocket, Sparkles, Check, Package, Zap, ArrowUp } from 'lucide-react'
 
 /**
  * PermissionCourier
@@ -122,12 +123,12 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
         {/* ── STATE: DENIED ── */}
         {stage === 'denied' ? (
           <div className="flex items-start gap-3.5 pl-2">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-xl flex-shrink-0">
-              🔒
+            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 flex-shrink-0">
+              <Lock className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="text-sm font-bold text-gray-800">
-                Looks like permission was blocked 😅
+                Looks like permission was blocked
               </h4>
               <p className="text-xs text-gray-600 mt-1 leading-relaxed">
                 Allow notifications in your browser settings if you would like live chime alerts when your prints are ready at the counter.
@@ -140,17 +141,17 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
             <motion.div
               animate={shouldReduceMotion ? {} : { rotate: [0, -10, 10, 0], scale: [1, 1.2, 1] }}
               transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 1 }}
-              className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl flex-shrink-0 shadow-xs"
+              className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0 shadow-xs"
             >
-              🚀
+              <Rocket className="w-6 h-6" />
             </motion.div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 text-emerald-800 font-extrabold text-sm sm:text-base">
                 <span>Yesss! We&apos;re in!</span>
-                <span>✨</span>
+                <Sparkles className="w-4 h-4 text-emerald-600" />
               </div>
-              <p className="text-xs text-emerald-700 font-medium mt-0.5">
-                ✓ Sending your order &amp; enabling live print alerts!
+              <p className="text-xs text-emerald-700 font-medium mt-0.5 inline-flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" /> Sending your order &amp; enabling live print alerts!
               </p>
             </div>
           </div>
@@ -193,8 +194,8 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
                 }
               >
                 {/* Parcel Visual */}
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#FFE7D1] to-[#FFD2A8] border border-[#F78C25]/40 flex items-center justify-center text-2xl shadow-xs transition-transform group-hover:scale-105 active:scale-95">
-                  {stage === 'bonk' ? '💥' : '📦'}
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#FFE7D1] to-[#FFD2A8] border border-[#F78C25]/40 flex items-center justify-center shadow-xs transition-transform group-hover:scale-105 active:scale-95">
+                  {stage === 'bonk' ? <Zap className="w-6 h-6 text-amber-600" /> : <Package className="w-6 h-6 text-[#F78C25]" />}
                 </div>
 
                 {/* Bonk sound-bubble comic effect */}
@@ -206,7 +207,7 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
                     transition={{ duration: 0.3 }}
                     className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-red-500 text-white font-black text-[10px] rounded-full shadow-xs tracking-wider uppercase whitespace-nowrap pointer-events-none"
                   >
-                    BONK! 😂
+                    BONK!
                   </motion.div>
                 )}
 
@@ -217,7 +218,7 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
                     animate={{ opacity: 1, y: -8, scale: 1 }}
                     className="absolute -top-6 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-white border border-orange-300 text-[#F78C25] font-bold text-xs rounded-xl shadow-md whitespace-nowrap z-20 pointer-events-none"
                   >
-                    Almost there! 😄
+                    Almost there!
                   </motion.div>
                 )}
               </motion.div>
@@ -232,13 +233,13 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
               
               {/* Dynamic Headline Based on Stage */}
               <div className="flex items-center justify-center sm:justify-start gap-1.5">
-                <span className="text-base select-none">
-                  {stage === 'ready' ? '📦' : stage === 'bonk' ? '💥' : '🔐'}
+                <span className="select-none flex items-center">
+                  {stage === 'ready' ? <Package className="w-4 h-4 text-[#F78C25]" /> : stage === 'bonk' ? <Zap className="w-4 h-4 text-amber-500" /> : <Lock className="w-4 h-4 text-orange-500" />}
                 </span>
                 <h4 className="text-sm sm:text-base font-extrabold text-[#222222]">
                   {stage === 'ready' && 'Your order is ready to leave!'}
-                  {stage === 'bonk' && 'Oops! Invisible boundary! 😂'}
-                  {(stage === 'explain' || stage === 'waiting') && 'Oops! One tiny permission first 😅'}
+                  {stage === 'bonk' && 'Oops! Invisible boundary!'}
+                  {(stage === 'explain' || stage === 'waiting') && 'Oops! One tiny permission first'}
                 </h4>
               </div>
 
@@ -265,9 +266,9 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
                   <motion.span
                     animate={shouldReduceMotion ? {} : { y: [0, -3, 0] }}
                     transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}
-                    className="text-sm select-none"
+                    className="select-none flex items-center"
                   >
-                    👆
+                    <ArrowUp className="w-3.5 h-3.5 text-orange-900" />
                   </motion.span>
                   <span>TAP ALLOW ABOVE</span>
                 </div>
@@ -277,9 +278,9 @@ export default function PermissionCourier({ orderId, onPermissionGranted }) {
                   <motion.span
                     animate={shouldReduceMotion ? {} : { y: [0, -2, 0] }}
                     transition={{ duration: 0.8, repeat: Infinity }}
-                    className="text-sm select-none"
+                    className="select-none flex items-center"
                   >
-                    👆
+                    <ArrowUp className="w-3.5 h-3.5 text-orange-900" />
                   </motion.span>
                   <span>Check browser popup above &amp; tap Allow</span>
                 </div>

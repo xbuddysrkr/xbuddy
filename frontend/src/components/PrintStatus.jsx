@@ -1,5 +1,20 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import {
+  CheckCircle2,
+  Tag,
+  Clock,
+  CreditCard,
+  Radio,
+  Printer,
+  PartyPopper,
+  AlertTriangle,
+  FileText,
+  Check,
+  UserCheck,
+  Timer,
+  ClipboardList,
+} from 'lucide-react'
 import { getOrderStatus } from '../utils/api'
 import PermissionCourier from './PermissionCourier'
 import CampusPromotionAd from './CampusPromotionAd'
@@ -8,13 +23,13 @@ const POLL_INTERVAL_MS = 4000
 
 // Complete customer flow steps matching the Xerox shop workflow
 const FLOW_STEPS = [
-  { id: 'confirmed', label: 'Order Confirmed',        icon: '✅', desc: 'Order received successfully by Xerox shop' },
-  { id: 'show_id',   label: 'Show ID to Shopkeeper',  icon: '🏷️', desc: 'Present Order ID at the Xerox counter' },
-  { id: 'waiting',   label: 'Waiting for Shopkeeper', icon: '⏳', desc: 'Shopkeeper verifies order & payment' },
-  { id: 'verified',  label: 'Payment Verified',       icon: '💳', desc: 'Payment approved by shopkeeper' },
-  { id: 'sending',   label: 'Sending to Printer',     icon: '📡', desc: 'Document sent to Xerox print station' },
-  { id: 'printing',  label: 'Printing',               icon: '🖨️', desc: 'Xerox machine printing your pages' },
-  { id: 'completed', label: 'Completed',              icon: '🎉', desc: 'Collect printed documents at counter!' },
+  { id: 'confirmed', label: 'Order Confirmed',        icon: CheckCircle2, desc: 'Order received successfully by Xerox shop' },
+  { id: 'show_id',   label: 'Show ID to Shopkeeper',  icon: Tag,          desc: 'Present Order ID at the Xerox counter' },
+  { id: 'waiting',   label: 'Waiting for Shopkeeper', icon: Clock,        desc: 'Shopkeeper verifies order & payment' },
+  { id: 'verified',  label: 'Payment Verified',       icon: CreditCard,   desc: 'Payment approved by shopkeeper' },
+  { id: 'sending',   label: 'Sending to Printer',     icon: Radio,        desc: 'Document sent to Xerox print station' },
+  { id: 'printing',  label: 'Printing',               icon: Printer,      desc: 'Xerox machine printing your pages' },
+  { id: 'completed', label: 'Completed',              icon: PartyPopper,  desc: 'Collect printed documents at counter!' },
 ]
 
 function statusToStep(status) {
@@ -87,7 +102,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             clearInterval(pollRef.current)
             if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
               try {
-                new Notification('X Buddy — Print Ready! 🎉', {
+                new Notification('X Buddy — Print Ready!', {
                   body: `Order ${orderId}: Your document is printed! Collect at the Xerox counter.`,
                   icon: '/xbuddy-icon-192.png',
                 })
@@ -130,7 +145,9 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
       <div className="text-center mb-4">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 shadow-xs">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span className="text-emerald-800 text-xs font-bold uppercase tracking-wider">✓ Order Confirmed</span>
+          <span className="text-emerald-800 text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1">
+            <Check className="w-3.5 h-3.5 text-emerald-600" /> Order Confirmed
+          </span>
         </div>
         <div className="flex justify-center my-2">
           <span className="text-orange-400 font-bold text-lg select-none">↓</span>
@@ -159,7 +176,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           >
             {copied ? (
               <span className="text-emerald-600 text-xs font-bold flex items-center gap-1">
-                ✓ Copied
+                <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied
               </span>
             ) : (
               <svg className="w-5 h-5 text-gray-500 hover:text-[#F78C25]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -195,7 +212,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="p-5 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-center shadow-xs"
           >
             <div className="inline-flex items-center justify-center gap-2 text-amber-900 font-extrabold text-base sm:text-lg mb-1.5">
-              <span className="text-xl animate-pulse">⏳</span> Waiting for Shopkeeper
+              <Clock className="w-5 h-5 text-amber-700 animate-pulse" />
+              <span>Waiting for Shopkeeper</span>
             </div>
             <p className="text-xs sm:text-sm text-amber-800 leading-relaxed max-w-lg mx-auto">
               Your order has been received successfully.
@@ -211,7 +229,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="p-5 rounded-2xl bg-emerald-50/90 border border-emerald-200 text-center shadow-xs"
           >
             <div className="inline-flex items-center justify-center gap-2 text-emerald-900 font-extrabold text-base sm:text-lg mb-1.5">
-              <span className="text-xl">💳</span> Payment Verified!
+              <CreditCard className="w-5 h-5 text-emerald-600" />
+              <span>Payment Verified!</span>
             </div>
             <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed max-w-lg mx-auto">
               Your payment has been verified by the shopkeeper.
@@ -227,7 +246,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="p-5 rounded-2xl bg-blue-50/90 border border-blue-200 text-center shadow-xs"
           >
             <div className="inline-flex items-center justify-center gap-2 text-blue-900 font-extrabold text-base sm:text-lg mb-1.5">
-              <span className="text-xl animate-spin">📡</span> Sending to Printer...
+              <Radio className="w-5 h-5 text-blue-600 animate-pulse" />
+              <span>Sending to Printer...</span>
             </div>
             <p className="text-xs sm:text-sm text-blue-800 leading-relaxed max-w-lg mx-auto">
               Transmitting your documents to the Xerox print station.
@@ -242,7 +262,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="p-5 rounded-2xl bg-blue-50/90 border border-blue-200 text-center shadow-xs"
           >
             <div className="inline-flex items-center justify-center gap-2 text-blue-900 font-extrabold text-base sm:text-lg mb-1.5">
-              <span className="text-xl animate-pulse">🖨️</span> Printing Document...
+              <Printer className="w-5 h-5 text-blue-600 animate-pulse" />
+              <span>Printing Document...</span>
             </div>
             <p className="text-xs sm:text-sm text-blue-800 leading-relaxed max-w-lg mx-auto">
               Your document is currently printing on the Xerox machine.
@@ -257,7 +278,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="p-5 rounded-2xl bg-emerald-50/90 border border-emerald-200 text-center shadow-xs"
           >
             <div className="inline-flex items-center justify-center gap-2 text-emerald-900 font-extrabold text-lg sm:text-xl mb-1.5">
-              <span className="text-2xl">🎉</span> Printing Completed!
+              <PartyPopper className="w-6 h-6 text-emerald-600" />
+              <span>Printing Completed!</span>
             </div>
             <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed max-w-lg mx-auto">
               Your document has been printed successfully.
@@ -278,7 +300,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
         {serverOffline && !isDone && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
-            <span className="text-xl">⚠️</span>
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <p className="text-amber-800 font-bold text-sm">Print Station Notice</p>
               <p className="text-amber-700 text-xs mt-0.5">The print station is reconnecting. Please show Order ID <span className="font-mono font-bold text-[#F78C25]">{orderId}</span> to the shopkeeper directly.</p>
@@ -292,7 +314,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
         {printFailed && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3">
-            <span className="text-xl">⚠️</span>
+            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>
               <p className="text-red-600 font-bold text-sm">Print Issue Reported</p>
               <p className="text-gray-600 text-xs mt-0.5">There was an issue at the printer. Please inform the shopkeeper with Order ID <span className="font-mono font-bold text-[#F78C25]">{orderId}</span>.</p>
@@ -304,8 +326,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
       {/* Document Details & Visual Stepper Card */}
       <div className="bg-white border border-orange-100 rounded-3xl p-6 mb-6 shadow-sm">
         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-orange-100">
-          <div className="w-11 h-11 rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-center text-xl flex-shrink-0">
-            📄
+          <div className="w-11 h-11 rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-center flex-shrink-0">
+            <FileText className="w-5 h-5 text-[#F78C25]" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[#222222] font-bold truncate text-sm sm:text-base">{fileInfo?.name || 'Document'}</p>
@@ -336,6 +358,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             const isCompleted = i < currentStep || isDone
             const isActive = i === currentStep && !isDone
             const isLast = i === FLOW_STEPS.length - 1
+            const StepIcon = step.icon
 
             return (
               <div key={step.id} className="relative">
@@ -351,7 +374,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
                     isActive   ? 'bg-[#F78C25] text-white shadow-sm ring-4 ring-orange-100' :
                     'bg-gray-100 text-gray-400 border border-gray-200'
                   }`}>
-                    {isCompleted ? '✓' : step.icon}
+                    {isCompleted ? <Check className="w-4 h-4" /> : <StepIcon className="w-4 h-4" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-bold flex items-center gap-2 ${
@@ -407,38 +430,43 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           <button
             type="button"
             onClick={() => setCollectionChoice('now')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer inline-flex items-center justify-center gap-1.5 ${
               collectionChoice === 'now'
                 ? 'bg-[#F78C25] text-white border-[#F78C25] shadow-xs'
                 : 'bg-white text-gray-700 border-gray-200 hover:bg-orange-50'
             }`}
           >
-            🏃 Collecting Now
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>Collecting Now</span>
           </button>
           <button
             type="button"
             onClick={() => setCollectionChoice('later')}
-            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer inline-flex items-center justify-center gap-1.5 ${
               collectionChoice === 'later'
                 ? 'bg-[#F78C25] text-white border-[#F78C25] shadow-xs'
                 : 'bg-white text-gray-700 border-gray-200 hover:bg-orange-50'
             }`}
           >
-            ⏱️ Collect Later
+            <Timer className="w-3.5 h-3.5" />
+            <span>Collect Later</span>
           </button>
         </div>
 
         {collectionChoice === 'later' && (
           <div className="mt-3 p-3 bg-orange-50 rounded-xl border border-orange-100 text-xs text-gray-600">
-            <span className="font-bold text-emerald-700">✓ Saved in My Orders!</span>
+            <span className="font-bold text-emerald-700 inline-flex items-center gap-1">
+              <Check className="w-3.5 h-3.5" /> Saved in My Orders!
+            </span>
             <p className="mt-0.5 text-gray-500">You can safely close this browser window. Just give Order ID <span className="font-mono font-bold text-[#F78C25]">{orderId}</span> to the shopkeeper when you arrive.</p>
             {onViewMyOrders && (
               <button
                 type="button"
                 onClick={onViewMyOrders}
-                className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-[#F78C25] text-white font-bold rounded-lg text-xs hover:bg-[#e07010] transition-colors cursor-pointer"
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#F78C25] text-white font-bold rounded-lg text-xs hover:bg-[#e07010] transition-colors cursor-pointer"
               >
-                📋 View in My Orders →
+                <ClipboardList className="w-3.5 h-3.5" />
+                <span>View in My Orders →</span>
               </button>
             )}
           </div>

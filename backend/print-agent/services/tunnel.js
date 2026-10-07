@@ -113,11 +113,18 @@ async function verifyPublicTunnel(url) {
   return false
 }
 
+let lastTunnelStartAttempt = 0
+const TUNNEL_START_COOLDOWN = 60000 // Only attempt start once every 60s if not running
+
 // Ensure cloudflared.exe process is running
 function ensureCloudflaredRunning() {
   if (!fs.existsSync(CLOUDFLARED)) return
+  const now = Date.now()
+  if (now - lastTunnelStartAttempt < TUNNEL_START_COOLDOWN) return
+
   exec('tasklist /fi "imagename eq cloudflared.exe"', (err, stdout) => {
     if (!stdout || !stdout.toLowerCase().includes('cloudflared.exe')) {
+      lastTunnelStartAttempt = Date.now()
       logger.info('Starting Cloudflare Tunnel process...')
       try { fs.unlinkSync(TUNNEL_LOG) } catch {}
       const targetUrl = process.env.TUNNEL_TARGET_URL || process.env.LOCAL_API_URL || 'http://localhost:3001'

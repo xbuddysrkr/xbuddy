@@ -1,13 +1,14 @@
 import { motion, AnimatePresence } from 'framer-motion'
+import { Home, ClipboardList, Store, Info, HelpCircle, X } from 'lucide-react'
 import XBuddyLogo from './XBuddyLogo'
 
 export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentStep }) {
   const menuItems = [
-    { id: 'home', label: 'Home', icon: '🏠', action: () => onNavigate('home') },
-    { id: 'my_orders', label: 'My Orders', icon: '📋', action: () => onNavigate('my_orders') },
-    { id: 'admin', label: 'Shop Dashboard', icon: '🏪', action: () => onNavigate('admin') },
-    { id: 'about', label: 'About X Buddy', icon: '💡', action: () => onNavigate('about') },
-    { id: 'help', label: 'Help', icon: '❓', action: () => onNavigate('help') },
+    { id: 'home', label: 'Home', icon: Home, action: () => onNavigate('home') },
+    { id: 'my_orders', label: 'My Orders', icon: ClipboardList, action: () => onNavigate('my_orders') },
+    { id: 'admin', label: 'Shop Dashboard', icon: Store, action: () => onNavigate('admin') },
+    { id: 'about', label: 'About X Buddy', icon: Info, action: () => onNavigate('about') },
+    { id: 'help', label: 'Help', icon: HelpCircle, action: () => onNavigate('help') },
   ]
 
   return (
@@ -51,8 +52,9 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
                 <button
                   onClick={onClose}
                   className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 text-gray-400 flex items-center justify-center transition-colors"
+                  aria-label="Close Navigation Menu"
                 >
-                  ✕
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -63,6 +65,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
                 </p>
                 {menuItems.map((item) => {
                   const isActive = currentStep === item.id || (item.id === 'home' && currentStep === 'hero')
+                  const IconComponent = item.icon
                   return (
                     <button
                       key={item.id}
@@ -75,7 +78,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
                           : 'text-slate-700 hover:bg-orange-50/60 hover:text-[#F78C25]'
                         }`}
                     >
-                      <span className="text-base">{item.icon}</span>
+                      <IconComponent className="w-4 h-4 shrink-0 text-[#F78C25]" />
                       <span>{item.label}</span>
                     </button>
                   )

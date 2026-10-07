@@ -3,7 +3,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import TrustStats from './TrustStats'
 import BlurText from './BlurText'
 import XBuddyHeroMascot from './XBuddyHeroMascot'
-import { ArrowRight, Sparkles, FileText, ClipboardList } from 'lucide-react'
+import { ArrowRight, Sparkles, FileText, ClipboardList, Zap } from 'lucide-react'
 
 export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
   const startBtnRef = useRef(null)
@@ -45,7 +45,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
           className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-orange-200/80 bg-gradient-to-r from-orange-50 via-white to-amber-50 shadow-sm text-slate-800 text-xs font-semibold mb-6 group cursor-default"
         >
           <span className="w-2 h-2 rounded-full bg-[#F7931E] animate-pulse" />
-          <span className="text-[#F7931E] font-bold">⚡ Digital Platform</span>
+          <span className="text-[#F7931E] font-bold inline-flex items-center gap-1"><Zap className="w-3.5 h-3.5 fill-[#F7931E]" /> Digital Platform</span>
           <span className="text-slate-300">|</span>
           <span className="text-slate-600">Smart Print Ordering for Campus Xerox Shops</span>
         </motion.div>

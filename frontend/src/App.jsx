@@ -28,6 +28,7 @@ import CampusAdsAdmin from './components/CampusAdsAdmin'
 import XBuddyIntro from './components/XBuddyIntro'
 import XBuddyLogo from './components/XBuddyLogo'
 import Footer from './components/Footer'
+import { Menu, ClipboardList, Store, Megaphone, Check } from 'lucide-react'
 
 const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin', ADS: 'ads' }
 const DEFAULT_SETTINGS = {
@@ -385,7 +386,7 @@ export default function App() {
       file = fileOrUrl
     }
     const result = await processFile(file)
-    setFileInfo({ file: result.pdfBlob, originalFile: file, name: file.name, size: '', totalPages: result.totalPages, thumbnail: result.thumbnail, typeInfo: { label: 'PDF', icon: '📄', category: 'document' }, requiresAgent: false })
+    setFileInfo({ file: result.pdfBlob, originalFile: file, name: file.name, size: '', totalPages: result.totalPages, thumbnail: result.thumbnail, typeInfo: { label: 'PDF', icon: 'pdf', category: 'document' }, requiresAgent: false })
     goToStep(STEP.SETTINGS)
     setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)
   }
@@ -427,7 +428,7 @@ export default function App() {
                 className="w-7 h-7 min-[360px]:w-8 min-[360px]:h-8 sm:w-auto sm:h-auto p-1 min-[360px]:p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-xs min-[360px]:text-sm sm:text-base transition-all border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
                 aria-label="Open Navigation Menu"
               >
-                ☰
+                <Menu className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
               <button
                 onClick={handleReset}
@@ -452,14 +453,14 @@ export default function App() {
                   <button onClick={() => goToStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors cursor-pointer">
                     Resume Builder
                   </button>
-                  <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1 cursor-pointer">
-                    📋 My Orders
+                  <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1.5 cursor-pointer">
+                    <ClipboardList className="w-4 h-4 text-[#F7931E]" /> My Orders
                   </button>
-                  <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
-                    🏪 Shop Staff
+                  <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer">
+                    <Store className="w-3.5 h-3.5" /> Shop Staff
                   </button>
-                  <button onClick={() => goToStep(STEP.ADS)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer">
-                    📢 Campus Ads
+                  <button onClick={() => goToStep(STEP.ADS)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer">
+                    <Megaphone className="w-3.5 h-3.5" /> Campus Ads
                   </button>
                 </div>
                 <button
@@ -488,14 +489,14 @@ export default function App() {
                   const isActive = step === stepKeys[i]
                   return (
                     <div key={label} className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-2 shrink-0">
-                      <span className={`px-1.5 min-[360px]:px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg whitespace-nowrap transition-colors ${
+                      <span className={`px-1.5 min-[360px]:px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
                         isPast
                           ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
                           : isActive
                             ? 'bg-orange-50 text-[#F7931E] border border-orange-200 font-bold'
                             : 'text-slate-400 border border-transparent'
                       }`}>
-                        {isPast ? '✓' : `${i + 1}.`}{' '}
+                        {isPast ? <Check className="w-3 h-3 text-emerald-600 inline" /> : `${i + 1}.`}{' '}
                         {short === label ? (
                           label
                         ) : (

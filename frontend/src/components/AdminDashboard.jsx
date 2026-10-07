@@ -341,7 +341,13 @@ export default function AdminDashboard() {
             />
             <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="text-xs text-slate-400 absolute right-3 top-2.5">✕</button>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-xs text-slate-400 hover:text-white absolute right-3 top-2.5 cursor-pointer"
+                aria-label="Clear Search"
+              >
+                <X className="w-4 h-4" />
+              </button>
             )}
           </div>
 
@@ -531,10 +537,11 @@ export default function AdminDashboard() {
                               <button
                                 disabled={isBusy}
                                 onClick={() => handleStatusChange(order.id, 'Cancelled')}
-                                className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[11px] transition-colors"
+                                className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[11px] transition-colors cursor-pointer"
                                 title="Cancel Order"
+                                aria-label="Cancel Order"
                               >
-                                ✕
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </div>
@@ -575,9 +582,10 @@ export default function AdminDashboard() {
                 </div>
                 <button
                   onClick={() => setSelectedOrder(null)}
-                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 flex items-center justify-center text-xs transition-colors"
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors cursor-pointer"
+                  aria-label="Close Order Details"
                 >
-                  ✕
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 

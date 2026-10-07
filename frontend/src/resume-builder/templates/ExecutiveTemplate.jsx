@@ -1,4 +1,5 @@
 import React from 'react'
+import { Phone, Mail, MapPin, Link, Globe } from 'lucide-react'
 import EditableText from '../components/EditableText'
 import { useResume } from '../resumeStore'
 
@@ -71,11 +72,11 @@ export default function ExecutiveTemplate({ data, fontScale = 1 }) {
           flexWrap: 'wrap',
           gap: '12px',
         }}>
-          <span>📞 <EditableText value={personal.phone} placeholder="Phone" onChange={v => updatePersonal('phone', v)} /></span>
-          <span>✉ <EditableText value={personal.email} placeholder="Email" onChange={v => updatePersonal('email', v)} /></span>
-          <span>📍 <EditableText value={personal.location} placeholder="Location" onChange={v => updatePersonal('location', v)} /></span>
-          <span>🔗 <EditableText value={personal.linkedin} placeholder="LinkedIn" onChange={v => updatePersonal('linkedin', v)} /></span>
-          <span>🌐 <EditableText value={personal.portfolio} placeholder="Portfolio" onChange={v => updatePersonal('portfolio', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Phone size={10} strokeWidth={2} /> <EditableText value={personal.phone} placeholder="Phone" onChange={v => updatePersonal('phone', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Mail size={10} strokeWidth={2} /> <EditableText value={personal.email} placeholder="Email" onChange={v => updatePersonal('email', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><MapPin size={10} strokeWidth={2} /> <EditableText value={personal.location} placeholder="Location" onChange={v => updatePersonal('location', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Link size={10} strokeWidth={2} /> <EditableText value={personal.linkedin} placeholder="LinkedIn" onChange={v => updatePersonal('linkedin', v)} /></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Globe size={10} strokeWidth={2} /> <EditableText value={personal.portfolio} placeholder="Portfolio" onChange={v => updatePersonal('portfolio', v)} /></span>
         </div>
       </div>
 

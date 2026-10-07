@@ -7,27 +7,55 @@ const ORDERS_ENDPOINT = `${BACKEND_URL}/api/orders`
 
 let _tunnelUrl = null
 let _tunnelFetchedAt = 0
-const TUNNEL_TTL = 5 * 60 * 1000
+const TUNNEL_TTL = 3 * 60 * 1000
+
+async function isTunnelAlive(url) {
+  if (!url || !url.startsWith('https://')) return false
+  try {
+    const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(2000) })
+    if (res.ok) {
+      const data = await res.json()
+      return !!data?.success
+    }
+  } catch {}
+  return false
+}
 
 async function getTunnelUrl() {
   const now = Date.now()
   if (_tunnelUrl && (now - _tunnelFetchedAt) < TUNNEL_TTL) return _tunnelUrl
 
+  // 1. First, check Google Apps Script tunnel registry (most up-to-date in real-time)
+  try {
+    const res = await fetch(`${API_URL}?action=getTunnelUrl&key=${API_KEY}`, { signal: AbortSignal.timeout(5000) })
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.url?.startsWith('https://') && await isTunnelAlive(data.url)) {
+        _tunnelUrl = data.url
+        _tunnelFetchedAt = now
+        return _tunnelUrl
+      }
+    }
+  } catch {}
+
+  // 2. Check local print agent directly if on localhost
   const isLocalHost = typeof window !== 'undefined' && 
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-
-  // 1. Only test localhost port 3001 if the browser is actually running on localhost
   if (isLocalHost) {
     try {
       const res = await fetch(`${LOCAL_API}/tunnel-url`, { signal: AbortSignal.timeout(500) })
       if (res.ok) {
         const data = await res.json()
-        if (data?.url?.startsWith('https://')) { _tunnelUrl = data.url; _tunnelFetchedAt = now; return _tunnelUrl }
+        if (data?.url?.startsWith('https://') && await isTunnelAlive(data.url)) {
+          _tunnelUrl = data.url
+          _tunnelFetchedAt = now
+          return _tunnelUrl
+        }
       }
     } catch {}
   }
 
-  // 2. Try GitHub raw URLs (checking both root public and frontend/public locations)
+  // 3. Fallback to GitHub raw URLs with liveness verification
   const githubUrls = [
     GITHUB_RAW,
     'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt',
@@ -39,19 +67,14 @@ async function getTunnelUrl() {
       const res = await fetch(`${url}?t=${now}`, { signal: AbortSignal.timeout(4000) })
       if (res.ok) {
         const text = (await res.text()).trim()
-        if (text.startsWith('https://')) { _tunnelUrl = text; _tunnelFetchedAt = now; return _tunnelUrl }
+        if (text.startsWith('https://') && await isTunnelAlive(text)) {
+          _tunnelUrl = text
+          _tunnelFetchedAt = now
+          return _tunnelUrl
+        }
       }
     } catch {}
   }
-
-  // 3. Try Google Apps Script tunnel registry
-  try {
-    const res = await fetch(`${API_URL}?action=getTunnelUrl&key=${API_KEY}`, { signal: AbortSignal.timeout(5000) })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.url?.startsWith('https://')) { _tunnelUrl = data.url; _tunnelFetchedAt = now; return _tunnelUrl }
-    }
-  } catch {}
 
   _tunnelUrl = null
   return null
@@ -299,10 +322,9 @@ export async function boothLogin(pin) {
 }
 
 export async function validateAndRelease(orderId) {
-  const isLocalHost = typeof window !== 'undefined' && 
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   const tunnelUrl = await getTunnelUrl()
-  const endpoints = [tunnelUrl, isLocalHost ? LOCAL_API : null].filter(Boolean)
+  // Try both tunnel URL and LOCAL_API (so kiosk browser can hit local agent via PNA if tunnel is lagging)
+  const endpoints = [tunnelUrl, LOCAL_API].filter(Boolean)
   for (const base of endpoints) {
     try {
       const res = await fetch(`${base}/release-print`, {
@@ -547,8 +569,9 @@ export async function submitOrder(orderData, { onStep } = {}) {
       } catch {}
     }
     return { success: true, orderId, message: null }
-  } catch {
-    return { success: true, orderId, message: 'Order saved! Show your Order ID at the Xerox shop to collect your documents.' }
+  } catch (err) {
+    console.error('[Upload to Google Drive Failed]:', err.message)
+    throw { step: 'print_agent', reason: `File delivery failed: ${err.message}. Please retry.` }
   }
 }
 
