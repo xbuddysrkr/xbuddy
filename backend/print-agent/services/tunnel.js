@@ -9,8 +9,8 @@ const TUNNEL_LOG   = path.join(AGENT_DIR, 'tunnel.log')
 const TUNNEL_ERR   = path.join(AGENT_DIR, 'tunnel_err.log')
 const TUNNEL_CACHE = path.join(AGENT_DIR, 'tunnel-url.txt')
 const CLOUDFLARED  = path.join(AGENT_DIR, 'cloudflared.exe')
-const GAS_URL      = process.env.GAS_URL || 'https://script.google.com/macros/s/AKfycbymPjGiGwUpVHEY5rWy66tIenGzknt29CbfkkAnUJVTzUKG_bdi8f8Fz3M6eS6aLXot/exec'
-const API_KEY      = process.env.API_KEY || 'XB_API_SECRET_KEY_2026'
+const GAS_URL      = process.env.GAS_TUNNEL_URL || process.env.GAS_URL || process.env.GAS_ORDERS_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
+const API_KEY      = process.env.GAS_API_KEY || process.env.API_KEY || 'XB_API_SECRET_KEY_2026'
 
 let currentTunnelUrl   = null
 let watcherInterval    = null
@@ -49,21 +49,32 @@ function saveUrlToCache(url) {
 // Push tunnel URL to local public/tunnel-url.txt and sync to GitHub
 function pushToGitHub(url) {
   try {
-    const webDir = 'F:\\xerox buddy'
+    const webDir = process.env.GITHUB_REPO_DIR || path.resolve(__dirname, '..', '..')
     if (fs.existsSync(webDir)) {
-      const publicTxt = path.join(webDir, 'public', 'tunnel-url.txt')
-      fs.writeFileSync(publicTxt, url.trim() + '\n', 'utf8')
-
-      exec('git add public/tunnel-url.txt && git commit -m "tunnel: ' + url + '" && git push origin main', {
-        cwd: webDir,
-        timeout: 25000
-      }, (err, stdout, stderr) => {
-        if (!err) {
-          logger.success('Tunnel URL pushed to GitHub: ' + url)
-        } else {
-          // Silent or brief notice if git push is not ready
+      const candidates = [
+        path.join(webDir, 'frontend', 'public', 'tunnel-url.txt'),
+        path.join(webDir, 'public', 'tunnel-url.txt'),
+      ]
+      let gitRelativeFile = null
+      for (const p of candidates) {
+        if (fs.existsSync(path.dirname(p))) {
+          fs.writeFileSync(p, url.trim() + '\n', 'utf8')
+          if (!gitRelativeFile) gitRelativeFile = path.relative(webDir, p).replace(/\\/g, '/')
         }
-      })
+      }
+
+      if (gitRelativeFile) {
+        exec(`git add "${gitRelativeFile}" && git commit -m "tunnel: ${url}" && git push origin main`, {
+          cwd: webDir,
+          timeout: 25000
+        }, (err, stdout, stderr) => {
+          if (!err) {
+            logger.success('Tunnel URL pushed to GitHub: ' + url)
+          } else {
+            // Silent or brief notice if git push is not ready
+          }
+        })
+      }
     }
   } catch (err) {
     // Ignore non-fatal git push errors
@@ -109,8 +120,9 @@ function ensureCloudflaredRunning() {
     if (!stdout || !stdout.toLowerCase().includes('cloudflared.exe')) {
       logger.info('Starting Cloudflare Tunnel process...')
       try { fs.unlinkSync(TUNNEL_LOG) } catch {}
+      const targetUrl = process.env.TUNNEL_TARGET_URL || process.env.LOCAL_API_URL || 'http://localhost:3001'
       const proc = spawn(CLOUDFLARED, [
-        'tunnel', '--url', 'http://localhost:3001', '--logfile', TUNNEL_LOG
+        'tunnel', '--url', targetUrl, '--logfile', TUNNEL_LOG
       ], { cwd: AGENT_DIR, stdio: 'ignore', detached: true })
       proc.unref()
     }

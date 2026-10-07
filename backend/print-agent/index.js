@@ -1,3 +1,9 @@
+const path = require('path')
+try {
+  const envPath = path.resolve(__dirname, '..', '.env')
+  require('dotenv').config({ path: envPath })
+} catch {}
+
 const { updatePrintStatus }              = require('./services/updater')
 const { deletePdf }                      = require('./services/downloader')
 const { printPdf, getDefaultPrinter }    = require('./services/printer')

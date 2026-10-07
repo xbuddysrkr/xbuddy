@@ -1,7 +1,7 @@
 import { connectToDatabase } from './_lib/mongodb.js'
 
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
-const GAS_API_KEY = process.env.GAS_API_KEY || 'XB_API_SECRET_KEY_2026'
+const GAS_API_URL = process.env.GAS_ORDERS_URL || process.env.GAS_URL || process.env.GAS_API_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
+const GAS_API_KEY = process.env.GAS_API_KEY || process.env.API_KEY || 'XB_API_SECRET_KEY_2026'
 
 /**
  * Feature flag for Orders read source: 'mongo' (default for Phase 4) or 'gas' (rollback).

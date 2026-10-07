@@ -1,6 +1,6 @@
-const API_URL    = 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
-const LOCAL_API  = 'http://localhost:3001'
-const GITHUB_RAW = 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
+const API_URL    = import.meta.env.VITE_GAS_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
+const LOCAL_API  = import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:3001'
+const GITHUB_RAW = import.meta.env.VITE_GITHUB_TUNNEL_URL || 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
 const API_KEY    = import.meta.env.VITE_API_KEY || 'XB_API_SECRET_KEY_2026'
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/$/, '')
 const ORDERS_ENDPOINT = `${BACKEND_URL}/api/orders`

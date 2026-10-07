@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { getOrderStatus, updateOrderStatus } from '../utils/api'
 
 const SESSION_KEY   = 'xbuddy_booth_auth'
-const AGENT_URL     = 'http://localhost:3001'
+const AGENT_URL     = import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:3001'
 
 function isAuthed() { return sessionStorage.getItem(SESSION_KEY) === 'true' }
 

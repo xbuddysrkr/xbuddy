@@ -11,12 +11,13 @@ function serverlessDevPlugin() {
           // If MONGODB_URI is not configured locally, proxy to deployed Vercel cloud API
           if (!process.env.MONGODB_URI) {
             try {
-              const targetUrl = `https://xbuddysrkr.vercel.app${req.url}`
+              const baseUrl = (process.env.VITE_BACKEND_URL || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
+              const targetUrl = `${baseUrl}${req.url}`
               const buffers = []
               for await (const chunk of req) buffers.push(chunk)
               const body = Buffer.concat(buffers)
 
-              const proxyHeaders = { ...req.headers, host: 'xbuddysrkr.vercel.app' }
+              const proxyHeaders = { ...req.headers, host: new URL(baseUrl).host }
               delete proxyHeaders['content-length']
 
               const proxyRes = await fetch(targetUrl, {

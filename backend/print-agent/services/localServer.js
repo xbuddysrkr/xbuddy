@@ -11,7 +11,7 @@ const { deletePdf } = require('./downloader')
 const { getTunnelUrl } = require('./tunnel')
 
 const app         = express()
-const PORT        = 3001
+const PORT        = process.env.PRINT_AGENT_PORT || process.env.LOCAL_PORT || 3001
 const PENDING_DIR = path.join(__dirname, '..', 'downloads')
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS

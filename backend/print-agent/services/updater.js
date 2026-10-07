@@ -3,17 +3,17 @@ const axios = require('axios')
 const logger = require('../utils/logger')
 
 const CLOUD_API_URL = process.env.CLOUD_API_URL || 'https://xbuddysrkr.vercel.app'
-const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || 'XB_AGENT_SECRET_KEY_2026'
+const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'XB_AGENT_SECRET_KEY_2026'
 
 function getOrderSource() {
   return (process.env.PRINT_AGENT_ORDER_SOURCE || 'mongo').trim().toLowerCase()
 }
 
 // Legacy GAS / Sheets constants (strictly for emergency rollback)
-const SPREADSHEET_ID = '16R6KiGoNgH31qEJxCiKrNTD2u99TKHJfDlzgb6iH_nw'
+const SPREADSHEET_ID = process.env.ORDERS_SPREADSHEET_ID || '16R6KiGoNgH31qEJxCiKrNTD2u99TKHJfDlzgb6iH_nw'
 const SHEET_NAME     = 'Sheet1'
-const GAS_URL = process.env.GAS_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
-const API_KEY = process.env.API_KEY || 'XB_API_SECRET_KEY_2026'
+const GAS_URL = process.env.GAS_URL || process.env.GAS_ORDERS_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
+const API_KEY = process.env.GAS_API_KEY || process.env.API_KEY || 'XB_API_SECRET_KEY_2026'
 
 function getAuth() {
   return new google.auth.GoogleAuth({
