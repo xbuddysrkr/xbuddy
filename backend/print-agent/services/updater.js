@@ -2,8 +2,8 @@ const { google } = require('googleapis')
 const axios = require('axios')
 const logger = require('../utils/logger')
 
-const CLOUD_API_URL = process.env.CLOUD_API_URL || 'https://xbuddysrkr.vercel.app'
-const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'XB_AGENT_SECRET_KEY_2026'
+const CLOUD_API_URL = process.env.CLOUD_API_URL || 'https://xbuddy.onrender.com'
+const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'd834c5055c2a2401ee3f59cd121f59258403156e86034eab956dc099351dd9e4'
 
 function getOrderSource() {
   return (process.env.PRINT_AGENT_ORDER_SOURCE || 'mongo').trim().toLowerCase()

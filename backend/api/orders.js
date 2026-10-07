@@ -614,9 +614,11 @@ export default async function handler(req, res) {
           }
           mongoUpdated = true
         } else {
+          const updateFields = { printStatus, updatedAt: nowIso }
+          if (req.body?.driveUrl) updateFields.driveUrl = String(req.body.driveUrl).trim()
           await orders.updateOne(
             { orderId },
-            { $set: { printStatus, updatedAt: nowIso } }
+            { $set: updateFields }
           )
           mongoUpdated = true
         }

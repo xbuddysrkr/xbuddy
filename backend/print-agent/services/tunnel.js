@@ -226,11 +226,11 @@ function startBackgroundWatchers() {
       // Check if cloudflared is still running
       ensureCloudflaredRunning()
 
-      // If we have an active URL, ping it to make sure the edge is alive
+      // Soft verify tunnel; do NOT kill cloudflared on occasional loopback timeouts
       if (currentTunnelUrl) {
         const axios = require('axios')
         try {
-          const res = await axios.get(`${currentTunnelUrl}/status`, { timeout: 8000 })
+          const res = await axios.get(`${currentTunnelUrl}/status`, { timeout: 10000 })
           if (res.data && res.data.success) {
             consecutiveFails = 0
           } else {
@@ -240,9 +240,9 @@ function startBackgroundWatchers() {
           consecutiveFails++
         }
 
-        // If 3 consecutive public pings failed while internet is UP, tunnel is stale/dead
-        if (consecutiveFails >= 3) {
-          logger.warn('Cloudflare tunnel unresponsive (' + consecutiveFails + ' missed pings). Auto-healing...')
+        // Only restart if consistently dead for 20 pings (5 minutes)
+        if (consecutiveFails >= 20) {
+          logger.warn(`Cloudflare tunnel unresponsive (${consecutiveFails} missed pings over 5 minutes). Auto-healing...`)
           consecutiveFails = 0
           restartTunnel()
         }

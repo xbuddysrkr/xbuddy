@@ -2,7 +2,7 @@ import { connectToDatabase } from '../_lib/mongodb.js'
 
 const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'XB_AGENT_SECRET_KEY_2026'
 
-const PENDING_PRINT_STATUSES = ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending']
+const PENDING_PRINT_STATUSES = ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready']
 
 /**
  * Normalizes an order from MongoDB to ensure all print settings are explicitly present.
