@@ -14,7 +14,21 @@ const PORT = process.env.PORT || 3000
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-agent-key', 'x-agent-secret'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'x-api-key',
+    'X-API-Key',
+    'x-agent-key',
+    'X-Agent-Key',
+    'x-agent-secret',
+    'X-Agent-Secret',
+    'x-pin',
+    'X-Pin',
+    'Accept',
+    'Origin',
+    'X-Requested-With'
+  ],
 }))
 
 // Body parsers: allow large base64 PDF uploads

@@ -13,22 +13,38 @@ async function getTunnelUrl() {
   const now = Date.now()
   if (_tunnelUrl && (now - _tunnelFetchedAt) < TUNNEL_TTL) return _tunnelUrl
 
-  try {
-    const res = await fetch(`${LOCAL_API}/tunnel-url`, { signal: AbortSignal.timeout(500) })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.url?.startsWith('https://')) { _tunnelUrl = data.url; _tunnelFetchedAt = now; return _tunnelUrl }
-    }
-  } catch {}
+  const isLocalHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
 
-  try {
-    const res = await fetch(`${GITHUB_RAW}?t=${now}`, { signal: AbortSignal.timeout(6000) })
-    if (res.ok) {
-      const url = (await res.text()).trim()
-      if (url.startsWith('https://')) { _tunnelUrl = url; _tunnelFetchedAt = now; return _tunnelUrl }
-    }
-  } catch {}
+  // 1. Only test localhost port 3001 if the browser is actually running on localhost
+  if (isLocalHost) {
+    try {
+      const res = await fetch(`${LOCAL_API}/tunnel-url`, { signal: AbortSignal.timeout(500) })
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.url?.startsWith('https://')) { _tunnelUrl = data.url; _tunnelFetchedAt = now; return _tunnelUrl }
+      }
+    } catch {}
+  }
 
+  // 2. Try GitHub raw URLs (checking both root public and frontend/public locations)
+  const githubUrls = [
+    GITHUB_RAW,
+    'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt',
+    'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/frontend/public/tunnel-url.txt',
+  ].filter(Boolean)
+
+  for (const url of githubUrls) {
+    try {
+      const res = await fetch(`${url}?t=${now}`, { signal: AbortSignal.timeout(4000) })
+      if (res.ok) {
+        const text = (await res.text()).trim()
+        if (text.startsWith('https://')) { _tunnelUrl = text; _tunnelFetchedAt = now; return _tunnelUrl }
+      }
+    } catch {}
+  }
+
+  // 3. Try Google Apps Script tunnel registry
   try {
     const res = await fetch(`${API_URL}?action=getTunnelUrl&key=${API_KEY}`, { signal: AbortSignal.timeout(5000) })
     if (res.ok) {
@@ -246,8 +262,10 @@ export async function boothLogin(pin) {
   }
 
   // 2. Try Tunnel and Local Agent
+  const isLocalHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   const tunnelUrl = await getTunnelUrl()
-  const endpoints = [tunnelUrl, LOCAL_API].filter(Boolean)
+  const endpoints = [tunnelUrl, isLocalHost ? LOCAL_API : null].filter(Boolean)
   for (const base of endpoints) {
     try {
       const res = await fetch(`${base}/booth-login`, {
@@ -261,8 +279,10 @@ export async function boothLogin(pin) {
 }
 
 export async function validateAndRelease(orderId) {
+  const isLocalHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   const tunnelUrl = await getTunnelUrl()
-  const endpoints = [LOCAL_API, tunnelUrl].filter(Boolean)
+  const endpoints = [tunnelUrl, isLocalHost ? LOCAL_API : null].filter(Boolean)
   for (const base of endpoints) {
     try {
       const res = await fetch(`${base}/release-print`, {
