@@ -74,24 +74,44 @@ async function localGet(path) {
 }
 
 async function uploadPdfViaGas(orderId, fileName, pdfBase64) {
-  const CHUNK_SIZE = 200 * 1024
+  // Use 50KB chunks to stay safely under Google Apps Script CacheService 100KB limit
+  const CHUNK_SIZE = 50 * 1024
   const total = Math.ceil(pdfBase64.length / CHUNK_SIZE)
   for (let i = 0; i < total; i++) {
     const chunk = pdfBase64.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE)
-    const params = new URLSearchParams({
-      action: 'saveChunk', key: API_KEY, fileId: orderId, fileType: 'pdf',
-      index: String(i), total: String(total), chunk,
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'saveChunk',
+        key: API_KEY,
+        fileId: orderId,
+        fileType: 'pdf',
+        index: String(i),
+        total: String(total),
+        chunk,
+      }),
+      signal: AbortSignal.timeout(30000),
     })
-    const res = await fetch(`${API_URL}?${params.toString()}`, { signal: AbortSignal.timeout(30000) })
     if (!res.ok) throw new Error(`Chunk ${i} failed`)
     const data = await res.json()
-    if (!data?.success) throw new Error(`Chunk ${i} rejected`)
+    if (!data?.success) throw new Error(`Chunk ${i} rejected: ${data?.error || ''}`)
   }
-  const res = await fetch(`${API_URL}?${new URLSearchParams({
-    action: 'assemblePdf', key: API_KEY, fileId: orderId, fileName, mimeType: 'application/pdf',
-  }).toString()}`, { signal: AbortSignal.timeout(60000) })
+
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      action: 'assemblePdf',
+      key: API_KEY,
+      fileId: orderId,
+      fileName,
+      mimeType: 'application/pdf',
+    }),
+    signal: AbortSignal.timeout(60000),
+  })
   const data = await res.json()
-  if (!data?.success || !data?.fileUrl) throw new Error('Assembly failed')
+  if (!data?.success || !data?.fileUrl) throw new Error(`Assembly failed: ${data?.error || ''}`)
   return data.fileUrl
 }
 
