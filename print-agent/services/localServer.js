@@ -82,8 +82,8 @@ app.post('/booth-login', (req, res) => {
   res.json({ success: true })
 })
 
-// POST /save-order - receives PDF + screenshot + print settings
-app.post('/save-order', (req, res) => {
+// POST /save-order - receives PDF + screenshot + print settings for an existing MongoDB order
+app.post('/save-order', async (req, res) => {
   try {
     const {
       orderId, fileName, pdfBase64, screenshotBase64,
@@ -92,19 +92,34 @@ app.post('/save-order', (req, res) => {
       pageRangeMode = 'all', customPages = '', selectedPages = [],
       selectedPageCount, printableCount,
     } = req.body
-    if (!orderId) return res.json({ success: false, error: 'Missing orderId' })
+    if (!orderId) return res.status(400).json({ success: false, error: 'Missing orderId' })
+
+    const cleanId = orderId.trim().toUpperCase()
+
+    // TASK 3: Verify order already exists in authoritative MongoDB database
+    const mongoOrder = await getOrderByIdForRelease(cleanId)
+    if (!mongoOrder) {
+      logger.warn(`[AGENT] Refusing /save-order: Order ${cleanId} does not exist in authoritative MongoDB database`)
+      return res.status(404).json({
+        success: false,
+        error: `Order ${cleanId} not found in authoritative MongoDB database. Orders must be created in MongoDB before staging files.`,
+        orderId: cleanId,
+      })
+    }
+
+    logger.success(`[AGENT] Verified order ${cleanId} exists in MongoDB primary`)
 
     if (pdfBase64) {
-      fs.writeFileSync(path.join(PENDING_DIR, `${orderId}_pending.b64`), pdfBase64)
-      logger.success(`PDF saved locally for ${orderId} (${(pdfBase64.length / 1024).toFixed(0)} KB)`)
+      fs.writeFileSync(path.join(PENDING_DIR, `${cleanId}_pending.b64`), pdfBase64)
+      logger.success(`[AGENT] PDF staged locally for ${cleanId} (${(pdfBase64.length / 1024).toFixed(0)} KB)`)
     }
-    if (screenshotBase64) saveScreenshotLocally(orderId, screenshotBase64)
+    if (screenshotBase64) saveScreenshotLocally(cleanId, screenshotBase64)
 
-    const rawColor = String(colorMode || req.body.printType || '').trim().toLowerCase()
+    const rawColor = String(colorMode || mongoOrder.colorMode || req.body.printType || '').trim().toLowerCase()
     const normalizedColorMode = (rawColor === 'color' || rawColor === 'colour') ? 'color' : 'bw'
 
-    let resolvedPageRange = pageRange
-    if (pageRange === 'custom') {
+    let resolvedPageRange = pageRange || mongoOrder.pageRange || 'all'
+    if (resolvedPageRange === 'custom') {
       if (customPages && String(customPages).trim()) {
         resolvedPageRange = String(customPages).trim()
       } else if (Array.isArray(selectedPages) && selectedPages.length > 0) {
@@ -114,30 +129,30 @@ app.post('/save-order', (req, res) => {
       }
     }
 
-    saveSettings(orderId, {
-      fileName: fileName || `${orderId}.pdf`,
-      copies: Number(copies) || 1,
-      printSide,
+    saveSettings(cleanId, {
+      fileName: fileName || mongoOrder.fileName || `${cleanId}.pdf`,
+      copies: Number(copies || mongoOrder.copies) || 1,
+      printSide: printSide || mongoOrder.printSide || 'Single',
       colorMode: normalizedColorMode,
-      pageSize,
-      paperSize: pageSize,
-      orientation,
+      pageSize: pageSize || mongoOrder.pageSize || 'A4',
+      paperSize: pageSize || mongoOrder.pageSize || 'A4',
+      orientation: orientation || mongoOrder.orientation || 'portrait',
       pageRange: resolvedPageRange,
-      pageRangeMode,
-      customPages,
-      selectedPages,
-      selectedPageCount: selectedPageCount || (Array.isArray(selectedPages) ? selectedPages.length : 0),
+      pageRangeMode: pageRangeMode || mongoOrder.pageRangeMode || 'all',
+      customPages: customPages || mongoOrder.customPages || '',
+      selectedPages: selectedPages?.length ? selectedPages : (mongoOrder.selectedPages || []),
+      selectedPageCount: selectedPageCount || mongoOrder.selectedPageCount || 1,
     })
-    logger.success(`Order queued: ${orderId} | ${normalizedColorMode.toUpperCase()} | ${printSide} | ${copies} copy | ${pageSize} | pages: ${resolvedPageRange}`)
-    res.json({ success: true, orderId })
+    logger.success(`[AGENT] Order ${cleanId} staged locally for booth release | ${normalizedColorMode.toUpperCase()} | ${copies} copy | pages: ${resolvedPageRange}`)
+    res.json({ success: true, orderId: cleanId, mongoVerified: true })
   } catch (err) {
     logger.error(`save-order failed: ${err.message}`)
-    res.json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message })
   }
 })
 
-// POST /save-order-meta
-app.post('/save-order-meta', (req, res) => {
+// POST /save-order-meta - receives Drive PDF URL for an existing MongoDB order
+app.post('/save-order-meta', async (req, res) => {
   try {
     const {
       orderId, driveUrl,
@@ -146,13 +161,28 @@ app.post('/save-order-meta', (req, res) => {
       pageRangeMode = 'all', customPages = '', selectedPages = [],
       selectedPageCount, printableCount,
     } = req.body
-    if (!orderId) return res.json({ success: false, error: 'Missing orderId' })
+    if (!orderId) return res.status(400).json({ success: false, error: 'Missing orderId' })
 
-    const rawColor = String(colorMode || req.body.printType || '').trim().toLowerCase()
+    const cleanId = orderId.trim().toUpperCase()
+
+    // TASK 3: Verify order already exists in authoritative MongoDB database
+    const mongoOrder = await getOrderByIdForRelease(cleanId)
+    if (!mongoOrder) {
+      logger.warn(`[AGENT] Refusing /save-order-meta: Order ${cleanId} does not exist in authoritative MongoDB database`)
+      return res.status(404).json({
+        success: false,
+        error: `Order ${cleanId} not found in authoritative MongoDB database. Orders must be created in MongoDB before staging files.`,
+        orderId: cleanId,
+      })
+    }
+
+    logger.success(`[AGENT] Verified order ${cleanId} exists in MongoDB primary`)
+
+    const rawColor = String(colorMode || mongoOrder.colorMode || req.body.printType || '').trim().toLowerCase()
     const normalizedColorMode = (rawColor === 'color' || rawColor === 'colour') ? 'color' : 'bw'
 
-    let resolvedPageRange = pageRange
-    if (pageRange === 'custom') {
+    let resolvedPageRange = pageRange || mongoOrder.pageRange || 'all'
+    if (resolvedPageRange === 'custom') {
       if (customPages && String(customPages).trim()) {
         resolvedPageRange = String(customPages).trim()
       } else if (Array.isArray(selectedPages) && selectedPages.length > 0) {
@@ -162,25 +192,26 @@ app.post('/save-order-meta', (req, res) => {
       }
     }
 
-    saveSettings(orderId, {
-      copies: Number(copies) || 1,
-      printSide,
+    saveSettings(cleanId, {
+      fileName: mongoOrder.fileName || `${cleanId}.pdf`,
+      copies: Number(copies || mongoOrder.copies) || 1,
+      printSide: printSide || mongoOrder.printSide || 'Single',
       colorMode: normalizedColorMode,
-      pageSize,
-      paperSize: pageSize,
-      orientation,
+      pageSize: pageSize || mongoOrder.pageSize || 'A4',
+      paperSize: pageSize || mongoOrder.pageSize || 'A4',
+      orientation: orientation || mongoOrder.orientation || 'portrait',
       pageRange: resolvedPageRange,
-      pageRangeMode,
-      customPages,
-      selectedPages,
-      selectedPageCount: selectedPageCount || (Array.isArray(selectedPages) ? selectedPages.length : 0),
-      driveUrl,
+      pageRangeMode: pageRangeMode || mongoOrder.pageRangeMode || 'all',
+      customPages: customPages || mongoOrder.customPages || '',
+      selectedPages: selectedPages?.length ? selectedPages : (mongoOrder.selectedPages || []),
+      selectedPageCount: selectedPageCount || mongoOrder.selectedPageCount || 1,
+      driveUrl: driveUrl || mongoOrder.driveUrl,
     })
-    logger.success(`Order queued: ${orderId} | ${normalizedColorMode.toUpperCase()} | ${printSide} | ${copies} copy | Drive PDF ready | pages: ${resolvedPageRange}`)
-    res.json({ success: true, orderId })
+    logger.success(`[AGENT] Order ${cleanId} Drive metadata staged locally for booth release`)
+    res.json({ success: true, orderId: cleanId, mongoVerified: true })
   } catch (err) {
     logger.error(`save-order-meta failed: ${err.message}`)
-    res.json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message })
   }
 })
 
@@ -273,32 +304,20 @@ app.post('/release-print', async (req, res) => {
   const id = orderId.trim().toUpperCase()
   logger.info(`Booth release request: ${id}`)
 
-  // 1. Retrieve order from MongoDB primary (or legacy fallback if configured)
+  // 1. Retrieve order from authoritative MongoDB primary (or legacy fallback if configured)
   let order = await getOrderByIdForRelease(id)
   
-  // Local disk fallback: if not in cloud, check if files exist locally
-  const filePath = path.join(PENDING_DIR, `${id}.pdf`)
-  const b64Path  = path.join(PENDING_DIR, `${id}_pending.b64`)
-  const setPath  = path.join(PENDING_DIR, `${id}_settings.json`)
-
   if (!order) {
-    if (fs.existsSync(filePath) || fs.existsSync(b64Path) || fs.existsSync(setPath)) {
-      logger.info(`Order ${id} found in local print station storage`)
-      const localSet = loadSettings(id)
-      order = {
-        orderId:       id,
-        fileName:      localSet.fileName || `${id}.pdf`,
-        copies:        Number(localSet.copies) || 1,
-        colorMode:     (localSet.colorMode === 'color' || localSet.printType === 'Color') ? 'color' : 'bw',
-        printType:     (localSet.colorMode === 'color' || localSet.printType === 'Color') ? 'Color' : 'B&W',
-        printStatus:   'waiting_for_shopkeeper',
-        releaseStatus: 'Waiting',
-        isLocalOnly:   true,
-      }
-    } else {
-      return res.json({ success: false, error: 'Order not found. Check the Order ID.' })
-    }
+    logger.warn(`[AGENT] Release rejected: Order ${id} not found in authoritative MongoDB database`)
+    return res.status(404).json({
+      success: false,
+      error: 'Order not found in authoritative database. Check the Order ID.',
+      orderId: id,
+    })
   }
+
+  // Local disk file path for physical PDF transmission
+  const filePath = path.join(PENDING_DIR, `${id}.pdf`)
 
   // Prevent rapid double-clicks within 15 seconds locally
   if (global._activePrints && global._activePrints[id] && (Date.now() - global._activePrints[id]) < 15000) {
@@ -308,18 +327,16 @@ app.post('/release-print', async (req, res) => {
   global._activePrints[id] = Date.now()
 
   // 2. ATOMIC CLAIM in MongoDB (TASK 4): only one claimant transitions pending -> Printing
-  if (!order.isLocalOnly) {
-    logger.info(`[AGENT] Claiming order ${id}`)
-    const claimRes = await claimOrder(id)
-    if (!claimRes.success && claimRes.conflict) {
-      delete global._activePrints[id]
-      logger.warn(`[AGENT] Order ${id} is already claimed or printing`)
-      return res.json({
-        success: false,
-        error: 'Order is already printing or was previously released.',
-        conflict: true,
-      })
-    }
+  logger.info(`[AGENT] Claiming order ${id}`)
+  const claimRes = await claimOrder(id)
+  if (!claimRes.success && claimRes.conflict) {
+    delete global._activePrints[id]
+    logger.warn(`[AGENT] Order ${id} is already claimed or printing`)
+    return res.json({
+      success: false,
+      error: 'Order is already printing or was previously released.',
+      conflict: true,
+    })
   }
 
   logger.success(`Releasing: ${id} | ${order.fileName || 'document'} | ${order.copies || 1} copy`)

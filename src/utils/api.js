@@ -366,19 +366,24 @@ export async function submitOrder(orderData, { onStep } = {}) {
     serviceFee:        orderData.serviceFee        || 0,
   }
 
-  // ── Step 1: Save order via Dual-Write API (MongoDB Atlas + Google Sheets) ─
+  // ── Step 1: Create authoritative order in MongoDB Atlas ──────────────────
   onStep?.('save_order')
   let orderResult = null
   let orderId = clientOrderId
 
+  // Validate parameters before network calls
+  if (!clientOrderId || !orderData.fileName || !orderData.amount) {
+    throw { step: 'save_order', reason: 'Invalid order parameters' }
+  }
+
   try {
-    const dualWritePayload = {
+    const orderPayload = {
       action: 'saveOrder',
       orderId: clientOrderId,
       name: orderData.name,
       fileName: orderData.fileName,
-      totalPages: orderData.totalPages,
-      copies: printSettings.copies,
+      totalPages: Number(orderData.totalPages) || 1,
+      copies: Number(printSettings.copies) || 1,
       colorMode: normalizedColor,
       printType: printSettings.printType,
       printSide: printSettings.printSide,
@@ -386,10 +391,10 @@ export async function submitOrder(orderData, { onStep } = {}) {
       pageSize: resolvedPaperSize,
       paperSize: resolvedPaperSize,
       orientation: printSettings.orientation,
-      amount: orderData.amount,
-      printingCost: orderData.printingCost || 0,
-      serviceFee: orderData.serviceFee || 0,
-      digitalProcessingFee: orderData.digitalProcessingFee || orderData.serviceFee || 0,
+      amount: Number(orderData.amount) || 0,
+      printingCost: Number(orderData.printingCost) || 0,
+      serviceFee: Number(orderData.serviceFee) || 0,
+      digitalProcessingFee: Number(orderData.digitalProcessingFee || orderData.serviceFee) || 0,
       transactionId: orderData.transactionId,
       pageRange: printSettings.pageRange,
       pageRangeMode: printSettings.pageRangeMode,
@@ -397,37 +402,42 @@ export async function submitOrder(orderData, { onStep } = {}) {
       printableCount: printSettings.printableCount,
       selectedPages: printSettings.selectedPages,
       selectedPageCount: printSettings.selectedPageCount,
+      printStatus: 'waiting_for_shopkeeper',
+      paymentStatus: 'pending',
     }
 
     const res = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dualWritePayload),
+      body: JSON.stringify(orderPayload),
       signal: AbortSignal.timeout(20000),
     })
 
     if (res.ok) {
       orderResult = await res.json()
-      if (orderResult?.success) {
+      if (orderResult?.success && orderResult?.mongoSaved) {
         orderId = orderResult.orderId || clientOrderId
+        console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${orderId} successfully saved to MongoDB Atlas`)
       }
     } else {
       const errData = await res.json().catch(() => null)
-      console.warn('[Dual-Write API Warning]:', errData || res.status)
+      console.warn('[MongoDB Orders API Error]:', errData || res.status)
+      orderResult = errData
     }
   } catch (apiErr) {
-    console.warn('[Dual-Write Serverless Call Notice]:', apiErr.message)
+    console.error('[MongoDB Orders API Call Error]:', apiErr.message)
+    throw { step: 'save_order', reason: `Failed to connect to Orders API: ${apiErr.message}` }
   }
 
   // Phase 4: MongoDB is authoritative. Strictly reject writes to Google Apps Script / Orders Sheet.
-  if (!orderResult?.success) {
+  if (!orderResult?.success || !orderResult?.mongoSaved) {
     throw {
       step: 'save_order',
       reason: orderResult?.error || 'Unable to save order to MongoDB orders service',
     }
   }
 
-  // ── Step 2: Deliver PDF to agent ──────────────────────────────────────────
+  // ── Step 2: Deliver PDF to agent for local staging ────────────────────────
   onStep?.('print_agent')
 
   // Try local (xerox shop agent machine)
