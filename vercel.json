@@ -1,4 +1,6 @@
 {
+  "buildCommand": "npm run build --prefix frontend",
+  "outputDirectory": "frontend/dist",
   "rewrites": [
     { "source": "/api/agent/orders/:path*", "destination": "/api/agent/orders?route=:path*" },
     { "source": "/((?!api/|assets/|booth.html|qr-code.png|favicon.ico|manifest.json|xbuddy-icon-.*\\.png).*)", "destination": "/index.html" }

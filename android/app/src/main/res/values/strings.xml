@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">X Buddy</string>
-    <string name="title_activity_main">X Buddy</string>
-    <string name="package_name">com.xbuddy.app</string>
-    <string name="custom_url_scheme">com.xbuddy.app</string>
-</resources>
