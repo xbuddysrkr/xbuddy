@@ -4,8 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "npm --prefix backend start",
+    "build": "npm --prefix backend install",
+    "postinstall": "npm --prefix backend install",
     "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build",
     "test": "npm --prefix backend test && npm --prefix frontend test"
   }
 }
