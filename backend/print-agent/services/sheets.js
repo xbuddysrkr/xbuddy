@@ -38,8 +38,9 @@ const COL = {
 }
 
 function getAuth() {
+  const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS || './credentials.json'
   return new google.auth.GoogleAuth({
-    keyFile: './credentials.json',
+    keyFile,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   })
 }

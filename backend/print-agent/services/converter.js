@@ -8,6 +8,7 @@ const MUTOOL_PRIMARY = path.join(__dirname, '..', 'bin', 'mutool.exe')
 const MUTOOL_WINGET = 'C:\\Users\\SRKREC\\AppData\\Local\\Microsoft\\WinGet\\Packages\\ArtifexSoftware.mutool_Microsoft.Winget.Source_8wekyb3d8bbwe\\mupdf-1.23.0-windows\\mutool.exe'
 
 function getMutoolPath() {
+  if (process.env.MUTOOL_PATH && fs.existsSync(process.env.MUTOOL_PATH)) return process.env.MUTOOL_PATH
   if (fs.existsSync(MUTOOL_PRIMARY)) return MUTOOL_PRIMARY
   if (fs.existsSync(MUTOOL_WINGET)) return MUTOOL_WINGET
   return null

@@ -3,12 +3,13 @@ const fs     = require('fs')
 const path   = require('path')
 const logger = require('../utils/logger')
 
-const PDF_FOLDER_ID        = '1QRJ-c9wDYJJoDpflTdhkZ91rcjVBgswF'
-const SCREENSHOT_FOLDER_ID = '13aksBYQ3sRnMh_oFKTAXagUr4h7xMD9E'
+const PDF_FOLDER_ID        = process.env.PDF_FOLDER_ID || '1QRJ-c9wDYJJoDpflTdhkZ91rcjVBgswF'
+const SCREENSHOT_FOLDER_ID = process.env.SCREENSHOT_FOLDER_ID || '13aksBYQ3sRnMh_oFKTAXagUr4h7xMD9E'
 
 function getAuth() {
+  const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS || './credentials.json'
   return new google.auth.GoogleAuth({
-    keyFile: './credentials.json',
+    keyFile,
     scopes: [
       'https://www.googleapis.com/auth/drive',
       'https://www.googleapis.com/auth/spreadsheets',

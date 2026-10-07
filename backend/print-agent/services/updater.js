@@ -16,8 +16,9 @@ const GAS_URL = process.env.GAS_URL || process.env.GAS_ORDERS_URL || 'https://sc
 const API_KEY = process.env.GAS_API_KEY || process.env.API_KEY || 'XB_API_SECRET_KEY_2026'
 
 function getAuth() {
+  const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS || './credentials.json'
   return new google.auth.GoogleAuth({
-    keyFile: './credentials.json',
+    keyFile,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   })
 }
