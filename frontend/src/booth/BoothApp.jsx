@@ -273,7 +273,7 @@ function ReleasePrintStation({ onLock }) {
       if (active) setAgentOnline(online)
     }
     checkAgent()
-    const timer = setInterval(checkAgent, 8000)
+    const timer = setInterval(checkAgent, 3500)
     return () => { active = false; clearInterval(timer) }
   }, [])
 

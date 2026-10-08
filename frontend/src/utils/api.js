@@ -1,10 +1,10 @@
 import { PDFDocument } from 'pdf-lib'
 
-const API_URL    = import.meta.env.VITE_GAS_URL || 'https://script.google.com/macros/s/AKfycbxUpE5_E3KmhcD0yIuodtGQyOqxpSnps6Ra6_64rdMTYTPughmzyMKm7P3n_JjM2KqF/exec'
-const LOCAL_API  = import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:3001'
-const GITHUB_RAW = import.meta.env.VITE_GITHUB_TUNNEL_URL || 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
-const API_KEY    = import.meta.env.VITE_API_KEY || 'e7a2b91c045f8e3291dc8f7514a60b9380fa0715cb38d97e41ac824b01e3264b'
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'https://xbuddy.onrender.com').replace(/\/$/, '')
+const API_URL    = import.meta.env?.VITE_GAS_URL || 'https://script.google.com/macros/s/AKfycbxUpE5_E3KmhcD0yIuodtGQyOqxpSnps6Ra6_64rdMTYTPughmzyMKm7P3n_JjM2KqF/exec'
+const LOCAL_API  = import.meta.env?.VITE_PRINT_AGENT_URL || 'http://127.0.0.1:3001'
+const GITHUB_RAW = import.meta.env?.VITE_GITHUB_TUNNEL_URL || 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
+const API_KEY    = import.meta.env?.VITE_API_KEY || 'e7a2b91c045f8e3291dc8f7514a60b9380fa0715cb38d97e41ac824b01e3264b'
+const BACKEND_URL = (import.meta.env?.VITE_BACKEND_URL || import.meta.env?.VITE_API_URL || 'https://xbuddy.onrender.com').replace(/\/$/, '')
 const ORDERS_ENDPOINT = `${BACKEND_URL}/api/orders`
 
 let _tunnelUrl = null
@@ -306,16 +306,13 @@ export async function boothLogin(pin) {
     }
   }
 
-  // 2. Try Tunnel and Local Agent
-  const isLocalHost = typeof window !== 'undefined' && 
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  const tunnelUrl = await getTunnelUrl()
-  const endpoints = [tunnelUrl, isLocalHost ? LOCAL_API : null].filter(Boolean)
-  for (const base of endpoints) {
+  // 2. Try Local Agent directly
+  const localEndpoints = ['http://127.0.0.1:3001', 'http://localhost:3001']
+  for (const base of localEndpoints) {
     try {
       const res = await fetch(`${base}/booth-login`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }), signal: AbortSignal.timeout(5000),
+        body: JSON.stringify({ pin }), signal: AbortSignal.timeout(4000),
       })
       if (res.ok) return await res.json()
     } catch { continue }
@@ -323,38 +320,42 @@ export async function boothLogin(pin) {
   return { success: false, error: 'Could not connect to booth service. Check internet or print agent.' }
 }
 
+export async function getAgentStatus() {
+  const endpoints = ['http://127.0.0.1:3001', 'http://localhost:3001']
+  for (const base of endpoints) {
+    try {
+      const res = await fetch(`${base}/status`, { signal: AbortSignal.timeout(3000) })
+      if (res.ok) {
+        const data = await res.json()
+        const isHealthy =
+          Boolean(data) &&
+          data.agent === 'online' &&
+          data.printer?.available === true &&
+          data.printer?.status === 'Ready'
+        return {
+          available: isHealthy,
+          agent: data.agent,
+          printer: data.printer,
+          stationId: data.stationId,
+          cloud: data.cloud,
+          raw: data,
+          endpoint: base,
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+  return { available: false, agent: 'offline', printer: null, raw: null, endpoint: null }
+}
+
 export async function isAgentAvailable() {
-  const isLocalHost = typeof window !== 'undefined' && 
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  if (isLocalHost) {
-    try {
-      const res = await fetch(`${LOCAL_API}/status`, { signal: AbortSignal.timeout(1000) })
-      if (res.ok) {
-        const data = await res.json()
-        if (data?.success) return true
-      }
-    } catch {}
-  }
-  const tunnel = await getTunnelUrl()
-  if (tunnel) {
-    try {
-      const res = await fetch(`${tunnel}/status`, { signal: AbortSignal.timeout(2500) })
-      if (res.ok) {
-        const data = await res.json()
-        if (data?.success) return true
-      }
-    } catch {}
-  }
-  return false
+  const status = await getAgentStatus()
+  return status.available
 }
 
 export async function validateAndRelease(orderId, options = {}) {
-  const isLocalHost = typeof window !== 'undefined' && 
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  const tunnelUrl = await getTunnelUrl()
-  const endpoints = isLocalHost 
-    ? [LOCAL_API, 'http://127.0.0.1:3001', tunnelUrl].filter(Boolean) 
-    : [LOCAL_API, 'http://127.0.0.1:3001', tunnelUrl].filter(Boolean)
+  const endpoints = ['http://127.0.0.1:3001', 'http://localhost:3001']
 
   for (const base of endpoints) {
     try {
@@ -368,45 +369,24 @@ export async function validateAndRelease(orderId, options = {}) {
       if (data) return data
     } catch { continue }
   }
-  return { success: false, error: 'Could not connect to print agent. Is it running?' }
+  return { success: false, error: 'Could not connect to Hardware Print Agent. Is it running on this PC?' }
 }
 
 export async function updateOrderStatus(orderId, printStatus) {
   // 1. Try local print agent first if running
-  try {
-    const res = await fetch(`${LOCAL_API}/update-order-status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId, printStatus }),
-      signal: AbortSignal.timeout(2000),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.success) {
-        // Also sync to serverless dual-write endpoint in background
-        fetch(ORDERS_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
-        }).catch(() => {})
-        return data
-      }
-    }
-  } catch {}
-
-  // 2. Try tunnel URL if available
-  const tunnelUrl = await getTunnelUrl()
-  if (tunnelUrl) {
+  const endpoints = ['http://127.0.0.1:3001', 'http://localhost:3001']
+  for (const base of endpoints) {
     try {
-      const res = await fetch(`${tunnelUrl}/update-order-status`, {
+      const res = await fetch(`${base}/update-order-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId, printStatus }),
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(2500),
       })
       if (res.ok) {
         const data = await res.json()
         if (data?.success) {
+          // Also sync to serverless dual-write endpoint in background
           fetch(ORDERS_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -418,7 +398,7 @@ export async function updateOrderStatus(orderId, printStatus) {
     } catch {}
   }
 
-  // 3. Update via authoritative serverless endpoint (atomic print release lock in MongoDB)
+  // 2. Update via authoritative serverless endpoint (atomic print release lock in MongoDB)
   try {
     const res = await fetch(ORDERS_ENDPOINT, {
       method: 'POST',

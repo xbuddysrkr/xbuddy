@@ -20,29 +20,55 @@ if (!fs.existsSync(PENDING_DIR)) {
   try { fs.mkdirSync(PENDING_DIR, { recursive: true }) } catch {}
 }
 
-const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-  : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174']
+const ALLOWED_ORIGINS = [
+  'https://xbuddysrkr.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+]
+
+function isAllowedOrigin(origin) {
+  if (!origin) return false
+  return ALLOWED_ORIGINS.includes(origin)
+}
+
+// Support Private Network Access (PNA) and Production Origin CORS before preflight termination
+app.use((req, res, next) => {
+  const origin = req.headers.origin
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Access-Control-Allow-Private-Network', 'true')
+    res.setHeader('Vary', 'Origin')
+  }
+  if (req.headers['access-control-request-private-network']) {
+    res.setHeader('Access-Control-Allow-Private-Network', 'true')
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, cf-access-client-id, x-agent-key, access-control-request-private-network')
+    return res.status(204).end()
+  }
+  next()
+})
 
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true)
-    if (ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true)
     }
-    if (/\.trycloudflare\.com$/.test(origin) || /\.vercel\.app$/.test(origin)) {
-      return callback(null, true)
-    }
-    return callback(null, true)
+    return callback(new Error('Not allowed by CORS: ' + origin), false)
   },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'cf-access-client-id', 'x-agent-key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'cf-access-client-id', 'x-agent-key', 'access-control-request-private-network'],
 }))
 app.use(express.json({ limit: '150mb' }))
 app.use((req, res, next) => {
-  if (req.headers['access-control-request-private-network']) {
-    res.setHeader('Access-Control-Allow-Private-Network', 'true')
-  }
   const from = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'local'
   const via  = req.headers['x-forwarded-for'] ? 'tunnel' : 'local'
   logger.info(`${req.method} ${req.path} -> ${via} (${from})`)
