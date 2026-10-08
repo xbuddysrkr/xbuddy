@@ -182,4 +182,71 @@ test('Print Station & Installer Architecture - Comprehensive Audit', async (t) =
     const setupCsText = fs.readFileSync(setupCsPath, 'utf8')
     assert.doesNotMatch(setupCsText, /mongodb(\+srv)?:\/\//i, 'XBuddyPrintStationSetup.cs must not contain MongoDB URI')
   })
+
+  await t.test('21. Architecture: Native x64 compilation of all installer binaries', async () => {
+    const binaries = [
+      path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyService.exe'),
+      path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyStation.exe'),
+      path.join(ROOT_DIR, 'backend', 'installer', 'Uninstall.exe'),
+      path.join(ROOT_DIR, 'XBuddyPrintStationSetup.exe'),
+    ]
+
+    for (const bin of binaries) {
+      assert.ok(fs.existsSync(bin), `Binary must exist: ${bin}`)
+      const buffer = fs.readFileSync(bin)
+      const peOffset = buffer.readInt32LE(0x3C)
+      const machine = buffer.readUInt16LE(peOffset + 4)
+      assert.strictEqual(machine, 0x8664, `Binary ${path.basename(bin)} must be compiled as native x64 (0x8664)`)
+    }
+  })
+
+  await t.test('22. UAC Manifest: requireAdministrator embedded in Setup and Uninstall', async () => {
+    const manifestPath = path.join(ROOT_DIR, 'backend', 'installer', 'app.manifest')
+    assert.ok(fs.existsSync(manifestPath), 'app.manifest must exist')
+    const manifestText = fs.readFileSync(manifestPath, 'utf8')
+    assert.match(manifestText, /requireAdministrator/, 'app.manifest must demand requireAdministrator')
+
+    for (const binName of ['XBuddyPrintStationSetup.exe', 'backend/installer/Uninstall.exe']) {
+      const binPath = path.join(ROOT_DIR, binName)
+      const buffer = fs.readFileSync(binPath)
+      assert.ok(
+        buffer.toString('utf8').includes('requireAdministrator'),
+        `${binName} must contain requireAdministrator in embedded manifest`
+      )
+    }
+  })
+
+  await t.test('23. Win32 SCM Integration: CreateService, OpenSCManager & ChangeServiceConfig', async () => {
+    const setupCs = path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyPrintStationSetup.cs')
+    const content = fs.readFileSync(setupCs, 'utf8')
+    assert.match(content, /OpenSCManagerW/, 'Must declare OpenSCManagerW P/Invoke')
+    assert.match(content, /CreateServiceW/, 'Must declare CreateServiceW P/Invoke')
+    assert.match(content, /ChangeServiceConfigW/, 'Must declare ChangeServiceConfigW P/Invoke')
+    assert.match(content, /SERVICE_AUTO_START/, 'Service startup type must be SERVICE_AUTO_START')
+    assert.match(content, /SERVICE_WIN32_OWN_PROCESS/, 'Service type must be SERVICE_WIN32_OWN_PROCESS')
+    assert.match(content, /XBuddyService\.exe/, 'Service executable must target XBuddyService.exe')
+  })
+
+  await t.test('24. Auto-Recovery: SCM failure actions configured for crash restart', async () => {
+    const setupCs = path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyPrintStationSetup.cs')
+    const content = fs.readFileSync(setupCs, 'utf8')
+    assert.match(content, /actions=\s*restart\/3000\/restart\/5000\/restart\/10000/, 'Must configure crash restart recovery actions')
+    assert.match(content, /failureflag.*1/, 'Must configure failureflag 1 to handle non-zero exits')
+  })
+
+  await t.test('25. Strict Verification: sc.exe query checked for RUNNING before claiming success', async () => {
+    const setupCs = path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyPrintStationSetup.cs')
+    const content = fs.readFileSync(setupCs, 'utf8')
+    assert.match(content, /sc\.exe.*query/, 'Must execute sc.exe query for service verification')
+    assert.match(content, /RUNNING/, 'Must assert that service STATE reaches RUNNING')
+    assert.match(content, /throw new InvalidOperationException/, 'Must throw on service failure instead of claiming success')
+  })
+
+  await t.test('26. Service Directory & Tooling: bin/, runtime/, and environment forwarding', async () => {
+    const serviceCs = path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyService.cs')
+    const content = fs.readFileSync(serviceCs, 'utf8')
+    assert.match(content, /XBUDDY_INSTALL_DIR/, 'Must pass XBUDDY_INSTALL_DIR to agent process')
+    assert.match(content, /MUTOOL_PATH/, 'Must pass MUTOOL_PATH to agent process')
+    assert.match(content, /PROGRAMDATA/, 'Must preserve PROGRAMDATA in service child process')
+  })
 })

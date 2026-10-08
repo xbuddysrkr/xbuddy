@@ -143,8 +143,24 @@ namespace XBuddyPrintStation
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
 
-                // Forward environment variables
+                // Forward environment variables and ensure bin/runtime access
                 psi.EnvironmentVariables["PRINT_AGENT_PORT"] = "3001";
+                psi.EnvironmentVariables["XBUDDY_INSTALL_DIR"] = baseDir;
+
+                string programData = Environment.GetEnvironmentVariable("PROGRAMDATA");
+                if (string.IsNullOrEmpty(programData)) programData = @"C:\ProgramData";
+                psi.EnvironmentVariables["PROGRAMDATA"] = programData;
+
+                string currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+                string binDir = Path.Combine(baseDir, "bin");
+                string runtimeDir = Path.Combine(baseDir, "runtime");
+                psi.EnvironmentVariables["PATH"] = binDir + ";" + runtimeDir + ";" + currentPath;
+
+                string mutoolExe = Path.Combine(binDir, "mutool.exe");
+                if (File.Exists(mutoolExe))
+                {
+                    psi.EnvironmentVariables["MUTOOL_PATH"] = mutoolExe;
+                }
 
                 _nodeProcess = new Process { StartInfo = psi, EnableRaisingEvents = true };
 

@@ -6,6 +6,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
 using System.Threading;
@@ -13,6 +14,315 @@ using System.Windows.Forms;
 
 namespace XBuddyPrintStation
 {
+    internal static class ServiceHelper
+    {
+        public const string SERVICE_NAME = "XBuddy Print Agent";
+        public const string DISPLAY_NAME = "XBuddy Print Station Agent";
+
+        private const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
+        private const uint SERVICE_ALL_ACCESS = 0xF01FF;
+        private const uint SERVICE_WIN32_OWN_PROCESS = 0x00000010;
+        private const uint SERVICE_AUTO_START = 0x00000002;
+        private const uint SERVICE_ERROR_NORMAL = 0x00000001;
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr OpenSCManager(string machineName, string databaseName, uint dwAccess);
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", EntryPoint = "CreateServiceW", SetLastError = true, CharSet = CharSet.Unicode)]
+        public static extern IntPtr CreateService(
+            IntPtr hSCManager,
+            string lpServiceName,
+            string lpDisplayName,
+            uint dwDesiredAccess,
+            uint dwServiceType,
+            uint dwStartType,
+            uint dwErrorControl,
+            string lpBinaryPathName,
+            string lpLoadOrderGroup,
+            IntPtr lpdwTagId,
+            string lpDependencies,
+            string lpServiceStartName,
+            string lpPassword);
+
+        [DllImport("advapi32.dll", EntryPoint = "DeleteService", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool DeleteService(IntPtr hService);
+
+        [DllImport("advapi32.dll", EntryPoint = "CloseServiceHandle", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfigW", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ChangeServiceConfig(
+            IntPtr hService,
+            uint dwServiceType,
+            uint dwStartType,
+            uint dwErrorControl,
+            string lpBinaryPathName,
+            string lpLoadOrderGroup,
+            IntPtr lpdwTagId,
+            string lpDependencies,
+            string lpServiceStartName,
+            string lpPassword,
+            string lpDisplayName);
+
+        public static int RunProcess(string exe, string args, out string stdout, out string stderr)
+        {
+            stdout = "";
+            stderr = "";
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(exe, args)
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using (Process p = Process.Start(psi))
+                {
+                    stdout = p.StandardOutput.ReadToEnd();
+                    stderr = p.StandardError.ReadToEnd();
+                    p.WaitForExit(15000);
+                    return p.ExitCode;
+                }
+            }
+            catch (Exception ex)
+            {
+                stderr = ex.Message;
+                return -1;
+            }
+        }
+
+        public static void UninstallService(string serviceName)
+        {
+            // 1. Stop service via ServiceController if running
+            try
+            {
+                using (ServiceController sc = new ServiceController(serviceName))
+                {
+                    if (sc.Status != ServiceControllerStatus.Stopped && sc.Status != ServiceControllerStatus.StopPending)
+                    {
+                        sc.Stop();
+                        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(6));
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Kill any lingering service processes
+            try
+            {
+                foreach (var proc in Process.GetProcessesByName("XBuddyService"))
+                {
+                    try { proc.Kill(); proc.WaitForExit(2000); } catch { }
+                }
+            }
+            catch { }
+
+            // 3. Delete via Win32 API
+            IntPtr scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            if (scm != IntPtr.Zero)
+            {
+                try
+                {
+                    IntPtr svc = OpenService(scm, serviceName, SERVICE_ALL_ACCESS);
+                    if (svc != IntPtr.Zero)
+                    {
+                        DeleteService(svc);
+                        CloseServiceHandle(svc);
+                    }
+                }
+                finally
+                {
+                    CloseServiceHandle(scm);
+                }
+            }
+
+            // 4. Secondary cleanup via sc.exe delete
+            RunCommand("sc.exe", string.Format("delete \"{0}\"", serviceName));
+        }
+
+        public static int RunCommand(string exe, string args)
+        {
+            string dummyOut, dummyErr;
+            return RunProcess(exe, args, out dummyOut, out dummyErr);
+        }
+
+        public static void InstallService(string serviceName, string displayName, string serviceBinPath)
+        {
+            UninstallService(serviceName);
+            Thread.Sleep(500);
+
+            if (!File.Exists(serviceBinPath))
+            {
+                throw new FileNotFoundException("Service executable not found at: " + serviceBinPath);
+            }
+
+            string binPathQuoted = string.Format("\"{0}\"", serviceBinPath);
+            bool created = false;
+
+            // Method A: Direct Win32 API CreateService with idempotent handling
+            IntPtr scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            if (scm == IntPtr.Zero)
+            {
+                int err = Marshal.GetLastWin32Error();
+                throw new InvalidOperationException(string.Format("OpenSCManager failed with error code {0}. Administrator privileges are required to install Windows Services.", err));
+            }
+
+            try
+            {
+                int retries = 10;
+                while (retries-- > 0)
+                {
+                    IntPtr svc = CreateService(
+                        scm,
+                        serviceName,
+                        displayName,
+                        SERVICE_ALL_ACCESS,
+                        SERVICE_WIN32_OWN_PROCESS,
+                        SERVICE_AUTO_START,
+                        SERVICE_ERROR_NORMAL,
+                        binPathQuoted,
+                        null,
+                        IntPtr.Zero,
+                        null,
+                        null,
+                        null);
+
+                    if (svc != IntPtr.Zero)
+                    {
+                        created = true;
+                        CloseServiceHandle(svc);
+                        break;
+                    }
+
+                    int err = Marshal.GetLastWin32Error();
+                    if (err == 1073) // ERROR_SERVICE_EXISTS
+                    {
+                        IntPtr existingSvc = OpenService(scm, serviceName, SERVICE_ALL_ACCESS);
+                        if (existingSvc != IntPtr.Zero)
+                        {
+                            try
+                            {
+                                ChangeServiceConfig(
+                                    existingSvc,
+                                    SERVICE_WIN32_OWN_PROCESS,
+                                    SERVICE_AUTO_START,
+                                    SERVICE_ERROR_NORMAL,
+                                    binPathQuoted,
+                                    null,
+                                    IntPtr.Zero,
+                                    null,
+                                    null,
+                                    null,
+                                    displayName);
+                                created = true;
+                            }
+                            finally
+                            {
+                                CloseServiceHandle(existingSvc);
+                            }
+                            break;
+                        }
+                    }
+                    else if (err == 1072) // ERROR_SERVICE_MARKED_FOR_DELETE
+                    {
+                        Thread.Sleep(500);
+                        continue;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                CloseServiceHandle(scm);
+            }
+
+            // Method B: Fallback / complement via sc.exe create
+            if (!created)
+            {
+                string scCreateArgs = string.Format("create \"{0}\" binPath= \"{1}\" start= auto DisplayName= \"{2}\"",
+                    serviceName, serviceBinPath, displayName);
+                string scOut, scErr;
+                int exitCode = RunProcess("sc.exe", scCreateArgs, out scOut, out scErr);
+                if (exitCode != 0 && scOut.IndexOf("already exists", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    throw new InvalidOperationException(string.Format("Failed to register Windows Service via sc.exe (Exit {0}): {1} {2}",
+                        exitCode, scOut.Trim(), scErr.Trim()));
+                }
+            }
+
+            // Configure description
+            RunCommand("sc.exe", string.Format("description \"{0}\" \"Self-contained hardware printing service for XBuddy Print Stations.\"", serviceName));
+
+            // Configure auto-restart recovery on unexpected crash: restart after 3s, 5s, 10s (Requirement 5)
+            RunCommand("sc.exe", string.Format("failure \"{0}\" reset= 86400 actions= restart/3000/restart/5000/restart/10000", serviceName));
+            RunCommand("sc.exe", string.Format("failureflag \"{0}\" 1", serviceName));
+        }
+
+        public static void StartAndVerifyService(string serviceName)
+        {
+            // 1. Start the service
+            try
+            {
+                using (ServiceController sc = new ServiceController(serviceName))
+                {
+                    if (sc.Status != ServiceControllerStatus.Running && sc.Status != ServiceControllerStatus.StartPending)
+                    {
+                        sc.Start();
+                    }
+                    sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(15));
+                }
+            }
+            catch
+            {
+                // Fallback attempt via sc.exe start
+                RunCommand("sc.exe", string.Format("start \"{0}\"", serviceName));
+            }
+
+            // 2. Requirement 10: Run sc.exe query "XBuddy Print Agent" and verify STATE = RUNNING
+            string qOut = "";
+            string qErr = "";
+            for (int i = 0; i < 15; i++)
+            {
+                int qExit = RunProcess("sc.exe", string.Format("query \"{0}\"", serviceName), out qOut, out qErr);
+                if (qExit == 0 && qOut.IndexOf("RUNNING", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return; // Successfully verified running
+                }
+                Thread.Sleep(1000);
+            }
+
+            // Secondary check with ServiceController
+            try
+            {
+                using (ServiceController sc = new ServiceController(serviceName))
+                {
+                    if (sc.Status == ServiceControllerStatus.Running)
+                    {
+                        return; // Running
+                    }
+                    throw new InvalidOperationException(string.Format("Windows Service '{0}' is registered but state is '{1}' instead of RUNNING.\nsc.exe query output: {2}",
+                        serviceName, sc.Status, qOut.Trim()));
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ex is InvalidOperationException) throw;
+                throw new InvalidOperationException(string.Format("Failed to verify Windows Service '{0}': {1}\nsc.exe query output: {2} {3}",
+                    serviceName, ex.Message, qOut.Trim(), qErr.Trim()));
+            }
+        }
+    }
+
     public class SetupForm : Form
     {
         private TextBox txtInstallDir;
@@ -24,12 +334,14 @@ namespace XBuddyPrintStation
         private ListBox lstLog;
         private Label lblStatus;
         private BackgroundWorker worker;
+        private bool _isSilent;
 
         private const string DEFAULT_STATION_ID = "SRKR-XEROX-01";
-        private const string SERVICE_NAME = "XBuddy Print Agent";
+        private const string SERVICE_NAME = ServiceHelper.SERVICE_NAME;
 
         public SetupForm(bool isSilent)
         {
+            _isSilent = isSilent;
             InitializeComponents();
             if (isSilent)
             {
@@ -83,7 +395,7 @@ namespace XBuddyPrintStation
 
             Label lblSubtitle = new Label
             {
-                Text = "Windows Service & Hardware Agent Installer",
+                Text = "Windows Service & Hardware Agent Installer (v2.1.0)",
                 Font = new Font("Segoe UI", 9, FontStyle.Regular),
                 ForeColor = Color.FromArgb(148, 163, 184),
                 AutoSize = true,
@@ -102,11 +414,33 @@ namespace XBuddyPrintStation
 
             int top = 10;
 
-            // Destination Folder
+            // Station ID input
+            Label lblStationId = new Label
+            {
+                Text = "Station ID (Hardware Identifier):",
+                Location = new Point(0, top),
+                AutoSize = true,
+                ForeColor = Color.FromArgb(226, 232, 240)
+            };
+            pnlContent.Controls.Add(lblStationId);
+            top += 25;
+
+            txtStationId = new TextBox
+            {
+                Text = DEFAULT_STATION_ID,
+                Location = new Point(0, top),
+                Size = new Size(565, 26),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            pnlContent.Controls.Add(txtStationId);
+            top += 40;
+
+            // Install Directory
             Label lblDir = new Label
             {
                 Text = "Installation Directory:",
-                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
                 Location = new Point(0, top),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(226, 232, 240)
@@ -114,7 +448,12 @@ namespace XBuddyPrintStation
             pnlContent.Controls.Add(lblDir);
             top += 25;
 
-            string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            // Target Program Files (64-bit native Program Files path)
+            string programFiles = Environment.GetEnvironmentVariable("ProgramW6432");
+            if (string.IsNullOrEmpty(programFiles))
+            {
+                programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            }
             string defaultDir = Path.Combine(programFiles, "XBuddy Print Station");
 
             txtInstallDir = new TextBox
@@ -145,98 +484,74 @@ namespace XBuddyPrintStation
                     fbd.SelectedPath = txtInstallDir.Text;
                     if (fbd.ShowDialog() == DialogResult.OK)
                     {
-                        txtInstallDir.Text = Path.Combine(fbd.SelectedPath, "XBuddy Print Station");
+                        txtInstallDir.Text = fbd.SelectedPath;
                     }
                 }
             };
             pnlContent.Controls.Add(btnBrowse);
             top += 40;
 
-            // Station ID
-            Label lblStation = new Label
-            {
-                Text = "Station ID (Unique Xerox identifier):",
-                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
-                Location = new Point(0, top),
-                AutoSize = true,
-                ForeColor = Color.FromArgb(226, 232, 240)
-            };
-            pnlContent.Controls.Add(lblStation);
-            top += 25;
-
-            txtStationId = new TextBox
-            {
-                Text = DEFAULT_STATION_ID,
-                Location = new Point(0, top),
-                Size = new Size(565, 26),
-                BackColor = Color.FromArgb(30, 41, 59),
-                ForeColor = Color.White,
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            pnlContent.Controls.Add(txtStationId);
-            top += 38;
-
-            // Checkboxes
+            // Options
             chkLaunchBrowser = new CheckBox
             {
-                Text = "Open Control Panel (http://127.0.0.1:3001) after install",
+                Text = "Open Print Station Control Panel (http://127.0.0.1:3001) after setup",
                 Checked = true,
                 Location = new Point(0, top),
-                AutoSize = true,
+                Size = new Size(565, 24),
                 ForeColor = Color.FromArgb(203, 213, 225)
             };
             pnlContent.Controls.Add(chkLaunchBrowser);
-            top += 26;
+            top += 28;
 
             chkDesktopShortcut = new CheckBox
             {
-                Text = "Create Desktop Shortcut (\"XBuddy Print Station\")",
+                Text = "Create Desktop and Start Menu Shortcuts",
                 Checked = true,
                 Location = new Point(0, top),
-                AutoSize = true,
+                Size = new Size(565, 24),
                 ForeColor = Color.FromArgb(203, 213, 225)
             };
             pnlContent.Controls.Add(chkDesktopShortcut);
             top += 35;
 
-            // Progress Bar
-            progressBar = new ProgressBar
-            {
-                Location = new Point(0, top),
-                Size = new Size(565, 14),
-                Style = ProgressBarStyle.Continuous,
-                Value = 0
-            };
-            pnlContent.Controls.Add(progressBar);
-            top += 20;
-
+            // Status label
             lblStatus = new Label
             {
-                Text = "Ready to install. Click \"Install Now\" to begin.",
+                Text = "Ready to install XBuddy Print Station Windows Service.",
                 Location = new Point(0, top),
-                Size = new Size(565, 20),
+                Size = new Size(565, 22),
                 ForeColor = Color.FromArgb(148, 163, 184)
             };
             pnlContent.Controls.Add(lblStatus);
             top += 25;
 
-            // Log output
+            // Progress Bar
+            progressBar = new ProgressBar
+            {
+                Location = new Point(0, top),
+                Size = new Size(565, 12),
+                Style = ProgressBarStyle.Continuous
+            };
+            pnlContent.Controls.Add(progressBar);
+            top += 20;
+
+            // Log box
             lstLog = new ListBox
             {
                 Location = new Point(0, top),
-                Size = new Size(565, 115),
-                BackColor = Color.FromArgb(11, 15, 25),
-                ForeColor = Color.FromArgb(203, 213, 225),
+                Size = new Size(565, 130),
+                BackColor = Color.FromArgb(15, 23, 42),
+                ForeColor = Color.FromArgb(148, 163, 184),
                 BorderStyle = BorderStyle.FixedSingle,
                 Font = new Font("Consolas", 8.5f)
             };
             pnlContent.Controls.Add(lstLog);
-            top += 125;
+            top += 140;
 
-            // Action Buttons
+            // Install Button
             btnInstall = new Button
             {
-                Text = "Install Now",
+                Text = "Install XBuddy Print Station",
                 Location = new Point(0, top),
                 Size = new Size(565, 42),
                 BackColor = Color.FromArgb(234, 88, 12), // Orange 600
@@ -295,7 +610,7 @@ namespace XBuddyPrintStation
             try
             {
                 // 1. Create Directories
-                worker.ReportProgress(10, "Creating application directory...");
+                worker.ReportProgress(10, "Creating application directory: " + targetDir);
                 if (!Directory.Exists(targetDir))
                 {
                     Directory.CreateDirectory(targetDir);
@@ -312,11 +627,13 @@ namespace XBuddyPrintStation
                 worker.ReportProgress(25, "Extracting bundled runtime & print engine...");
                 ExtractEmbeddedPackage(targetDir);
 
-                // 3. Write / update config.json
+                // 3. Write / update config.json (idempotent configuration preservation)
                 worker.ReportProgress(50, "Saving station identity config...");
                 string configPath = Path.Combine(stationDataDir, "config.json");
                 string existingKey = "";
                 string existingPrinter = "";
+                string existingCloudUrl = "https://xbuddysrkr.vercel.app";
+
                 if (File.Exists(configPath))
                 {
                     try
@@ -326,6 +643,8 @@ namespace XBuddyPrintStation
                         if (matchKey.Success) existingKey = matchKey.Groups[1].Value;
                         var matchPrinter = System.Text.RegularExpressions.Regex.Match(existingContent, "\"selectedPrinter\"\\s*:\\s*\"([^\"]+)\"");
                         if (matchPrinter.Success) existingPrinter = matchPrinter.Groups[1].Value;
+                        var matchCloudUrl = System.Text.RegularExpressions.Regex.Match(existingContent, "\"cloudApiUrl\"\\s*:\\s*\"([^\"]+)\"");
+                        if (matchCloudUrl.Success && !string.IsNullOrEmpty(matchCloudUrl.Groups[1].Value)) existingCloudUrl = matchCloudUrl.Groups[1].Value;
                     }
                     catch { }
                 }
@@ -335,41 +654,32 @@ namespace XBuddyPrintStation
                     : (Environment.GetEnvironmentVariable("AGENT_SECRET_KEY") ?? Provisioning.DefaultAgentKey);
 
                 string configJson = string.Format(
-                    "{{\n  \"stationId\": \"{0}\",\n  \"selectedPrinter\": \"{1}\",\n  \"cloudApiUrl\": \"https://xbuddysrkr.vercel.app\",\n  \"agentSecretKey\": \"{2}\",\n  \"port\": 3001,\n  \"version\": \"2.1.0\",\n  \"autoHeartbeat\": true,\n  \"heartbeatIntervalMs\": 30000\n}}",
-                    stationId, existingPrinter, agentKeyToUse);
+                    "{{\n  \"stationId\": \"{0}\",\n  \"selectedPrinter\": \"{1}\",\n  \"cloudApiUrl\": \"{2}\",\n  \"agentSecretKey\": \"{3}\",\n  \"port\": 3001,\n  \"version\": \"2.1.0\",\n  \"autoHeartbeat\": true,\n  \"heartbeatIntervalMs\": 30000\n}}",
+                    stationId, existingPrinter, existingCloudUrl, agentKeyToUse);
                 File.WriteAllText(configPath, configJson, Encoding.UTF8);
 
-                // 4. Install & Register Windows Service
+                // 4. Install & Register Windows Service (Requirement 1, 2, 5, 8)
                 worker.ReportProgress(65, "Registering Windows Service (" + SERVICE_NAME + ")...");
                 string serviceBin = Path.Combine(targetDir, "XBuddyService.exe");
-                
-                // Stop & delete previous service if existing
-                StopService(SERVICE_NAME);
-                RunProcess("sc.exe", string.Format("delete \"{0}\"", SERVICE_NAME));
-                Thread.Sleep(1000);
+                if (!File.Exists(serviceBin))
+                {
+                    throw new FileNotFoundException("Service binary was not found after extraction: " + serviceBin);
+                }
 
-                // Create Service
-                string scCreateArgs = string.Format(
-                    "create \"{0}\" binPath= \"\\\"{1}\\\"\" start= auto DisplayName= \"XBuddy Print Station Agent\"",
-                    SERVICE_NAME, serviceBin);
-                RunProcess("sc.exe", scCreateArgs);
+                ServiceHelper.InstallService(SERVICE_NAME, ServiceHelper.DISPLAY_NAME, serviceBin);
 
-                // Set description
-                RunProcess("sc.exe", string.Format("description \"{0}\" \"Self-contained hardware printing service for XBuddy Print Stations.\"", SERVICE_NAME));
+                // 5. Automatically Start & Verify Windows Service (Requirement 3, 4, 10, 11)
+                worker.ReportProgress(85, "Starting and verifying Windows Service (sc.exe query)...");
+                ServiceHelper.StartAndVerifyService(SERVICE_NAME);
 
-                // Configure recovery: auto-restart on unexpected failure
-                worker.ReportProgress(80, "Configuring service auto-restart recovery...");
-                RunProcess("sc.exe", string.Format("failure \"{0}\" reset= 86400 actions= restart/3000/restart/5000/restart/10000", SERVICE_NAME));
+                // 6. Create Shortcuts
+                if (chkDesktopShortcut.Checked)
+                {
+                    worker.ReportProgress(95, "Creating desktop & start menu shortcuts...");
+                    CreateShortcuts(targetDir);
+                }
 
-                // Start service
-                worker.ReportProgress(88, "Starting Windows Service...");
-                RunProcess("sc.exe", string.Format("start \"{0}\"", SERVICE_NAME));
-
-                // 5. Create Shortcuts
-                worker.ReportProgress(95, "Creating desktop & start menu shortcuts...");
-                CreateShortcuts(targetDir);
-
-                worker.ReportProgress(100, "Setup complete!");
+                worker.ReportProgress(100, "Setup complete! Windows Service is RUNNING.");
                 e.Result = true;
             }
             catch (Exception ex)
@@ -405,7 +715,6 @@ namespace XBuddyPrintStation
                                 string fullPath = Path.Combine(targetDir, entry.FullName);
                                 if (string.IsNullOrEmpty(entry.Name))
                                 {
-                                    // Directory
                                     Directory.CreateDirectory(fullPath);
                                 }
                                 else
@@ -458,13 +767,22 @@ namespace XBuddyPrintStation
         {
             if (e.Error != null || e.Result is Exception || (e.Result is bool && !(bool)e.Result))
             {
+                string errMsg = e.Error != null ? e.Error.Message : (e.Result is Exception ? ((Exception)e.Result).Message : "Unknown setup error");
                 lblStatus.Text = "Installation failed! See log for details.";
                 lblStatus.ForeColor = Color.FromArgb(239, 68, 68);
                 btnInstall.Enabled = true;
                 btnInstall.Text = "Retry Install";
-                string errMsg = e.Error != null ? e.Error.Message : (e.Result is Exception ? ((Exception)e.Result).Message : "Unknown error");
+                AddLog("FATAL ERROR: " + errMsg);
+
+                if (_isSilent)
+                {
+                    Environment.ExitCode = 1;
+                    Application.Exit();
+                    return;
+                }
+
                 MessageBox.Show(
-                    "Setup encountered an error:\n" + errMsg,
+                    "Setup encountered an error:\n\n" + errMsg,
                     "Setup Error",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
@@ -479,48 +797,21 @@ namespace XBuddyPrintStation
             btnInstall.Click -= (s, ev) => StartInstallation();
             btnInstall.Click += (s, ev) => this.Close();
 
+            if (_isSilent)
+            {
+                Environment.ExitCode = 0;
+                Application.Exit();
+                return;
+            }
+
             if (chkLaunchBrowser.Checked)
             {
-                // Wait briefly for port 3001 to open
                 ThreadPool.QueueUserWorkItem((state) =>
                 {
-                    Thread.Sleep(1500);
+                    Thread.Sleep(2000);
                     try { Process.Start("http://127.0.0.1:3001"); } catch { }
                 });
             }
-        }
-
-        private static void StopService(string serviceName)
-        {
-            try
-            {
-                using (ServiceController sc = new ServiceController(serviceName))
-                {
-                    if (sc.Status != ServiceControllerStatus.Stopped && sc.Status != ServiceControllerStatus.StopPending)
-                    {
-                        sc.Stop();
-                        sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(5));
-                    }
-                }
-            }
-            catch { }
-        }
-
-        private static void RunProcess(string exe, string args)
-        {
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo(exe, args)
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                };
-                using (Process p = Process.Start(psi))
-                {
-                    p.WaitForExit(10000);
-                }
-            }
-            catch { }
         }
 
         private static void CreateShortcuts(string targetDir)
@@ -559,6 +850,15 @@ namespace XBuddyPrintStation
             catch { }
         }
 
+        private static bool IsAdministrator()
+        {
+            using (var identity = WindowsIdentity.GetCurrent())
+            {
+                var principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+        }
+
         [STAThread]
         public static void Main(string[] args)
         {
@@ -570,6 +870,43 @@ namespace XBuddyPrintStation
                     arg.Equals("--silent", StringComparison.OrdinalIgnoreCase))
                 {
                     isSilent = true;
+                }
+            }
+
+            // Self-elevation check if not running as administrator
+            if (!IsAdministrator())
+            {
+                try
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo
+                    {
+                        FileName = Assembly.GetExecutingAssembly().Location,
+                        Arguments = string.Join(" ", args),
+                        Verb = "runas",
+                        UseShellExecute = true
+                    };
+                    Process p = Process.Start(psi);
+                    if (isSilent)
+                    {
+                        p.WaitForExit();
+                        Environment.ExitCode = p.ExitCode;
+                    }
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    if (isSilent)
+                    {
+                        Console.Error.WriteLine("Administrator privileges required: " + ex.Message);
+                        Environment.ExitCode = 5; // ERROR_ACCESS_DENIED
+                        return;
+                    }
+                    MessageBox.Show(
+                        "Administrator privileges are required to register the XBuddy Print Agent Windows Service.\n\nPlease right-click the installer and select 'Run as administrator'.",
+                        "Administrator Privileges Required",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
                 }
             }
 
