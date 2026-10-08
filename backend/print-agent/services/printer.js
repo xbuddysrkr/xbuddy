@@ -4,25 +4,141 @@ const path = require('path')
 const { execFile } = require('child_process')
 const logger = require('../utils/logger')
 const { convertPdfToGrayscale } = require('./converter')
+const { getConfig, saveConfig } = require('./config')
 
-let printerCache = null
-let lastPrinterCheck = 0
-const PRINTER_CACHE_TTL = 15000
+const MUTOOL_BIN = path.join(__dirname, '..', 'bin', 'mutool.exe')
 
 function runPowerShell(command) {
   return new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { windowsHide: true }, (err, stdout, stderr) => {
-      if (err) {
-        logger.warn(`PowerShell command failed: ${stderr || err.message}`)
-        return resolve(false)
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', command],
+      { windowsHide: true },
+      (err, stdout, stderr) => {
+        if (err) {
+          logger.warn(`PowerShell command failed: ${stderr || err.message}`)
+          return resolve({ success: false, stdout: '', stderr: stderr || err.message })
+        }
+        resolve({ success: true, stdout: stdout.trim(), stderr: '' })
       }
-      resolve(true)
-    })
+    )
   })
 }
 
 /**
- * Configure Windows Printer Driver explicitly before each print job.
+ * Enumerate all installed Windows printers with status and details.
+ */
+async function getAllWindowsPrinters() {
+  try {
+    const script = `Get-CimInstance Win32_Printer | Select-Object Name, Default, PrinterStatus, WorkOffline | ConvertTo-Json -Compress`
+    const { success, stdout } = await runPowerShell(script)
+    if (!success || !stdout) {
+      // Fallback to pdf-to-printer
+      const list = await ptp.getPrinters()
+      return list.map(p => ({
+        name: p.name,
+        isDefault: false,
+        isOnline: true,
+      }))
+    }
+
+    let parsed = JSON.parse(stdout)
+    if (!Array.isArray(parsed)) parsed = [parsed]
+
+    return parsed.map(p => {
+      const isOnline = p.WorkOffline === false || p.WorkOffline === 0 || p.WorkOffline === null
+      return {
+        name: String(p.Name || '').trim(),
+        isDefault: Boolean(p.Default),
+        isOnline,
+        status: isOnline ? 'Ready' : 'Offline',
+      }
+    })
+  } catch (err) {
+    logger.warn(`[PRINTER_DISCOVERY_ERROR] ${err.message}`)
+    return []
+  }
+}
+
+/**
+ * Resolves the active printer according to station configuration.
+ * Adheres strictly to Requirement 7:
+ * If selected printer is unavailable or missing, reports 'Printer unavailable'
+ * and NEVER silently switches to another printer!
+ */
+async function getActivePrinter(validate = true) {
+  const config = getConfig()
+  const allPrinters = await getAllWindowsPrinters()
+
+  // 1. If operator has chosen a specific printer in station config
+  if (config.selectedPrinter && config.selectedPrinter.trim()) {
+    const targetName = config.selectedPrinter.trim()
+    const found = allPrinters.find(p => p.name.toLowerCase() === targetName.toLowerCase())
+
+    if (!found) {
+      return {
+        name: targetName,
+        available: false,
+        error: `Selected printer "${targetName}" is not installed on this system.`,
+      }
+    }
+
+    if (!found.isOnline) {
+      return {
+        name: found.name,
+        available: false,
+        error: `Selected printer "${found.name}" is offline or paused in Windows.`,
+      }
+    }
+
+    return {
+      name: found.name,
+      available: true,
+      isDefault: found.isDefault,
+    }
+  }
+
+  // 2. First-run auto-discovery: detect preferred hardware printer and bind it
+  if (allPrinters.length > 0) {
+    // Prefer real hardware printers over virtual PDF/XPS drivers
+    const realPrinter = allPrinters.find(p => {
+      const n = p.name.toLowerCase()
+      return !n.includes('onenote') && !n.includes('fax') && !n.includes('xps') && !n.includes('pdf')
+    })
+    const defaultPrinter = realPrinter || allPrinters.find(p => p.isDefault) || allPrinters[0]
+
+    // Auto-save bound printer to configuration
+    saveConfig({ selectedPrinter: defaultPrinter.name })
+    logger.info(`[PRINTER_SETUP] Auto-bound primary printer: ${defaultPrinter.name}`)
+
+    return {
+      name: defaultPrinter.name,
+      available: defaultPrinter.isOnline,
+      error: defaultPrinter.isOnline ? null : `Printer "${defaultPrinter.name}" is offline.`,
+    }
+  }
+
+  return {
+    name: 'None',
+    available: false,
+    error: 'No printers detected on this Windows PC.',
+  }
+}
+
+/**
+ * Backwards compatibility alias
+ */
+async function getDefaultPrinter(verbose = true) {
+  const active = await getActivePrinter(true)
+  if (!active.available) {
+    logger.warn(`[PRINTER] ${active.error || 'Printer unavailable'}`)
+    return null
+  }
+  return active.name
+}
+
+/**
+ * Configure Windows Printer Driver explicitly before each print job via PowerShell.
  * Prevents settings leakage between jobs.
  */
 async function configureWindowsDriver(printerName, { isColor, paperSize }) {
@@ -42,58 +158,31 @@ async function configureWindowsDriver(printerName, { isColor, paperSize }) {
 }
 
 /**
- * Get the default printer name on this Windows machine
+ * Pre-slice PDF if custom page ranges are specified (Requirement 11).
+ * Extracts exact pages (e.g. 2,4-6 -> 2,4,5,6) into an isolated PDF buffer.
  */
-async function getDefaultPrinter(verbose = true) {
-  try {
-    const now = Date.now()
-    if (printerCache && now - lastPrinterCheck < PRINTER_CACHE_TTL) {
-      return printerCache.name
+function slicePdfCustomPages(inputPath, pageRangeStr, outputPath) {
+  return new Promise((resolve) => {
+    if (!fs.existsSync(MUTOOL_BIN)) {
+      logger.warn('[SLICE] mutool.exe not found, using driver pageRange fallback')
+      return resolve(false)
     }
 
-    const printers = await ptp.getPrinters()
-    if (printers.length === 0) {
-      throw new Error('No printers found on this machine')
-    }
-
-    if (verbose) {
-      logger.info(`Available printers (${printers.length}):`)
-      printers.forEach((p, i) => {
-        logger.dim(`  ${i + 1}. ${p.name}`)
-      })
-    }
-
-    // Return the default printer - prefer real printers over virtual ones
-    const realPrinter = printers.find(p => {
-      const name = p.name.toLowerCase()
-      return !name.includes('onenote') &&
-             !name.includes('fax') &&
-             !name.includes('xps') &&
-             !name.includes('pdf')
+    // mutool merge -o outputPath inputPath 2,4-6
+    const cleanRanges = String(pageRangeStr).replace(/\s+/g, '')
+    execFile(MUTOOL_BIN, ['merge', '-o', outputPath, inputPath, cleanRanges], (err) => {
+      if (err || !fs.existsSync(outputPath) || fs.statSync(outputPath).size < 100) {
+        logger.warn(`[SLICE] mutool page extraction failed: ${err?.message || 'Empty file'}`)
+        return resolve(false)
+      }
+      logger.success(`[SLICE] Successfully extracted pages "${cleanRanges}" into temporary print PDF`)
+      resolve(true)
     })
-
-    const defaultPrinter = realPrinter || printers[0]
-    printerCache = defaultPrinter
-    lastPrinterCheck = Date.now()
-    return defaultPrinter.name
-  } catch (err) {
-    logger.error(`Could not get printers: ${err.message}`)
-    return null
-  }
+  })
 }
 
 /**
- * Print a PDF file with complete end-to-end settings enforcement.
- * 
- * @param {string} filePath
- * @param {object} options
- * @param {number} options.copies
- * @param {string} options.printSide   - 'Single' | 'Double'
- * @param {string} options.colorMode   - 'bw' | 'color' | 'B&W' | 'Color'
- * @param {string} options.pageSize    - 'A4' | 'Letter' | ...
- * @param {string} options.orientation - 'portrait' | 'landscape'
- * @param {string} options.pageRange   - 'all' | '1' | '1-3' | '1-3,5' | ...
- * @param {string} options.orderId
+ * Print a PDF file with complete end-to-end hardware settings enforcement.
  */
 async function printPdf(filePath, options = {}) {
   const {
@@ -107,18 +196,22 @@ async function printPdf(filePath, options = {}) {
   } = options
 
   let convertedTempPath = null
+  let slicedTempPath = null
 
   try {
-    // Defensive check 1: File existence
+    // 1. Verify file exists
     if (!filePath || !fs.existsSync(filePath)) {
       throw new Error(`Print file not found: ${filePath}`)
     }
 
-    // Defensive check 2: Printer existence
-    const printerName = await getDefaultPrinter()
-    if (!printerName) throw new Error('No printer available on this system')
+    // 2. Verify selected printer exists and is available (Requirement 7)
+    const active = await getActivePrinter(true)
+    if (!active.available) {
+      throw new Error(active.error || 'Configured printer is unavailable or offline')
+    }
+    const printerName = active.name
 
-    // Defensive check 3: Resolve color mode strictly
+    // 3. Resolve color mode strictly
     const rawColor = String(colorMode).trim().toLowerCase()
     let isBw = true
     if (rawColor === 'color' || rawColor === 'colour') {
@@ -126,21 +219,16 @@ async function printPdf(filePath, options = {}) {
     } else if (['bw', 'b&w', 'black & white', 'grayscale', 'mono', 'monochrome'].includes(rawColor)) {
       isBw = true
     } else {
-      logger.warn(`Unrecognized colorMode: "${colorMode}", defaulting defensively to Black & White`)
       isBw = true
     }
     const isColor = !isBw
 
-    // Defensive check 4: Copies
+    // 4. Copies & Orientation & Page size
     const validCopies = Math.max(1, parseInt(copies, 10) || 1)
-
-    // Defensive check 5: Orientation
     const validOrientation = String(orientation).trim().toLowerCase() === 'landscape' ? 'landscape' : 'portrait'
-
-    // Defensive check 6: Paper size
     const validPaperSize = String(pageSize || 'A4').trim().toUpperCase()
 
-    // Defensive check 7: Resolve target pages
+    // 5. Resolve custom pages (Requirement 11)
     let targetPages = pageRange
     if (targetPages === 'custom') {
       if (options.customPages && String(options.customPages).trim()) {
@@ -153,85 +241,103 @@ async function printPdf(filePath, options = {}) {
     }
     const resolvedPages = (!targetPages || targetPages === 'all') ? 'All' : String(targetPages).trim()
 
-    // Duplex display
+    // Duplex resolution
     const isDuplex = printSide === 'Double' || options.duplex === true
-    const duplexLabel = isDuplex ? 'Long-edge' : 'Off'
+    const duplexLabel = isDuplex ? 'Long-edge (Duplex)' : 'Off (Single-sided)'
 
-    // Log resolved print settings exactly as required by Part 1.10
-    console.log('====================================')
-    console.log('PRINT JOB')
-    console.log(`Order ID:    ${orderId || 'Direct'}`)
-    console.log(`Printer:     ${printerName}`)
-    console.log(`Color Mode:  ${isColor ? 'COLOR' : 'BLACK & WHITE'}`)
-    console.log(`Paper Size:  ${validPaperSize}`)
-    console.log(`Orientation: ${validOrientation === 'landscape' ? 'Landscape' : 'Portrait'}`)
-    console.log(`Duplex:      ${duplexLabel}`)
-    console.log(`Copies:      ${validCopies}`)
-    console.log(`Pages:       ${resolvedPages}`)
-    console.log('====================================')
+    logger.info('====================================')
+    logger.info('XBUDDY HARDWARE PRINT JOB')
+    logger.info(`Order ID:    ${orderId || 'Direct'}`)
+    logger.info(`Printer:     ${printerName}`)
+    logger.info(`Color Mode:  ${isColor ? 'COLOR' : 'BLACK & WHITE'}`)
+    logger.info(`Paper Size:  ${validPaperSize}`)
+    logger.info(`Orientation: ${validOrientation}`)
+    logger.info(`Duplex:      ${duplexLabel}`)
+    logger.info(`Copies:      ${validCopies}`)
+    logger.info(`Pages:       ${resolvedPages}`)
+    logger.info('====================================')
 
-    // Apply explicit driver configuration before printing to eliminate driver-default leakage
+    // Apply explicit driver configuration before every print job to eliminate settings leakage
     await configureWindowsDriver(printerName, {
       isColor,
       paperSize: validPaperSize,
     })
 
-    // Grayscale enforcement via native DeviceGray rasterizer
     let printTargetFile = filePath
-    if (isBw) {
-      convertedTempPath = path.join(path.dirname(filePath), `mono_${Date.now()}_${path.basename(filePath)}`)
-      logger.info(`Converting document to pure DeviceGray grayscale...`)
-      try {
-        await convertPdfToGrayscale(filePath, convertedTempPath)
-        printTargetFile = convertedTempPath
-        logger.success(`DeviceGray conversion complete: ${path.basename(convertedTempPath)}`)
-      } catch (convErr) {
-        logger.warn(`Grayscale conversion fallback to driver-only: ${convErr.message}`)
-        printTargetFile = filePath
+
+    // Pre-slice custom pages if not "All"
+    if (resolvedPages !== 'All' && resolvedPages !== 'all') {
+      slicedTempPath = path.join(path.dirname(filePath), `sliced_${Date.now()}_${path.basename(filePath)}`)
+      const sliced = await slicePdfCustomPages(filePath, resolvedPages, slicedTempPath)
+      if (sliced) {
+        printTargetFile = slicedTempPath
       }
     }
 
-    // Build pdf-to-printer options
+    // Grayscale enforcement via native DeviceGray rasterizer (Requirement 12)
+    if (isBw) {
+      convertedTempPath = path.join(path.dirname(filePath), `mono_${Date.now()}_${path.basename(printTargetFile)}`)
+      logger.info(`Converting document to pure DeviceGray grayscale...`)
+      try {
+        await convertPdfToGrayscale(printTargetFile, convertedTempPath)
+        printTargetFile = convertedTempPath
+        logger.success(`DeviceGray conversion complete: ${path.basename(convertedTempPath)}`)
+      } catch (convErr) {
+        logger.warn(`Grayscale raster fallback: ${convErr.message}`)
+      }
+    }
+
+    // Build pdf-to-printer options with silent hardware execution (Requirement 13)
     const printOptions = {
       printer:    printerName,
       copies:     validCopies,
       silent:     true,
       paperSize:  validPaperSize,
       scale:      'fit',
-      monochrome: isBw,
     }
 
+    // Duplex printing flag
+    if (isDuplex) {
+      printOptions.sides = 'duplex'
+    } else {
+      printOptions.sides = 'simplex'
+    }
+
+    // If orientation is landscape, specify in options
     if (validOrientation === 'landscape') {
       printOptions.orientation = 'landscape'
-    } else {
-      printOptions.orientation = 'portrait'
     }
 
-    if (isDuplex) {
-      printOptions.side = 'duplexlong'
+    // If not sliced, pass page range string to printer driver
+    if (!slicedTempPath && resolvedPages !== 'All') {
+      printOptions.pageRange = resolvedPages
     }
 
-    if (resolvedPages !== 'All') {
-      printOptions.pages = resolvedPages
-    }
-
+    logger.info(`Dispatching silent print via pdf-to-printer to "${printerName}"...`)
     await ptp.print(printTargetFile, printOptions)
-
-    logger.success(`Print job successfully sent to ${printerName} for order ${orderId}`)
+    logger.success(`[PRINT_SUCCESS] Physical print job queued successfully for Order ${orderId || 'Direct'}`)
     return true
   } catch (err) {
-    logger.error(`Print failed for order ${orderId}: ${err.message}`)
+    logger.error(`[PRINT_FAILURE] ${err.message}`)
     return false
   } finally {
-    // Delay temporary file cleanup by 60 seconds to ensure SumatraPDF has finished reading
-    if (convertedTempPath) {
-      setTimeout(() => {
-        try {
-          if (fs.existsSync(convertedTempPath)) fs.unlinkSync(convertedTempPath)
-        } catch {}
-      }, 60000)
-    }
+    // Clean up temporary files safely after slight delay
+    setTimeout(() => {
+      if (slicedTempPath && fs.existsSync(slicedTempPath)) {
+        try { fs.unlinkSync(slicedTempPath) } catch {}
+      }
+      if (convertedTempPath && fs.existsSync(convertedTempPath)) {
+        try { fs.unlinkSync(convertedTempPath) } catch {}
+      }
+    }, 120000)
   }
 }
 
-module.exports = { printPdf, getDefaultPrinter, configureWindowsDriver }
+module.exports = {
+  getAllWindowsPrinters,
+  getActivePrinter,
+  getDefaultPrinter,
+  configureWindowsDriver,
+  slicePdfCustomPages,
+  printPdf,
+}

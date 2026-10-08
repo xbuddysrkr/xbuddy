@@ -32,7 +32,6 @@ import {
   fetchPendingOrders,
   fetchOrderPdfBlob,
   getOrderPdfUrl,
-  triggerBrowserPrint,
   prepareOrderPdfForPrint,
   isAgentAvailable
 } from '../utils/api'
@@ -385,51 +384,21 @@ function ReleasePrintStation({ onLock }) {
         return
       }
 
-      // 2. FALLBACK: Print Agent unreachable (e.g. opened booth on phone/tablet without the agent running)
-      //    Inform operator and open browser print dialog fallback
+      // Requirement 9 & 21: NO BROWSER PRINT FALLBACK
+      // If Print Agent is offline or unreachable:
+      // DO NOT open Chrome/Edge browser print dialog.
+      // Instead show: Print Station Offline. Please start/restart XBuddy Print Station.
+      // Keep the order safely in the queue.
       setResult({
         success: false,
-        error: `Hardware Print Agent not connected. Opening browser print dialog fallback. (Run the Print Agent on this PC for zero-dialog printing).`,
+        error: `🔴 Print Station Offline. Printing is temporarily unavailable. Please start or restart XBuddy Print Station.`,
       })
-
-      const rawBlob = await fetchOrderPdfBlob(id)
-      const processedBlob = await prepareOrderPdfForPrint(rawBlob, target)
-
-      try {
-        await updateOrderStatus(id, 'Printing')
-      } catch {}
-
-      await triggerBrowserPrint(processedBlob)
-
-      const isColor = target.colorMode === 'color' || target.printType === 'Color'
-      const copies = target.copies || 1
-      const duplex = target.duplex || target.printSide === 'Double'
-      const isCustomPages = target.pageRange === 'custom' || (Array.isArray(target.selectedPages) && target.selectedPages.length > 0)
-
-      setActivePrintSession({
-        orderId: id,
-        order: target,
-        pdfBlob: processedBlob,
-        startedAt: Date.now(),
-        isColor,
-        copies,
-        duplex,
-        isCustomPages,
-        customPages: target.customPages || ''
-      })
-
-      if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
-        setSelectedOrder(prev => ({ ...prev, printStatus: 'Printing' }))
-      } else {
-        setSelectedOrder({ ...target, printStatus: 'Printing' })
-      }
+      return
     } catch (err) {
       console.error('[Direct Print Failed]:', err)
-      const pdfUrl = getOrderPdfUrl(id)
       setResult({
         success: false,
-        error: `Could not send print job: ${err.message}`,
-        fallbackUrl: pdfUrl,
+        error: `🔴 Print Station Offline. Printing is temporarily unavailable. Please start or restart XBuddy Print Station. (${err.message})`,
       })
     } finally {
       setPrintLoading(false)
@@ -474,19 +443,10 @@ function ReleasePrintStation({ onLock }) {
     }
   }
 
-  // Re-open print dialog or re-trigger hardware print
+  // Re-trigger hardware print via Print Agent
   async function handleReopenPrintDialog() {
     if (selectedOrder) {
-      // Re-trigger hardware print with reprint flag so agent allows it
       handleDirectPrint(selectedOrder, true)
-      return
-    }
-    if (activePrintSession?.pdfBlob) {
-      try {
-        await triggerBrowserPrint(activePrintSession.pdfBlob)
-      } catch (err) {
-        console.error('Failed to reopen print dialog:', err)
-      }
     }
   }
 
@@ -523,19 +483,19 @@ function ReleasePrintStation({ onLock }) {
               {agentOnline ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Hardware Agent Connected • Zero Dialogs
+                  🟢 Hardware Print Agent Connected
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  Browser Dialog Mode
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  🔴 Print Station Offline
                 </span>
               )}
             </div>
             <p className="text-slate-500 text-xs">
               {agentOnline
-                ? 'Direct Hardware Printing • Automatic Color, Duplex, & Copies Enforcement'
-                : 'Direct In-Browser Printing • Start print agent on PC for silent zero-dialog prints'}
+                ? 'Silent Printing Enabled • Automatic Color, Duplex, & Copies Enforcement'
+                : 'Printing is temporarily unavailable. Please start XBuddy Print Station.'}
             </p>
           </div>
         </div>
@@ -901,23 +861,22 @@ function ReleasePrintStation({ onLock }) {
                           </div>
                         </div>
                       ) : (
-                        (selectedOrder.colorMode === 'color' || selectedOrder.printType === 'Color') && String(selectedOrder.printStatus).toLowerCase() !== 'printed' && (
-                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2.5">
-                            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span>
-                              <strong>Color Print Notice:</strong> Student paid <strong>₹{selectedOrder.amount || selectedOrder.totalCost || 0}</strong> for Color.
-                              (Start Print Agent on kiosk PC to print silently without dialogs).
-                            </span>
-                          </div>
-                        )
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-900 flex items-center gap-2.5">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>
+                            <strong>Print Station Offline:</strong> Printing is temporarily unavailable. Please start or restart XBuddy Print Station on this PC.
+                          </span>
+                        </div>
                       )}
 
                       <div className="flex flex-col sm:flex-row gap-3">
                         <button
                           onClick={() => handleDirectPrint(selectedOrder)}
-                          disabled={printLoading}
+                          disabled={printLoading || !agentOnline}
                           className={`flex-1 py-4 text-white font-bold text-base rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 active:scale-[0.98] disabled:opacity-50 ${
-                            String(selectedOrder.printStatus).toLowerCase() === 'printed'
+                            !agentOnline
+                              ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-900/20'
+                              : String(selectedOrder.printStatus).toLowerCase() === 'printed'
                               ? 'bg-slate-700 hover:bg-slate-800 shadow-slate-900/20'
                               : 'bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 shadow-orange-500/25'
                           }`}
@@ -925,17 +884,22 @@ function ReleasePrintStation({ onLock }) {
                           {printLoading ? (
                             <>
                               <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                              <span>{agentOnline ? 'Sending Direct to Printer...' : 'Preparing & Slicing PDF...'}</span>
+                              <span>Sending Direct to Printer...</span>
+                            </>
+                          ) : !agentOnline ? (
+                            <>
+                              <AlertTriangle className="w-5 h-5" />
+                              <span>Print Station Offline</span>
                             </>
                           ) : String(selectedOrder.printStatus).toLowerCase() === 'printed' ? (
                             <>
                               <RotateCcw className="w-5 h-5" />
-                              <span>Reprint Document</span>
+                              <span>Reprint Document (Zero Dialogs)</span>
                             </>
                           ) : (
                             <>
                               <Printer className="w-5 h-5" />
-                              <span>{agentOnline ? 'Print Document Now (Zero Dialogs)' : 'Print Document Now'}</span>
+                              <span>Print Document Now (Zero Dialogs)</span>
                             </>
                           )}
                         </button>

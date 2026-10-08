@@ -4,8 +4,6 @@ import { Store, AlertTriangle, Unlock, Lock, Printer, CheckCircle2 } from 'lucid
 import {
   boothLogin,
   validateAndRelease,
-  fetchOrderPdfBlob,
-  triggerBrowserPrint,
   updateOrderStatus,
   getOrderStatus
 } from '../utils/api'
@@ -142,29 +140,17 @@ function BoothPanel({ onLogout }) {
     // 1. Try agent print release first (via local agent if running)
     let res = await validateAndRelease(id)
 
-    // 2. If agent unreachable, seamlessly fall back to Direct In-Browser Print!
+    // 2. Strict Requirement 9: NO BROWSER PRINT FALLBACK
     if (!res || !res.success) {
-      try {
-        const pdfBlob = await fetchOrderPdfBlob(id)
-        await triggerBrowserPrint(pdfBlob)
-        await updateOrderStatus(id, 'Printed')
+      if (res && res.conflict) {
         res = {
-          success: true,
-          message: `Order ${id} sent to browser printer! Marked as Printed.`,
+          success: false,
+          error: res.error || `Order ${id} is already printing or was previously released.`,
         }
-      } catch (printErr) {
-        // Check if order exists in cloud database
-        const cloudOrder = await getOrderStatus(id)
-        if (cloudOrder?.success && (cloudOrder.order || cloudOrder.fileName)) {
-          res = {
-            success: false,
-            error: `Browser print error: ${printErr.message}. Check browser permissions.`,
-          }
-        } else {
-          res = {
-            success: false,
-            error: `Order ${id} not found in database.`,
-          }
+      } else {
+        res = {
+          success: false,
+          error: `🔴 Print Station Offline. Printing is temporarily unavailable. Please start or restart XBuddy Print Station.`,
         }
       }
     }

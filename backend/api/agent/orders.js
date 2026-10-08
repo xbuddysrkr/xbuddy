@@ -140,6 +140,45 @@ export default async function handler(req, res) {
     const ordersCollection = db.collection('orders')
     const nowIso = new Date().toISOString()
 
+    // ── ROUTE 0: POST /api/agent/orders?action=heartbeat (STATION HEARTBEAT) ─
+    if (
+      (parts.length === 1 && parts[0].toLowerCase() === 'heartbeat') ||
+      req.query?.action === 'heartbeat' || req.body?.action === 'heartbeat'
+    ) {
+      const stationsCol = db.collection('stations')
+      const body = req.body || {}
+      const cleanStationId = String(body.stationId || req.query?.stationId || 'SRKR-XEROX-01').trim().toUpperCase()
+
+      const updateDoc = {
+        stationId: cleanStationId,
+        printerName: String(body.printerName || 'Unknown'),
+        printerAvailable: Boolean(body.printerAvailable),
+        agentVersion: String(body.agentVersion || '2.1.0'),
+        status: body.printerAvailable ? 'online' : 'printer_unavailable',
+        lastHeartbeat: nowIso,
+        lastHeartbeatEpoch: Date.now(),
+        uptimeSeconds: Number(body.uptimeSeconds) || 0,
+        systemInfo: body.systemInfo || {},
+        updatedAt: nowIso,
+      }
+
+      await stationsCol.updateOne(
+        { stationId: cleanStationId },
+        {
+          $set: updateDoc,
+          $setOnInsert: { createdAt: nowIso },
+        },
+        { upsert: true }
+      )
+
+      return res.status(200).json({
+        success: true,
+        stationId: cleanStationId,
+        status: updateDoc.status,
+        serverTime: nowIso,
+      })
+    }
+
     // ── ROUTE 1: GET /api/agent/orders/pending (or action=pending) ───────────
     if (
       (parts.length === 1 && parts[0].toLowerCase() === 'pending') ||

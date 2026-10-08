@@ -352,7 +352,10 @@ export async function validateAndRelease(orderId, options = {}) {
   const isLocalHost = typeof window !== 'undefined' && 
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   const tunnelUrl = await getTunnelUrl()
-  const endpoints = isLocalHost ? [LOCAL_API, tunnelUrl].filter(Boolean) : [tunnelUrl, LOCAL_API].filter(Boolean)
+  const endpoints = isLocalHost 
+    ? [LOCAL_API, 'http://127.0.0.1:3001', tunnelUrl].filter(Boolean) 
+    : [LOCAL_API, 'http://127.0.0.1:3001', tunnelUrl].filter(Boolean)
+
   for (const base of endpoints) {
     try {
       const res = await fetch(`${base}/release-print`, {
@@ -361,7 +364,8 @@ export async function validateAndRelease(orderId, options = {}) {
         body: JSON.stringify({ orderId, ...options }),
         signal: AbortSignal.timeout(15000),
       })
-      if (res.ok) return await res.json()
+      const data = await res.json().catch(() => null)
+      if (data) return data
     } catch { continue }
   }
   return { success: false, error: 'Could not connect to print agent. Is it running?' }
@@ -861,5 +865,3 @@ export async function triggerBrowserPrint(blobOrUrl) {
     frame.src = url
   })
 }
-
-
