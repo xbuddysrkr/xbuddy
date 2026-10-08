@@ -495,7 +495,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(orderPayload),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(60000),
     })
 
     if (res.ok) {

@@ -148,6 +148,7 @@ function restartTunnel() {
 
 // Watch tunnel logs until URL appears, publish it, then keep background monitor active
 async function watchForTunnelUrl(maxWaitMs = 30000) {
+  ensureCloudflaredRunning()
   const start = Date.now()
 
   return new Promise((resolve) => {
