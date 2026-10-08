@@ -489,6 +489,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
       selectedPageCount: printSettings.selectedPageCount,
       printStatus: 'waiting_for_shopkeeper',
       paymentStatus: 'pending',
+      pdfBase64: orderData.pdfBase64 || '',
     }
 
     const res = await fetch(ORDERS_ENDPOINT, {
@@ -650,6 +651,123 @@ export async function createCampusAd(adData) {
   } catch (err) {
     return { success: false, error: err.message || 'Network error connecting to Ads API' }
   }
+}
+
+/**
+ * Returns direct URL for streaming/downloading order PDF from cloud
+ */
+export function getOrderPdfUrl(orderId) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  return `${ORDERS_ENDPOINT}?action=getPdf&orderId=${encodeURIComponent(cleanId)}`
+}
+
+/**
+ * Fetches PDF binary blob directly from cloud backend for browser printing
+ */
+export async function fetchOrderPdfBlob(orderId) {
+  const url = getOrderPdfUrl(orderId)
+  const res = await fetch(url, { signal: AbortSignal.timeout(45000) })
+  if (!res.ok) {
+    let errText = `HTTP ${res.status}`
+    try {
+      const j = await res.json()
+      if (j?.error) errText = j.error
+    } catch {}
+    throw new Error(`Failed to load PDF: ${errText}`)
+  }
+  return await res.blob()
+}
+
+/**
+ * Fetches active pending orders waiting for shopkeeper release
+ */
+export async function fetchPendingOrders() {
+  try {
+    const res = await fetch(`${ORDERS_ENDPOINT}?action=listOrders`, { signal: AbortSignal.timeout(10000) })
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.success && Array.isArray(data.orders)) {
+        const pending = data.orders.filter(o => {
+          const s = String(o.printStatus || '').toLowerCase()
+          return s === 'waiting_for_shopkeeper' || s === 'queued' || s === 'pending' || s === 'waiting' || s === 'failed'
+        })
+        return pending
+      }
+    }
+  } catch (err) {
+    console.warn('[fetchPendingOrders] notice:', err.message)
+  }
+  return []
+}
+
+/**
+ * Silently or directly prints a PDF blob or URL in the browser using a dedicated hidden iframe.
+ * If opened in Chrome with --kiosk-printing, it bypasses the print dialog completely.
+ */
+export async function triggerBrowserPrint(blobOrUrl) {
+  return new Promise((resolve, reject) => {
+    let url = blobOrUrl
+    let isCreatedBlob = false
+
+    if (blobOrUrl instanceof Blob) {
+      url = URL.createObjectURL(blobOrUrl)
+      isCreatedBlob = true
+    }
+
+    // Reuse or create hidden iframe
+    let frame = document.getElementById('xbuddy-print-iframe')
+    if (!frame) {
+      frame = document.createElement('iframe')
+      frame.id = 'xbuddy-print-iframe'
+      frame.style.position = 'fixed'
+      frame.style.right = '100%'
+      frame.style.bottom = '100%'
+      frame.style.width = '0px'
+      frame.style.height = '0px'
+      frame.style.border = '0'
+      document.body.appendChild(frame)
+    }
+
+    let cleanupDone = false
+    const cleanup = () => {
+      if (cleanupDone) return
+      cleanupDone = true
+      if (isCreatedBlob) {
+        setTimeout(() => URL.revokeObjectURL(url), 60000)
+      }
+    }
+
+    frame.onload = () => {
+      try {
+        frame.contentWindow.focus()
+        frame.contentWindow.print()
+        cleanup()
+        resolve({ success: true, mode: 'iframe' })
+      } catch (err) {
+        console.warn('[Direct Print Iframe Error]:', err.message)
+        // Fallback: open print window directly
+        try {
+          const printWindow = window.open(url, '_blank')
+          if (printWindow) {
+            printWindow.focus()
+            resolve({ success: true, mode: 'window' })
+          } else {
+            reject(new Error('Popup blocked. Please allow popups or use Preview PDF.'))
+          }
+        } catch (winErr) {
+          reject(winErr)
+        }
+        cleanup()
+      }
+    }
+
+    frame.onerror = (err) => {
+      cleanup()
+      reject(err || new Error('Failed to load PDF into print frame'))
+    }
+
+    frame.src = url
+  })
 }
 
 

@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Store, AlertTriangle, Unlock, Lock, Printer, CheckCircle2 } from 'lucide-react'
-import { boothLogin, validateAndRelease } from '../utils/api'
+import {
+  boothLogin,
+  validateAndRelease,
+  fetchOrderPdfBlob,
+  triggerBrowserPrint,
+  updateOrderStatus,
+  getOrderStatus
+} from '../utils/api'
 
 const SESSION_KEY     = 'xbuddy_booth_auth'
 const INACTIVITY_MS   = 5 * 60 * 1000  // 5 minutes
@@ -127,10 +134,41 @@ function BoothPanel({ onLogout }) {
 
   async function handleRelease(e) {
     e.preventDefault()
-    if (!orderId.trim()) return
+    const id = orderId.trim().toUpperCase()
+    if (!id) return
     setLoading(true)
     setResult(null)
-    const res = await validateAndRelease(orderId.trim().toUpperCase())
+
+    // 1. Try agent print release first (via local agent if running)
+    let res = await validateAndRelease(id)
+
+    // 2. If agent unreachable, seamlessly fall back to Direct In-Browser Print!
+    if (!res || !res.success) {
+      try {
+        const pdfBlob = await fetchOrderPdfBlob(id)
+        await triggerBrowserPrint(pdfBlob)
+        await updateOrderStatus(id, 'Printed')
+        res = {
+          success: true,
+          message: `Order ${id} sent to browser printer! Marked as Printed.`,
+        }
+      } catch (printErr) {
+        // Check if order exists in cloud database
+        const cloudOrder = await getOrderStatus(id)
+        if (cloudOrder?.success && (cloudOrder.order || cloudOrder.fileName)) {
+          res = {
+            success: false,
+            error: `Browser print error: ${printErr.message}. Check browser permissions.`,
+          }
+        } else {
+          res = {
+            success: false,
+            error: `Order ${id} not found in database.`,
+          }
+        }
+      }
+    }
+
     setResult(res)
     setLoading(false)
     if (res.success) setOrderId('')

@@ -194,6 +194,7 @@ export default async function handler(req, res) {
         selectedPages:        normalizedPages,
         selectedPageCount:    normalizedPages.length > 0 ? normalizedPages.length : (Number(payload.selectedPageCount) || 1),
         driveUrl:             String(payload.driveUrl || '').trim(),
+        pdfBase64:            (payload.pdfBase64 && typeof payload.pdfBase64 === 'string' && payload.pdfBase64.length < 15 * 1024 * 1024) ? payload.pdfBase64 : '',
         paymentStatus:        'pending',
         printStatus:          'waiting_for_shopkeeper',
         createdAt:            nowIso,
@@ -530,7 +531,9 @@ export default async function handler(req, res) {
         const order = await db.collection('orders').findOne({ orderId })
         if (order) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
-          return res.status(200).json({ success: true, order, source: 'mongo' })
+          const cleanOrder = { ...order, hasPdf: Boolean(order.pdfBase64 || order.driveUrl) }
+          if (cleanOrder.pdfBase64) delete cleanOrder.pdfBase64
+          return res.status(200).json({ success: true, order: cleanOrder, source: 'mongo' })
         } else {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} not found in MongoDB Atlas`)
           return res.status(404).json({ success: false, error: 'Order not found', source: 'mongo' })
@@ -538,6 +541,77 @@ export default async function handler(req, res) {
       } catch (mongoErr) {
         console.error(`[MONGO_READ_ERROR] MongoDB getOrderStatus error for ${orderId}: ${mongoErr.message}`)
         return res.status(503).json({ success: false, error: 'Orders service temporarily unavailable', details: mongoErr.message })
+      }
+    }
+
+    // ── 2.5 GET PDF BINARY STREAM (IN-BROWSER DIRECT PRINT & PREVIEW) ────────
+    if (action === 'getPdf' || action === 'downloadPdf') {
+      const orderId = String(req.query?.orderId || req.body?.orderId || '').trim().toUpperCase()
+      if (!orderId) {
+        return res.status(400).json({ success: false, error: 'orderId is required' })
+      }
+
+      try {
+        const { db } = await connectToDatabase()
+        const order = await db.collection('orders').findOne({ orderId })
+        if (!order) {
+          return res.status(404).json({ success: false, error: 'Order not found' })
+        }
+
+        const safeFileName = (order.fileName || `${orderId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_')
+
+        // 1. Return from stored MongoDB base64 if present
+        if (order.pdfBase64 && typeof order.pdfBase64 === 'string') {
+          const pdfBuffer = Buffer.from(order.pdfBase64, 'base64')
+          res.setHeader('Content-Type', 'application/pdf')
+          res.setHeader('Content-Length', pdfBuffer.length)
+          res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          return res.status(200).send(pdfBuffer)
+        }
+
+        // 2. Fallback: Stream from Google Drive if driveUrl is present
+        if (order.driveUrl && typeof order.driveUrl === 'string') {
+          let driveDownloadUrl = order.driveUrl
+          const patterns = [
+            /\/file\/d\/([a-zA-Z0-9_-]+)/,
+            /id=([a-zA-Z0-9_-]+)/,
+            /\/d\/([a-zA-Z0-9_-]+)/,
+          ]
+          for (const pattern of patterns) {
+            const match = order.driveUrl.match(pattern)
+            if (match) {
+              driveDownloadUrl = `https://drive.google.com/uc?export=download&confirm=t&id=${match[1]}`
+              break
+            }
+          }
+
+          const driveRes = await fetch(driveDownloadUrl, {
+            redirect: 'follow',
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(35000),
+          })
+
+          if (driveRes.ok) {
+            const arrayBuffer = await driveRes.arrayBuffer()
+            const pdfBuffer = Buffer.from(arrayBuffer)
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader('Content-Length', pdfBuffer.length)
+            res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
+            res.setHeader('Access-Control-Allow-Origin', '*')
+            return res.status(200).send(pdfBuffer)
+          } else {
+            console.warn(`[DRIVE_PDF_FETCH_FAILED] HTTP ${driveRes.status} for ${orderId}`)
+          }
+        }
+
+        return res.status(404).json({
+          success: false,
+          error: 'No PDF file found for this order. Neither MongoDB base64 nor Google Drive document is available.',
+        })
+      } catch (pdfErr) {
+        console.error(`[GET_PDF_ERROR] Order ${orderId}:`, pdfErr.message)
+        return res.status(500).json({ success: false, error: `Failed to retrieve PDF: ${pdfErr.message}` })
       }
     }
 
@@ -558,11 +632,12 @@ export default async function handler(req, res) {
         }
       }
 
-      // PRIMARY & AUTHORITATIVE: MongoDB Atlas
+      // PRIMARY & AUTHORITATIVE: MongoDB Atlas (project out heavy pdfBase64)
       try {
         const { db } = await connectToDatabase()
         const orders = await db.collection('orders').find({}).sort({ createdAt: -1 }).limit(100).toArray()
         if (Array.isArray(orders)) {
+          orders.forEach(o => { if (o.pdfBase64) delete o.pdfBase64 })
           console.log(`[MONGO_ORDER_READ_PRIMARY] Successfully retrieved ${orders.length} orders from MongoDB Atlas`)
           return res.status(200).json({ success: true, orders, source: 'mongo' })
         }
