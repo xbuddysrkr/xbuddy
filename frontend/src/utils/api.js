@@ -1,8 +1,8 @@
-const API_URL    = import.meta.env.VITE_GAS_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
+const API_URL    = import.meta.env.VITE_GAS_URL || 'https://script.google.com/macros/s/AKfycbxUpE5_E3KmhcD0yIuodtGQyOqxpSnps6Ra6_64rdMTYTPughmzyMKm7P3n_JjM2KqF/exec'
 const LOCAL_API  = import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:3001'
 const GITHUB_RAW = import.meta.env.VITE_GITHUB_TUNNEL_URL || 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
-const API_KEY    = import.meta.env.VITE_API_KEY || 'XB_API_SECRET_KEY_2026'
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const API_KEY    = import.meta.env.VITE_API_KEY || 'e7a2b91c045f8e3291dc8f7514a60b9380fa0715cb38d97e41ac824b01e3264b'
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'https://xbuddy.onrender.com').replace(/\/$/, '')
 const ORDERS_ENDPOINT = `${BACKEND_URL}/api/orders`
 
 let _tunnelUrl = null
@@ -114,7 +114,7 @@ async function uploadPdfViaGas(orderId, fileName, pdfBase64) {
         total: String(total),
         chunk,
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(12000),
     })
     if (!res.ok) throw new Error(`Chunk ${i} failed`)
     const data = await res.json()
@@ -131,7 +131,7 @@ async function uploadPdfViaGas(orderId, fileName, pdfBase64) {
       fileName,
       mimeType: 'application/pdf',
     }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(20000),
   })
   const data = await res.json()
   if (!data?.success || !data?.fileUrl) throw new Error(`Assembly failed: ${data?.error || ''}`)
@@ -523,16 +523,16 @@ export async function submitOrder(orderData, { onStep } = {}) {
     }
   }
 
-  // ── Step 2: Deliver PDF to agent for local staging ────────────────────────
+  // ── Step 2: Deliver PDF to agent for local staging (best-effort optimization) ────
   onStep?.('print_agent')
 
-  // Try local (xerox shop agent machine)
+  // Try local print agent directly (if client is running on the shopkeeper PC)
   try {
     if (await postToAgent(LOCAL_API, orderId, orderData, printSettings))
       return { success: true, orderId, message: null }
   } catch {}
 
-  // Try tunnel with full PDF (works for PDFs under ~4MB through Cloudflare)
+  // Try active Cloudflare tunnel
   const tunnelUrl = await getTunnelUrl()
   if (tunnelUrl) {
     try {
@@ -541,39 +541,42 @@ export async function submitOrder(orderData, { onStep } = {}) {
     } catch {}
   }
 
-  // Fallback: upload PDF to Drive, send metadata to agent, and persist driveUrl in MongoDB
+  // Non-blocking background staging: Try Google Drive metadata upload if agent is remote.
+  // CRITICAL: The order and PDF are already 100% saved authoritatively in MongoDB Atlas (Step 1).
+  // The shopkeeper can release and print directly via booth.html or the print agent cloud fetch.
   try {
-    const driveUrl = await uploadPdfViaGas(orderId, orderData.fileName, orderData.pdfBase64 || '')
-    // Persist driveUrl in MongoDB authoritative store
-    try {
-      await fetch(ORDERS_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-        body: JSON.stringify({
-          action: 'updateOrderStatus',
-          orderId,
-          printStatus: 'waiting_for_shopkeeper',
-          driveUrl,
-        }),
-      })
-    } catch {}
-
-    // Notify agent via local or tunnel with just the driveUrl (tiny payload)
-    const metaBody = JSON.stringify({ orderId, driveUrl, screenshotBase64: orderData.screenshotBase64 || '', ...printSettings })
-    for (const base of [LOCAL_API, tunnelUrl].filter(Boolean)) {
+    const driveUrl = await uploadPdfViaGas(orderId, orderData.fileName, orderData.pdfBase64 || '').catch(() => null)
+    if (driveUrl) {
       try {
-        const r = await fetch(`${base}/save-order-meta`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: metaBody, signal: AbortSignal.timeout(8000),
+        await fetch(ORDERS_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+          body: JSON.stringify({
+            action: 'updateOrderStatus',
+            orderId,
+            printStatus: 'waiting_for_shopkeeper',
+            driveUrl,
+          }),
         })
-        if (r.ok) { const d = await r.json(); if (d?.success) break }
       } catch {}
+
+      const metaBody = JSON.stringify({ orderId, driveUrl, screenshotBase64: orderData.screenshotBase64 || '', ...printSettings })
+      for (const base of [LOCAL_API, tunnelUrl].filter(Boolean)) {
+        try {
+          const r = await fetch(`${base}/save-order-meta`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: metaBody, signal: AbortSignal.timeout(4000),
+          })
+          if (r.ok) { const d = await r.json(); if (d?.success) break }
+        } catch {}
+      }
     }
-    return { success: true, orderId, message: null }
   } catch (err) {
-    console.error('[Upload to Google Drive Failed]:', err.message)
-    throw { step: 'print_agent', reason: `File delivery failed: ${err.message}. Please retry.` }
+    console.warn('[Print Agent / Drive Delivery Non-Fatal Notice]:', err.message)
   }
+
+  // Order is successfully placed and secured in MongoDB Atlas
+  return { success: true, orderId, message: null }
 }
 
 /**

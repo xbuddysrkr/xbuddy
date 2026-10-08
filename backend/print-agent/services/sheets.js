@@ -155,7 +155,7 @@ async function getOrderByIdForRelease(orderId) {
           paymentStatus:     o.paymentStatus || 'pending',
           printStatus:       o.printStatus || 'waiting_for_shopkeeper',
           driveUrl:          o.driveUrl || '',
-          pdfUrl:            o.pdfUrl || o.driveUrl || '',
+          pdfUrl:            o.pdfUrl || o.driveUrl || `${CLOUD_API_URL}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
           source:            'mongo',
         }
       }

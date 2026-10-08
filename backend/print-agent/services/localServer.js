@@ -394,6 +394,21 @@ app.post('/release-print', async (req, res) => {
       }
     }
 
+    // 4. Try cloud backend direct fetch (/api/orders?action=getOrderPdf)
+    if (!pdfReady) {
+      const cloudPdfUrl = `${CLOUD_API_URL}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(id)}`
+      logger.info(`Fetching PDF directly from cloud backend: ${cloudPdfUrl}`)
+      try {
+        await downloadFile(cloudPdfUrl, filePath)
+        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 100) {
+          pdfReady = true
+          logger.success(`[AGENT] PDF downloaded directly from cloud backend for ${id}`)
+        }
+      } catch (e) {
+        logger.error(`Cloud backend PDF fetch failed: ${e.message}`)
+      }
+    }
+
     if (!pdfReady) {
       logger.warn(`No PDF found for ${id} - cannot print`)
       await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
