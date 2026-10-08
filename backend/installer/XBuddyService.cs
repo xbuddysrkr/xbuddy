@@ -162,6 +162,22 @@ namespace XBuddyPrintStation
                     psi.EnvironmentVariables["MUTOOL_PATH"] = mutoolExe;
                 }
 
+                // Forward provisioned AGENT_SECRET_KEY from station config.json
+                string configPath = Path.Combine(programData, @"XBuddyPrintStation\config.json");
+                if (File.Exists(configPath))
+                {
+                    try
+                    {
+                        string configText = File.ReadAllText(configPath);
+                        var matchKey = System.Text.RegularExpressions.Regex.Match(configText, "\"agentSecretKey\"\\s*:\\s*\"([^\"]+)\"");
+                        if (matchKey.Success && matchKey.Groups[1].Value.Length >= 32)
+                        {
+                            psi.EnvironmentVariables["AGENT_SECRET_KEY"] = matchKey.Groups[1].Value;
+                        }
+                    }
+                    catch { }
+                }
+
                 _nodeProcess = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
                 _nodeProcess.OutputDataReceived += (s, e) =>

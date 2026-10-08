@@ -41,6 +41,10 @@ if not exist "package.zip" (
     exit /b 1
 )
 
+echo [4.5/5] Generating secure station provisioning payload...
+node generate_provisioning.cjs
+if %ERRORLEVEL% neq 0 ( echo [ERROR] Failed to generate Provisioning.cs & exit /b 1 )
+
 echo [5/5] Compiling XBuddyPrintStationSetup.exe (Guided Installer Wizard with UAC Manifest and Win32 Service Registration)...
 "%CSC%" /nologo /platform:x64 /target:winexe /out:"XBuddyPrintStationSetup.exe" /win32manifest:"app.manifest" /resource:package.zip /reference:System.Windows.Forms.dll,System.Drawing.dll,System.ServiceProcess.dll,System.IO.Compression.dll,System.IO.Compression.FileSystem.dll "XBuddyPrintStationSetup.cs" "Provisioning.cs"
 if %ERRORLEVEL% neq 0 ( echo [ERROR] Failed to compile XBuddyPrintStationSetup.exe & exit /b 1 )

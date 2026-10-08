@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -628,7 +629,7 @@ namespace XBuddyPrintStation
                 ExtractEmbeddedPackage(targetDir);
 
                 // 3. Write / update config.json (idempotent configuration preservation)
-                worker.ReportProgress(50, "Saving station identity config...");
+                worker.ReportProgress(50, "Saving station identity config and credentials...");
                 string configPath = Path.Combine(stationDataDir, "config.json");
                 string existingKey = "";
                 string existingPrinter = "";
@@ -640,23 +641,39 @@ namespace XBuddyPrintStation
                     {
                         string existingContent = File.ReadAllText(configPath, Encoding.UTF8);
                         var matchKey = System.Text.RegularExpressions.Regex.Match(existingContent, "\"agentSecretKey\"\\s*:\\s*\"([^\"]+)\"");
-                        if (matchKey.Success) existingKey = matchKey.Groups[1].Value;
+                        if (matchKey.Success) existingKey = matchKey.Groups[1].Value.Trim();
                         var matchPrinter = System.Text.RegularExpressions.Regex.Match(existingContent, "\"selectedPrinter\"\\s*:\\s*\"([^\"]+)\"");
-                        if (matchPrinter.Success) existingPrinter = matchPrinter.Groups[1].Value;
+                        if (matchPrinter.Success) existingPrinter = matchPrinter.Groups[1].Value.Trim();
                         var matchCloudUrl = System.Text.RegularExpressions.Regex.Match(existingContent, "\"cloudApiUrl\"\\s*:\\s*\"([^\"]+)\"");
-                        if (matchCloudUrl.Success && !string.IsNullOrEmpty(matchCloudUrl.Groups[1].Value)) existingCloudUrl = matchCloudUrl.Groups[1].Value;
+                        if (matchCloudUrl.Success && !string.IsNullOrEmpty(matchCloudUrl.Groups[1].Value)) existingCloudUrl = matchCloudUrl.Groups[1].Value.Trim();
                     }
                     catch { }
                 }
 
-                string agentKeyToUse = !string.IsNullOrEmpty(existingKey)
+                string provisionedKey = Provisioning.GetAgentSecretKey();
+                if (string.IsNullOrEmpty(provisionedKey) || provisionedKey.Length < 32)
+                {
+                    throw new InvalidOperationException("Station credential provisioning failed: Embedded secret key is missing or invalid.");
+                }
+
+                // Preserve existingKey ONLY if valid (>= 32 chars); otherwise use provisionedKey
+                string agentKeyToUse = (!string.IsNullOrEmpty(existingKey) && existingKey.Length >= 32)
                     ? existingKey
-                    : (Environment.GetEnvironmentVariable("AGENT_SECRET_KEY") ?? Provisioning.DefaultAgentKey);
+                    : provisionedKey;
 
                 string configJson = string.Format(
                     "{{\n  \"stationId\": \"{0}\",\n  \"selectedPrinter\": \"{1}\",\n  \"cloudApiUrl\": \"{2}\",\n  \"agentSecretKey\": \"{3}\",\n  \"port\": 3001,\n  \"version\": \"2.1.0\",\n  \"autoHeartbeat\": true,\n  \"heartbeatIntervalMs\": 30000\n}}",
                     stationId, existingPrinter, existingCloudUrl, agentKeyToUse);
                 File.WriteAllText(configPath, configJson, Encoding.UTF8);
+
+                // Immediate verification of config.json on disk
+                string verifyJson = File.ReadAllText(configPath, Encoding.UTF8);
+                var verifyMatch = System.Text.RegularExpressions.Regex.Match(verifyJson, "\"agentSecretKey\"\\s*:\\s*\"([^\"]+)\"");
+                if (!verifyMatch.Success || verifyMatch.Groups[1].Value.Length < 32)
+                {
+                    throw new InvalidOperationException("Failed to verify station credential in written config.json.");
+                }
+                worker.ReportProgress(55, "Station cloud credential provisioned successfully.");
 
                 // 4. Install & Register Windows Service (Requirement 1, 2, 5, 8)
                 worker.ReportProgress(65, "Registering Windows Service (" + SERVICE_NAME + ")...");
@@ -669,17 +686,21 @@ namespace XBuddyPrintStation
                 ServiceHelper.InstallService(SERVICE_NAME, ServiceHelper.DISPLAY_NAME, serviceBin);
 
                 // 5. Automatically Start & Verify Windows Service (Requirement 3, 4, 10, 11)
-                worker.ReportProgress(85, "Starting and verifying Windows Service (sc.exe query)...");
+                worker.ReportProgress(75, "Starting and verifying Windows Service (sc.exe query)...");
                 ServiceHelper.StartAndVerifyService(SERVICE_NAME);
 
-                // 6. Create Shortcuts
+                // 6. Verify Authenticated Cloud Telemetry (Requirement 7, 8, 9)
+                worker.ReportProgress(85, "Verifying authenticated cloud telemetry heartbeat...");
+                VerifyCloudHeartbeat();
+
+                // 7. Create Shortcuts
                 if (chkDesktopShortcut.Checked)
                 {
                     worker.ReportProgress(95, "Creating desktop & start menu shortcuts...");
                     CreateShortcuts(targetDir);
                 }
 
-                worker.ReportProgress(100, "Setup complete! Windows Service is RUNNING.");
+                worker.ReportProgress(100, "Setup complete! Windows Service and Cloud Telemetry are ACTIVE.");
                 e.Result = true;
             }
             catch (Exception ex)
@@ -811,6 +832,67 @@ namespace XBuddyPrintStation
                     Thread.Sleep(2000);
                     try { Process.Start("http://127.0.0.1:3001"); } catch { }
                 });
+            }
+        }
+
+        private void VerifyCloudHeartbeat()
+        {
+            string statusUrl = "http://127.0.0.1:3001/status";
+            string lastError = "";
+            bool verified = false;
+
+            for (int attempt = 1; attempt <= 30; attempt++)
+            {
+                try
+                {
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(statusUrl);
+                    request.Timeout = 3000;
+                    request.Method = "GET";
+
+                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    {
+                        if (response.StatusCode == HttpStatusCode.OK)
+                        {
+                            using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                            {
+                                string json = reader.ReadToEnd();
+
+                                var matchConnected = System.Text.RegularExpressions.Regex.Match(json, "\"connected\"\\s*:\\s*(true|false)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                                bool isConnected = matchConnected.Success && matchConnected.Groups[1].Value.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+                                var matchError = System.Text.RegularExpressions.Regex.Match(json, "\"error\"\\s*:\\s*\"([^\"]+)\"");
+                                if (matchError.Success)
+                                {
+                                    lastError = matchError.Groups[1].Value;
+                                }
+
+                                if (isConnected)
+                                {
+                                    verified = true;
+                                    break;
+                                }
+
+                                if (!string.IsNullOrEmpty(lastError) && lastError.IndexOf("Unauthorized", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    throw new InvalidOperationException("Cloud telemetry authentication failed: " + lastError);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (ex is InvalidOperationException) throw;
+                    lastError = ex.Message;
+                }
+
+                Thread.Sleep(1000);
+            }
+
+            if (!verified)
+            {
+                throw new InvalidOperationException("Cloud telemetry verification failed after installation. " +
+                    (!string.IsNullOrEmpty(lastError) ? ("Error: " + lastError) : "Heartbeat did not report connected within timeout."));
             }
         }
 

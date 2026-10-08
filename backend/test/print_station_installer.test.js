@@ -248,5 +248,60 @@ test('Print Station & Installer Architecture - Comprehensive Audit', async (t) =
     assert.match(content, /XBUDDY_INSTALL_DIR/, 'Must pass XBUDDY_INSTALL_DIR to agent process')
     assert.match(content, /MUTOOL_PATH/, 'Must pass MUTOOL_PATH to agent process')
     assert.match(content, /PROGRAMDATA/, 'Must preserve PROGRAMDATA in service child process')
+    assert.match(content, /AGENT_SECRET_KEY/, 'Must forward provisioned AGENT_SECRET_KEY to child process')
+  })
+
+  await t.test('27. Dynamic Provisioning Generator: generate_provisioning.cjs obfuscation', async () => {
+    const genPath = path.join(ROOT_DIR, 'backend', 'installer', 'generate_provisioning.cjs')
+    assert.ok(fs.existsSync(genPath), 'generate_provisioning.cjs must exist')
+    const genContent = fs.readFileSync(genPath, 'utf8')
+    assert.match(genContent, /AGENT_SECRET_KEY/, 'Generator must read AGENT_SECRET_KEY')
+    assert.match(genContent, /ObfuscatedKey/, 'Generator must produce ObfuscatedKey byte array')
+    assert.doesNotMatch(genContent, /f6d39a0b4ba0a2ac/, 'Generator must not hardcode the production key in source')
+
+    const provPath = path.join(ROOT_DIR, 'backend', 'installer', 'Provisioning.cs')
+    assert.ok(fs.existsSync(provPath), 'Provisioning.cs must exist after build')
+    const provContent = fs.readFileSync(provPath, 'utf8')
+    assert.match(provContent, /GetAgentSecretKey/, 'Provisioning.cs must declare GetAgentSecretKey')
+    assert.match(provContent, /ObfuscatedKey/, 'Provisioning.cs must declare ObfuscatedKey')
+  })
+
+  await t.test('28. Station Credential Decryption: Obfuscated key recovers authorized credential', async () => {
+    const provPath = path.join(ROOT_DIR, 'backend', 'installer', 'Provisioning.cs')
+    const provContent = fs.readFileSync(provPath, 'utf8')
+
+    // Parse obfuscated bytes and salt from C# source
+    const saltMatch = provContent.match(/Salt\s*=\s*new\s*byte\[\]\s*\{([^}]+)\}/)
+    const keyMatch = provContent.match(/ObfuscatedKey\s*=\s*new\s*byte\[\]\s*\{([^}]+)\}/)
+    assert.ok(saltMatch, 'Salt array must be found')
+    assert.ok(keyMatch, 'ObfuscatedKey array must be found')
+
+    const salt = saltMatch[1].split(',').map(s => parseInt(s.trim(), 16))
+    const obfuscated = keyMatch[1].split(',').map(s => parseInt(s.trim(), 16))
+    assert.ok(obfuscated.length >= 32, 'Obfuscated key length must be at least 32 bytes')
+
+    const decrypted = Buffer.from(obfuscated.map((b, i) => b ^ salt[i % salt.length])).toString('utf8')
+    assert.ok(decrypted.length >= 32, 'Decrypted credential must be at least 32 characters')
+
+    // Verify SHA-256 hash against authorized server hashes
+    const crypto = await import('crypto')
+    const hash = crypto.createHash('sha256').update(decrypted).digest('hex')
+    const authorizedHashes = ['ea4af0179d15ec55173b299b18bbffb8b770589fe9df62b6239aee52eee4f04d']
+    assert.ok(authorizedHashes.includes(hash), 'Decrypted credential hash must match authorized cloud key hash')
+  })
+
+  await t.test('29. Installer Configuration Integrity: config.json verification on disk', async () => {
+    const setupCs = path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyPrintStationSetup.cs')
+    const content = fs.readFileSync(setupCs, 'utf8')
+    assert.match(content, /Provisioning\.GetAgentSecretKey\(\)/, 'Must call Provisioning.GetAgentSecretKey()')
+    assert.match(content, /Failed to verify station credential in written config\.json/, 'Must verify config.json immediately on disk')
+  })
+
+  await t.test('30. Authenticated Cloud Telemetry Verification in Installer', async () => {
+    const setupCs = path.join(ROOT_DIR, 'backend', 'installer', 'XBuddyPrintStationSetup.cs')
+    const content = fs.readFileSync(setupCs, 'utf8')
+    assert.match(content, /VerifyCloudHeartbeat\(\)/, 'Must call VerifyCloudHeartbeat() after starting service')
+    assert.match(content, /Cloud telemetry authentication failed/, 'Must reject installation if cloud authentication fails')
+    assert.match(content, /connected/, 'Must assert connected: true from local /status endpoint')
   })
 })
