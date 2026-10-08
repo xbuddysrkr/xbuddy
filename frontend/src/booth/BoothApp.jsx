@@ -21,7 +21,8 @@ import {
   ChevronRight,
   Info,
   X,
-  FileCheck
+  FileCheck,
+  RotateCcw
 } from 'lucide-react'
 import {
   getOrderStatus,
@@ -31,7 +32,8 @@ import {
   fetchPendingOrders,
   fetchOrderPdfBlob,
   getOrderPdfUrl,
-  triggerBrowserPrint
+  triggerBrowserPrint,
+  prepareOrderPdfForPrint
 } from '../utils/api'
 
 const SESSION_KEY = 'xbuddy_booth_auth'
@@ -249,6 +251,7 @@ function ReleasePrintStation({ onLock }) {
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [result, setResult] = useState(null)
   const [lastPrint, setLastPrint] = useState(null)
+  const [activePrintSession, setActivePrintSession] = useState(null)
   const [pendingOrders, setPendingOrders] = useState([])
   const [queueLoading, setQueueLoading] = useState(false)
   const [showKioskModal, setShowKioskModal] = useState(false)
@@ -326,13 +329,75 @@ function ReleasePrintStation({ onLock }) {
     setResult(null)
 
     try {
-      // 1. Fetch PDF binary blob directly from cloud backend
-      const pdfBlob = await fetchOrderPdfBlob(id)
+      // 1. Fetch raw PDF binary blob directly from cloud backend
+      const rawBlob = await fetchOrderPdfBlob(id)
 
-      // 2. Trigger browser print (hidden iframe with fallback)
-      await triggerBrowserPrint(pdfBlob)
+      // 2. Pre-slice PDF if customer selected custom pages (e.g., [1, 3] or "2-5")
+      //    This guarantees Chrome's default "Pages: All" prints strictly the customized pages!
+      const processedBlob = await prepareOrderPdfForPrint(rawBlob, target)
 
-      // 3. Mark status as Printed in MongoDB Atlas
+      // 3. Update order status to 'Printing' (IN PROGRESS, not prematurely 'Printed')
+      //    Informs student in real-time while keeping order in active spooler
+      try {
+        await updateOrderStatus(id, 'Printing')
+      } catch (statusErr) {
+        console.warn('Could not update status to Printing:', statusErr)
+      }
+
+      // 4. Trigger browser print (hidden iframe / native dialog)
+      await triggerBrowserPrint(processedBlob)
+
+      const isColor = target.colorMode === 'color' || target.printType === 'Color'
+      const copies = target.copies || 1
+      const duplex = target.duplex || target.printSide === 'Double'
+      const isCustomPages = target.pageRange === 'custom' || (Array.isArray(target.selectedPages) && target.selectedPages.length > 0)
+
+      // 5. Establish active print session so operator can verify output before marking done
+      setActivePrintSession({
+        orderId: id,
+        order: target,
+        pdfBlob: processedBlob,
+        startedAt: Date.now(),
+        isColor,
+        copies,
+        duplex,
+        isCustomPages,
+        customPages: target.customPages || ''
+      })
+
+      // Update local state to Printing
+      if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
+        setSelectedOrder(prev => ({ ...prev, printStatus: 'Printing' }))
+      } else {
+        setSelectedOrder({ ...target, printStatus: 'Printing' })
+      }
+
+      setResult({
+        success: true,
+        message: `Print dialog opened for ${id}! Check printer output and confirm below when printed.`,
+      })
+    } catch (err) {
+      console.error('[Direct Print Failed]:', err)
+      const pdfUrl = getOrderPdfUrl(id)
+      setResult({
+        success: false,
+        error: `Browser print issue: ${err.message}. You can still click "Preview PDF" below.`,
+        fallbackUrl: pdfUrl,
+      })
+    } finally {
+      setPrintLoading(false)
+    }
+  }
+
+  // Operator confirms the printer has physically completed printing the sheets
+  async function handleConfirmPrinted(orderToConfirm) {
+    const target = orderToConfirm || activePrintSession?.order || selectedOrder
+    if (!target) return
+    const id = (target.orderId || target.id).trim().toUpperCase()
+
+    setPrintLoading(true)
+    try {
+      // Mark status as Printed in MongoDB Atlas
       await updateOrderStatus(id, 'Printed')
 
       setLastPrint({
@@ -341,30 +406,54 @@ function ReleasePrintStation({ onLock }) {
         time: new Date().toLocaleTimeString(),
       })
 
-      // Update state
       if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
         setSelectedOrder(prev => ({ ...prev, printStatus: 'Printed' }))
       }
 
-      // Refresh queue to remove completed job
+      setActivePrintSession(null)
       refreshQueue()
 
       setResult({
         success: true,
-        message: `Order ${id} sent to printer! Status marked as Printed.`,
+        message: `Order ${id} confirmed and marked as Printed! Ready for student pickup.`,
       })
     } catch (err) {
-      console.error('[Direct Print Failed]:', err)
-      // Provide actionable fallback so shopkeeper is never stranded
-      const pdfUrl = getOrderPdfUrl(id)
       setResult({
         success: false,
-        error: `Browser print preview issue: ${err.message}. You can still click "Preview & Print PDF" below.`,
-        fallbackUrl: pdfUrl,
+        error: `Failed to mark order as Printed: ${err.message}`,
       })
     } finally {
       setPrintLoading(false)
     }
+  }
+
+  // Re-open print dialog if operator cancelled, paper jammed, or changed printer
+  async function handleReopenPrintDialog() {
+    if (!activePrintSession?.pdfBlob) {
+      if (selectedOrder) {
+        handleDirectPrint(selectedOrder)
+      }
+      return
+    }
+    try {
+      await triggerBrowserPrint(activePrintSession.pdfBlob)
+    } catch (err) {
+      console.error('Failed to reopen print dialog:', err)
+    }
+  }
+
+  // Return order to waiting state
+  async function handleCancelPrintSession() {
+    if (!activePrintSession) return
+    const id = activePrintSession.orderId
+    try {
+      await updateOrderStatus(id, 'Waiting')
+      if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
+        setSelectedOrder(prev => ({ ...prev, printStatus: 'Waiting' }))
+      }
+    } catch {}
+    setActivePrintSession(null)
+    refreshQueue()
   }
 
   function handleLock() {
@@ -576,12 +665,17 @@ function ReleasePrintStation({ onLock }) {
                         <span className="text-xl font-black font-mono text-slate-900 tracking-wider">
                           {selectedOrder.orderId || selectedOrder.id}
                         </span>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 ${
                           String(selectedOrder.printStatus).toLowerCase() === 'printed'
                             ? 'bg-emerald-100 text-emerald-800'
+                            : String(selectedOrder.printStatus).toLowerCase() === 'printing'
+                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
                             : 'bg-amber-100 text-amber-800'
                         }`}>
-                          {selectedOrder.printStatus || 'Waiting'}
+                          {String(selectedOrder.printStatus).toLowerCase() === 'printing' && (
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                          )}
+                          <span>{selectedOrder.printStatus || 'Waiting'}</span>
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
@@ -601,7 +695,7 @@ function ReleasePrintStation({ onLock }) {
                   {/* Print Settings Grid */}
                   <div>
                     <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">
-                      Print Specifications
+                       Print Specifications
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                       <div className="bg-[#FFF9F2] p-3 rounded-2xl border border-orange-100/80">
@@ -646,37 +740,149 @@ function ReleasePrintStation({ onLock }) {
                     </div>
                   )}
 
-                  {/* Primary Action Buttons */}
-                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                    <button
-                      onClick={() => handleDirectPrint(selectedOrder)}
-                      disabled={printLoading}
-                      className="flex-1 py-4 bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-base rounded-2xl shadow-lg shadow-orange-500/25 transition-all flex items-center justify-center gap-2.5"
+                  {/* Active Print Session Card OR Primary Action Buttons */}
+                  {activePrintSession && (activePrintSession.orderId === (selectedOrder.orderId || selectedOrder.id)) ? (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-amber-50/90 border-2 border-amber-300 rounded-2xl p-5 space-y-4 shadow-sm"
                     >
-                      {printLoading ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                          <span>Streaming & Printing...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Printer className="w-5 h-5" />
-                          <span>Print Document Now</span>
-                        </>
-                      )}
-                    </button>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                          </span>
+                          <span className="text-sm font-bold text-amber-950">
+                            Print Dialog Dispatched • Awaiting Completion
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold text-amber-800 bg-amber-200/70 px-2.5 py-0.5 rounded-full">
+                          Operator Action Required
+                        </span>
+                      </div>
 
-                    <a
-                      href={getOrderPdfUrl(selectedOrder.orderId || selectedOrder.id)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-5 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition-colors flex items-center justify-center gap-2"
-                      title="Inspect PDF in browser tab before printing"
-                    >
-                      <Eye className="w-4 h-4 text-slate-500" />
-                      <span>Preview PDF</span>
-                    </a>
-                  </div>
+                      {/* Operator Verification Checklist */}
+                      <div className="bg-white/90 rounded-xl p-3.5 border border-amber-200/90 text-xs space-y-2 text-slate-700">
+                        {activePrintSession.isColor && (
+                          <div className="flex items-start gap-2 text-amber-950 font-bold bg-amber-100/80 p-2.5 rounded-lg border border-amber-300/60">
+                            <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <span>
+                              🎨 COLOR PRINT REQUIRED: Student paid ₹{selectedOrder.amount || selectedOrder.totalCost || 0} for Color.
+                              Ensure &quot;Color&quot; is selected in the printer dialog (Chrome defaults to Black &amp; White)!
+                            </span>
+                          </div>
+                        )}
+                        {activePrintSession.copies > 1 && (
+                          <div className="flex items-center gap-2 font-medium">
+                            <Copy className="w-4 h-4 text-slate-500 shrink-0" />
+                            <span>Copies: <strong>{activePrintSession.copies} copies</strong> requested by student.</span>
+                          </div>
+                        )}
+                        {activePrintSession.duplex && (
+                          <div className="flex items-center gap-2 font-medium">
+                            <RefreshCw className="w-4 h-4 text-slate-500 shrink-0" />
+                            <span>Two-sided printing (Duplex) requested.</span>
+                          </div>
+                        )}
+                        {activePrintSession.isCustomPages && (
+                          <div className="flex items-center gap-2 font-medium text-emerald-800 bg-emerald-50/80 p-2 rounded-lg border border-emerald-200">
+                            <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Custom pages ({activePrintSession.customPages}): Pre-sliced automatically into the print document.</span>
+                          </div>
+                        )}
+                        <p className="text-[11px] text-slate-500 italic pt-1">
+                          Only click &quot;Mark as Printed&quot; once the physical sheets have finished printing.
+                        </p>
+                      </div>
+
+                      {/* Operator Actions */}
+                      <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                        <button
+                          onClick={() => handleConfirmPrinted(selectedOrder)}
+                          disabled={printLoading}
+                          className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-sm rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
+                        >
+                          {printLoading ? (
+                            <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4" />
+                          )}
+                          <span>Mark as Printed &amp; Finished</span>
+                        </button>
+
+                        <button
+                          onClick={handleReopenPrintDialog}
+                          className="px-4 py-3.5 bg-white border border-amber-300 hover:bg-amber-50 text-amber-900 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+                          title="Reopen print dialog if closed or cancelled"
+                        >
+                          <RotateCcw className="w-4 h-4 text-amber-600" />
+                          <span>Reopen Print Dialog</span>
+                        </button>
+
+                        <button
+                          onClick={handleCancelPrintSession}
+                          className="px-3.5 py-3.5 text-slate-500 hover:text-rose-600 font-semibold text-xs transition-colors"
+                          title="Return job to waiting state"
+                        >
+                          Keep in Queue
+                        </button>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <div className="space-y-3 pt-2">
+                      {/* Color Warning Banner before printing */}
+                      {(selectedOrder.colorMode === 'color' || selectedOrder.printType === 'Color') && String(selectedOrder.printStatus).toLowerCase() !== 'printed' && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2.5">
+                          <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>
+                            <strong>Color Print Notice:</strong> Student paid <strong>₹{selectedOrder.amount || selectedOrder.totalCost || 0}</strong> for Color.
+                            When the print dialog opens, remember to select <strong>Color</strong> (Chrome defaults to Black &amp; White).
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          onClick={() => handleDirectPrint(selectedOrder)}
+                          disabled={printLoading}
+                          className={`flex-1 py-4 text-white font-bold text-base rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 active:scale-[0.98] disabled:opacity-50 ${
+                            String(selectedOrder.printStatus).toLowerCase() === 'printed'
+                              ? 'bg-slate-700 hover:bg-slate-800 shadow-slate-900/20'
+                              : 'bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 shadow-orange-500/25'
+                          }`}
+                        >
+                          {printLoading ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                              <span>Preparing &amp; Slicing PDF...</span>
+                            </>
+                          ) : String(selectedOrder.printStatus).toLowerCase() === 'printed' ? (
+                            <>
+                              <RotateCcw className="w-5 h-5" />
+                              <span>Reprint Document</span>
+                            </>
+                          ) : (
+                            <>
+                              <Printer className="w-5 h-5" />
+                              <span>Print Document Now</span>
+                            </>
+                          )}
+                        </button>
+
+                        <a
+                          href={getOrderPdfUrl(selectedOrder.orderId || selectedOrder.id)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-5 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition-colors flex items-center justify-center gap-2"
+                          title="Inspect PDF in browser tab before printing"
+                        >
+                          <Eye className="w-4 h-4 text-slate-500" />
+                          <span>Preview PDF</span>
+                        </a>
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               ) : (
                 <div className="bg-white/60 border-2 border-dashed border-orange-200/80 rounded-3xl p-12 text-center flex flex-col items-center justify-center min-h-[300px]">
@@ -727,7 +933,11 @@ function ReleasePrintStation({ onLock }) {
                       key={id}
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="bg-white rounded-2xl p-5 border border-orange-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between gap-4"
+                      className={`rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-4 ${
+                        activePrintSession?.orderId === id
+                          ? 'border-amber-300 ring-2 ring-amber-400/30 bg-amber-50/20'
+                          : 'border-orange-100 bg-white'
+                      }`}
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -735,8 +945,12 @@ function ReleasePrintStation({ onLock }) {
                             <span className="font-mono font-black text-lg text-slate-900">
                               {id}
                             </span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                              Waiting
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              activePrintSession?.orderId === id
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {activePrintSession?.orderId === id ? '🖨️ Printing...' : (ord.printStatus || 'Waiting')}
                             </span>
                           </div>
                           <p className="text-xs text-slate-600 font-medium truncate max-w-xs mt-1">
@@ -754,40 +968,75 @@ function ReleasePrintStation({ onLock }) {
                         <span className="px-2 py-1 rounded-lg bg-[#FFF9F2] border border-orange-100">
                           {ord.copies || 1} {ord.copies > 1 ? 'copies' : 'copy'}
                         </span>
-                        <span className="px-2 py-1 rounded-lg bg-[#FFF9F2] border border-orange-100">
-                          {ord.colorMode === 'color' || ord.printType === 'Color' ? '🎨 Color' : '⬛ B&W'}
+                        <span className={`px-2 py-1 rounded-lg border ${
+                          ord.colorMode === 'color' || ord.printType === 'Color'
+                            ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                            : 'bg-[#FFF9F2] text-slate-600 border-orange-100'
+                        }`}>
+                          {ord.colorMode === 'color' || ord.printType === 'Color' ? '🎨 Color (Verify!)' : '⬛ B&W'}
                         </span>
                         <span className="px-2 py-1 rounded-lg bg-[#FFF9F2] border border-orange-100">
                           {ord.duplex || ord.printSide === 'Double' ? '🔄 Duplex' : '📄 Single'}
                         </span>
                         {ord.pageRange === 'custom' && (
-                          <span className="px-2 py-1 rounded-lg bg-[#FFF9F2] border border-orange-100">
-                            Pages: {ord.customPages}
+                          <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
+                            Pages: {ord.customPages} (Sliced)
                           </span>
                         )}
                       </div>
 
                       {/* Action Row */}
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                        <button
-                          onClick={() => handleDirectPrint(ord)}
-                          disabled={printLoading}
-                          className="flex-1 py-2.5 bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
-                        >
-                          <Printer className="w-4 h-4" />
-                          <span>Print Now (1-Click)</span>
-                        </button>
+                      {activePrintSession?.orderId === id ? (
+                        <div className="flex items-center gap-2 pt-2 border-t border-amber-200">
+                          <button
+                            onClick={() => handleConfirmPrinted(ord)}
+                            disabled={printLoading}
+                            className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Confirm Printed</span>
+                          </button>
 
-                        <a
-                          href={getOrderPdfUrl(id)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
-                          title="Preview in new tab"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </a>
-                      </div>
+                          <button
+                            onClick={handleReopenPrintDialog}
+                            className="p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 transition-colors"
+                            title="Reopen print dialog"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+
+                          <a
+                            href={getOrderPdfUrl(id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                            title="Preview in new tab"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                          <button
+                            onClick={() => handleDirectPrint(ord)}
+                            disabled={printLoading}
+                            className="flex-1 py-2.5 bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
+                          >
+                            <Printer className="w-4 h-4" />
+                            <span>Print Now (1-Click)</span>
+                          </button>
+
+                          <a
+                            href={getOrderPdfUrl(id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
+                            title="Preview in new tab"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </a>
+                        </div>
+                      )}
                     </motion.div>
                   )
                 })}

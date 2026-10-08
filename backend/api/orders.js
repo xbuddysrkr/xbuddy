@@ -545,7 +545,7 @@ export default async function handler(req, res) {
     }
 
     // ── 2.5 GET PDF BINARY STREAM (IN-BROWSER DIRECT PRINT & PREVIEW) ────────
-    if (action === 'getPdf' || action === 'downloadPdf') {
+    if (action === 'getPdf' || action === 'downloadPdf' || action === 'getOrderPdf') {
       const orderId = String(req.query?.orderId || req.body?.orderId || '').trim().toUpperCase()
       if (!orderId) {
         return res.status(400).json({ success: false, error: 'orderId is required' })

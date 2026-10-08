@@ -1,3 +1,5 @@
+import { PDFDocument } from 'pdf-lib'
+
 const API_URL    = import.meta.env.VITE_GAS_URL || 'https://script.google.com/macros/s/AKfycbxUpE5_E3KmhcD0yIuodtGQyOqxpSnps6Ra6_64rdMTYTPughmzyMKm7P3n_JjM2KqF/exec'
 const LOCAL_API  = import.meta.env.VITE_PRINT_AGENT_URL || 'http://localhost:3001'
 const GITHUB_RAW = import.meta.env.VITE_GITHUB_TUNNEL_URL || 'https://raw.githubusercontent.com/xbuddysrkr/xbuddy/main/public/tunnel-url.txt'
@@ -701,6 +703,65 @@ export async function fetchPendingOrders() {
     console.warn('[fetchPendingOrders] notice:', err.message)
   }
   return []
+}
+
+/**
+ * Prepares the PDF binary for printing by applying customer customizations:
+ * - If customer selected custom page ranges (e.g. [1, 3] or "2-5"), slices the PDF
+ *   so the browser print dialog will ONLY print those exact pages when "Pages: All" is selected!
+ */
+export async function prepareOrderPdfForPrint(pdfBlob, order) {
+  if (!order || !pdfBlob) return pdfBlob
+
+  // 1. Resolve selected pages
+  let selectedPages = []
+  if (Array.isArray(order.selectedPages) && order.selectedPages.length > 0) {
+    selectedPages = order.selectedPages.map(Number).filter(n => !isNaN(n) && n > 0)
+  } else if (order.pageRange === 'custom' && order.customPages) {
+    const parts = String(order.customPages).split(',')
+    const set = new Set()
+    for (const part of parts) {
+      const trimmed = part.trim()
+      if (trimmed.includes('-')) {
+        const [start, end] = trimmed.split('-').map(Number)
+        if (!isNaN(start) && !isNaN(end)) {
+          for (let p = Math.min(start, end); p <= Math.max(start, end); p++) set.add(p)
+        }
+      } else {
+        const n = Number(trimmed)
+        if (!isNaN(n) && n > 0) set.add(n)
+      }
+    }
+    selectedPages = Array.from(set).sort((a, b) => a - b)
+  }
+
+  // If all pages or no custom range specified, return original blob
+  if (selectedPages.length === 0) return pdfBlob
+
+  try {
+    const arrayBuffer = await pdfBlob.arrayBuffer()
+    const srcDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true })
+    const total = srcDoc.getPageCount()
+
+    // 1-based page numbers to 0-based page indices
+    const pageIndices = selectedPages
+      .map(p => p - 1)
+      .filter(idx => idx >= 0 && idx < total)
+
+    if (pageIndices.length === 0 || pageIndices.length === total) {
+      return pdfBlob
+    }
+
+    const slicedDoc = await PDFDocument.create()
+    const copiedPages = await slicedDoc.copyPages(srcDoc, pageIndices)
+    copiedPages.forEach(page => slicedDoc.addPage(page))
+
+    const slicedBytes = await slicedDoc.save()
+    return new Blob([slicedBytes], { type: 'application/pdf' })
+  } catch (err) {
+    console.warn('[PDF Slicing Notice]:', err.message, 'Falling back to original PDF')
+    return pdfBlob
+  }
 }
 
 /**
