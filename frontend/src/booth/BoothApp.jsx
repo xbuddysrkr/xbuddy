@@ -1082,8 +1082,8 @@ function ReleasePrintStation({ onLock }) {
 
       {/* Footer */}
       <footer className="mt-auto py-4 px-6 border-t border-orange-100 bg-white text-center text-xs text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-2">
-        <p>X Buddy Campus Xerox Station • Connected via Direct Browser Cloud Print</p>
-        <p className="font-mono text-[11px]">SRKR Engineering College • Zero PC Setup Overhead</p>
+        <p>X Buddy Campus Xerox Station • Connected via Hardware Print Agent</p>
+        <p className="font-mono text-[11px]">SRKR Engineering College • Zero-Dialog Silent Printing</p>
       </footer>
 
       {/* Kiosk Mode Setup Modal */}

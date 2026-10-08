@@ -1,6 +1,17 @@
 {
   "buildCommand": "npm run build --prefix frontend",
   "outputDirectory": "frontend/dist",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Permissions-Policy",
+          "value": "loopback-network=*, local-network=*"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     { "source": "/api/agent/orders/:path*", "destination": "/api/agent/orders?route=:path*" },
     { "source": "/api/agent/heartbeat", "destination": "https://xbuddy.onrender.com/api/agent/heartbeat" },
