@@ -28,42 +28,54 @@ async function sendHeartbeatNow() {
     },
   }
 
-  // Direct outbound HTTPS to authoritative XBuddy cloud API (https://xbuddysrkr.vercel.app)
-  const baseUrl = (config.cloudApiUrl || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
-  const endpoint = `${baseUrl}/api/agent/heartbeat`
+  // Direct outbound HTTPS to authoritative XBuddy cloud API with resilient cloud fallback
+  const primaryUrl = (config.cloudApiUrl || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
+  const candidateUrls = [
+    primaryUrl,
+    'https://xbuddy.onrender.com',
+  ]
+  const targetUrls = [...new Set(candidateUrls)]
 
-  try {
-    const res = await axios.post(endpoint, payload, {
-      headers: {
-        'x-agent-key': config.agentSecretKey,
-        'Content-Type': 'application/json',
-      },
-      timeout: 10000,
-    })
+  let lastError = null
+  for (const baseUrl of targetUrls) {
+    const endpoint = `${baseUrl}/api/agent/heartbeat`
+    try {
+      const res = await axios.post(endpoint, payload, {
+        headers: {
+          'x-agent-key': config.agentSecretKey,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000,
+      })
 
-    if (res.data && res.data.success) {
-      lastHeartbeatResult = {
-        success: true,
-        timestamp: new Date().toISOString(),
-        serverTime: res.data.serverTime,
-        stationId: res.data.stationId,
+      if (res.data && res.data.success) {
+        lastHeartbeatResult = {
+          success: true,
+          timestamp: new Date().toISOString(),
+          serverTime: res.data.serverTime,
+          stationId: res.data.stationId,
+          endpoint,
+        }
+        lastHeartbeatTime = Date.now()
+        logger.info(`[HEARTBEAT] Cloud telemetry connected -> ${endpoint} (200 OK)`)
+        return lastHeartbeatResult
+      } else {
+        throw new Error(res.data?.error || 'Invalid response from cloud endpoint')
       }
-      lastHeartbeatTime = Date.now()
-      logger.info(`[HEARTBEAT] Cloud telemetry connected -> ${endpoint} (200 OK)`)
-      return lastHeartbeatResult
-    } else {
-      throw new Error(res.data?.error || 'Invalid response from cloud endpoint')
+    } catch (err) {
+      lastError = err
+      const errMsg = err.response?.data?.error || err.message || 'Could not connect to cloud endpoint'
+      logger.warn(`[HEARTBEAT] Cloud telemetry attempt failed (${endpoint}): ${errMsg}`)
     }
-  } catch (err) {
-    const errMsg = err.response?.data?.error || err.message || 'Could not connect to cloud endpoint'
-    lastHeartbeatResult = {
-      success: false,
-      error: errMsg,
-      status: err.response?.status || null,
-    }
-    logger.warn(`[HEARTBEAT] Cloud telemetry disconnected (${endpoint}): ${errMsg}`)
-    return lastHeartbeatResult
   }
+
+  const errMsg = lastError?.response?.data?.error || lastError?.message || 'Could not connect to cloud endpoint'
+  lastHeartbeatResult = {
+    success: false,
+    error: errMsg,
+    status: lastError?.response?.status || null,
+  }
+  return lastHeartbeatResult
 }
 
 

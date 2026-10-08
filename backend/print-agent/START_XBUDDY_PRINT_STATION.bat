@@ -26,22 +26,15 @@ if %ERRORLEVEL% neq 0 (
 )
 
 :: 2. Clean up lingering previous processes
-echo [1/3] Cleaning previous sessions...
+echo [1/2] Cleaning previous sessions...
 taskkill /f /im cloudflared.exe >nul 2>&1
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr :3001 ^| findstr LISTENING') do (
     taskkill /f /pid %%a >nul 2>&1
 )
-if exist tunnel.log del /f /q tunnel.log >nul 2>&1
 
-:: 3. Start Cloudflare Tunnel
-echo [2/3] Starting Cloudflare Tunnel...
-start "X Buddy Tunnel" /min cmd /c "cloudflared.exe tunnel --url http://localhost:3001 --logfile tunnel.log 2>&1"
-
-:: 4. Short wait
-timeout /t 3 /nobreak > nul
-
-:: 5. Start Print Agent
-echo [3/3] Starting Print Agent connected to EPSON printer...
+:: 3. Start Print Agent with direct outbound HTTPS telemetry
+echo [2/2] Starting Print Agent connected to EPSON printer...
+echo [INFO] Direct outbound HTTPS telemetry active (https://xbuddysrkr.vercel.app)
 echo ========================================================
 node index.js
 
