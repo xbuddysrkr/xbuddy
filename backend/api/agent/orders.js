@@ -1,6 +1,6 @@
 import { connectToDatabase } from '../_lib/mongodb.js'
 
-const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'XB_AGENT_SECRET_KEY_2026'
+const AGENT_SECRET_KEY = (process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || '').trim()
 
 const PENDING_PRINT_STATUSES = ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed']
 

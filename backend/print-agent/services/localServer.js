@@ -252,7 +252,7 @@ app.get('/status', async (req, res) => {
     },
     cloud: {
       connected: Boolean(heartbeatInfo?.success),
-      apiUrl: currentConfig.cloudApiUrl,
+      apiUrl: currentConfig.cloudApiUrl || 'https://xbuddysrkr.vercel.app',
       lastHeartbeat: heartbeatInfo?.lastTime ? new Date(heartbeatInfo.lastTime).toISOString() : null,
       error: heartbeatInfo?.error || null,
     },

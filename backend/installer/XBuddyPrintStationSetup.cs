@@ -312,12 +312,31 @@ namespace XBuddyPrintStation
                 worker.ReportProgress(25, "Extracting bundled runtime & print engine...");
                 ExtractEmbeddedPackage(targetDir);
 
-                // 3. Write config.json
+                // 3. Write / update config.json
                 worker.ReportProgress(50, "Saving station identity config...");
                 string configPath = Path.Combine(stationDataDir, "config.json");
+                string existingKey = "";
+                string existingPrinter = "";
+                if (File.Exists(configPath))
+                {
+                    try
+                    {
+                        string existingContent = File.ReadAllText(configPath, Encoding.UTF8);
+                        var matchKey = System.Text.RegularExpressions.Regex.Match(existingContent, "\"agentSecretKey\"\\s*:\\s*\"([^\"]+)\"");
+                        if (matchKey.Success) existingKey = matchKey.Groups[1].Value;
+                        var matchPrinter = System.Text.RegularExpressions.Regex.Match(existingContent, "\"selectedPrinter\"\\s*:\\s*\"([^\"]+)\"");
+                        if (matchPrinter.Success) existingPrinter = matchPrinter.Groups[1].Value;
+                    }
+                    catch { }
+                }
+
+                string agentKeyToUse = !string.IsNullOrEmpty(existingKey)
+                    ? existingKey
+                    : (Environment.GetEnvironmentVariable("AGENT_SECRET_KEY") ?? Provisioning.DefaultAgentKey);
+
                 string configJson = string.Format(
-                    "{{\n  \"stationId\": \"{0}\",\n  \"selectedPrinter\": \"\",\n  \"cloudApiUrl\": \"https://xbuddysrkr.vercel.app\",\n  \"agentSecretKey\": \"d834c5055c2a2401ee3f59cd121f59258403156e86034eab956dc099351dd9e4\",\n  \"port\": 3001,\n  \"version\": \"2.1.0\",\n  \"autoHeartbeat\": true,\n  \"heartbeatIntervalMs\": 30000\n}}",
-                    stationId);
+                    "{{\n  \"stationId\": \"{0}\",\n  \"selectedPrinter\": \"{1}\",\n  \"cloudApiUrl\": \"https://xbuddysrkr.vercel.app\",\n  \"agentSecretKey\": \"{2}\",\n  \"port\": 3001,\n  \"version\": \"2.1.0\",\n  \"autoHeartbeat\": true,\n  \"heartbeatIntervalMs\": 30000\n}}",
+                    stationId, existingPrinter, agentKeyToUse);
                 File.WriteAllText(configPath, configJson, Encoding.UTF8);
 
                 // 4. Install & Register Windows Service

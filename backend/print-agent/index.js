@@ -22,8 +22,11 @@ async function start() {
   // Start local server and cloud heartbeat telemetry
   startLocalServer()
 
-  // Background Cloudflare tunnel observer (if tunnel active)
-  watchForTunnelUrl(30000)
+  // Optional legacy Cloudflare tunnel observer (strictly disabled by default)
+  if (process.env.ENABLE_LEGACY_TUNNEL === 'true') {
+    logger.info('[LEGACY] Starting optional legacy Cloudflare tunnel observer...')
+    watchForTunnelUrl(30000)
+  }
 
   // Verify printer state
   const printerInfo = await getActivePrinter(false)

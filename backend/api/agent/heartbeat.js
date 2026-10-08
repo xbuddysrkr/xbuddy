@@ -1,31 +1,11 @@
-import { MongoClient } from 'mongodb'
-
-const MONGODB_URI = process.env.MONGODB_URI
-const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || 'xbuddy'
-const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'd834c5055c2a2401ee3f59cd121f59258403156e86034eab956dc099351dd9e4'
-
-let cachedClient = null
-let cachedDb = null
-
-async function connectToDatabase() {
-  if (cachedDb) return { client: cachedClient, db: cachedDb }
-  if (!MONGODB_URI) throw new Error('MONGODB_URI environment variable is not defined')
-  const client = await MongoClient.connect(MONGODB_URI, {
-    maxPoolSize: 10,
-    minPoolSize: 1,
-    serverSelectionTimeoutMS: 5000,
-  })
-  const db = client.db(MONGODB_DB_NAME)
-  cachedClient = client
-  cachedDb = db
-  return { client, db }
-}
+import { connectToDatabase } from '../_lib/mongodb.js'
 
 function validateAgentAuth(req) {
   const headerKey = req.headers?.['x-agent-key'] || req.headers?.['x-agent-secret']
   const queryKey = req.query?.agentKey || req.query?.key
   const provided = (headerKey || queryKey || '').trim()
-  return Boolean(provided && provided === AGENT_SECRET_KEY)
+  const expectedKey = (process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || '').trim()
+  return Boolean(expectedKey && provided && provided === expectedKey)
 }
 
 export default async function handler(req, res) {
@@ -59,6 +39,7 @@ export default async function handler(req, res) {
         status: body.printerAvailable ? 'online' : 'printer_unavailable',
         lastHeartbeat: nowIso,
         lastHeartbeatEpoch: Date.now(),
+        clientTimestamp: body.timestamp || nowIso,
         uptimeSeconds: Number(body.uptimeSeconds) || 0,
         systemInfo: body.systemInfo || {},
         updatedAt: nowIso,
@@ -76,7 +57,6 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         stationId: cleanStationId,
-        status: updateDoc.status,
         serverTime: nowIso,
       })
     }
@@ -101,3 +81,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: err.message || 'Internal error' })
   }
 }
+

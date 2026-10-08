@@ -174,7 +174,7 @@ async function watchForTunnelUrl(maxWaitMs = 30000) {
 
       if (Date.now() - start > maxWaitMs) {
         clearInterval(interval)
-        logger.warn('Tunnel URL not found in log after timeout — mobile orders may not reach agent')
+        logger.info('[LEGACY] Optional legacy Cloudflare tunnel inactive (outbound direct HTTPS active)')
         startBackgroundWatchers()
         resolve(null)
       }

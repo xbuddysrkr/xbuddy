@@ -2,8 +2,10 @@ const { google } = require('googleapis')
 const axios = require('axios')
 const logger = require('../utils/logger')
 
-const CLOUD_API_URL = process.env.CLOUD_API_URL || 'https://xbuddy.onrender.com'
-const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'd834c5055c2a2401ee3f59cd121f59258403156e86034eab956dc099351dd9e4'
+const { getConfig } = require('./config')
+
+const CLOUD_API_URL = process.env.CLOUD_API_URL || getConfig().cloudApiUrl || 'https://xbuddysrkr.vercel.app'
+const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || getConfig().agentSecretKey || ''
 
 /**
  * Feature flag for Print Agent order source: 'mongo' (default for Phase 4) or 'gas' (emergency rollback).

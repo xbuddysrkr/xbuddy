@@ -15,9 +15,10 @@ async function sendHeartbeatNow() {
 
   const payload = {
     stationId: config.stationId || 'SRKR-XEROX-01',
+    agentVersion: config.version || '2.1.0',
     printerName: printerInfo.name || 'None',
     printerAvailable: Boolean(printerInfo.available),
-    agentVersion: config.version || '2.1.0',
+    timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
     systemInfo: {
       hostname: os.hostname(),
@@ -27,42 +28,44 @@ async function sendHeartbeatNow() {
     },
   }
 
-  const cloudUrls = [
-    config.cloudApiUrl,
-    'https://xbuddysrkr.vercel.app',
-    'https://xbuddy.onrender.com',
-  ].filter(Boolean)
+  // Direct outbound HTTPS to authoritative XBuddy cloud API (https://xbuddysrkr.vercel.app)
+  const baseUrl = (config.cloudApiUrl || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
+  const endpoint = `${baseUrl}/api/agent/heartbeat`
 
-  let sent = false
-  for (const baseUrl of cloudUrls) {
-    try {
-      const endpoint = `${baseUrl.replace(/\/$/, '')}/api/agent/heartbeat`
-      const res = await axios.post(endpoint, payload, {
-        headers: {
-          'x-agent-key': config.agentSecretKey,
-          'Content-Type': 'application/json',
-        },
-        timeout: 10000,
-      })
+  try {
+    const res = await axios.post(endpoint, payload, {
+      headers: {
+        'x-agent-key': config.agentSecretKey,
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000,
+    })
 
-      if (res.data?.success) {
-        lastHeartbeatResult = { success: true, timestamp: new Date().toISOString(), serverTime: res.data.serverTime }
-        lastHeartbeatTime = Date.now()
-        sent = true
-        break
+    if (res.data && res.data.success) {
+      lastHeartbeatResult = {
+        success: true,
+        timestamp: new Date().toISOString(),
+        serverTime: res.data.serverTime,
+        stationId: res.data.stationId,
       }
-    } catch (err) {
-      // Try fallback URL
-      continue
+      lastHeartbeatTime = Date.now()
+      logger.info(`[HEARTBEAT] Cloud telemetry connected -> ${endpoint} (200 OK)`)
+      return lastHeartbeatResult
+    } else {
+      throw new Error(res.data?.error || 'Invalid response from cloud endpoint')
     }
+  } catch (err) {
+    const errMsg = err.response?.data?.error || err.message || 'Could not connect to cloud endpoint'
+    lastHeartbeatResult = {
+      success: false,
+      error: errMsg,
+      status: err.response?.status || null,
+    }
+    logger.warn(`[HEARTBEAT] Cloud telemetry disconnected (${endpoint}): ${errMsg}`)
+    return lastHeartbeatResult
   }
-
-  if (!sent) {
-    lastHeartbeatResult = { success: false, error: 'Could not connect to cloud endpoint' }
-  }
-
-  return lastHeartbeatResult
 }
+
 
 function startHeartbeat(intervalMs = 30000) {
   if (heartbeatTimer) clearInterval(heartbeatTimer)

@@ -48,3 +48,4 @@ backend/print-agent/tunnel*.log
 backend/print-agent/agent_*.log
 backend/installer/payload/
 backend/installer/*.zip
+backend/installer/Provisioning.cs

@@ -3,6 +3,8 @@
   "outputDirectory": "frontend/dist",
   "rewrites": [
     { "source": "/api/agent/orders/:path*", "destination": "/api/agent/orders?route=:path*" },
+    { "source": "/api/agent/heartbeat", "destination": "https://xbuddy.onrender.com/api/agent/heartbeat" },
+    { "source": "/api/:match*", "destination": "https://xbuddy.onrender.com/api/:match*" },
     { "source": "/((?!api/|assets/|booth.html|qr-code.png|favicon.ico|manifest.json|xbuddy-icon-.*\\.png).*)", "destination": "/index.html" }
   ]
 }

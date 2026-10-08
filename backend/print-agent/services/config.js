@@ -5,7 +5,7 @@ const DEFAULT_CONFIG = {
   stationId: 'SRKR-XEROX-01',
   selectedPrinter: '',
   cloudApiUrl: process.env.CLOUD_API_URL || 'https://xbuddysrkr.vercel.app',
-  agentSecretKey: process.env.AGENT_SECRET_KEY || 'd834c5055c2a2401ee3f59cd121f59258403156e86034eab956dc099351dd9e4',
+  agentSecretKey: process.env.AGENT_SECRET_KEY || '',
   port: parseInt(process.env.PRINT_AGENT_PORT || '3001', 10),
   version: '2.1.0',
   autoHeartbeat: true,

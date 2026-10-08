@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/order_creation_guard.test.js && node test/agent_orders.test.js && node test/phase4_cutover.test.js && node test/parity_audit.test.js && node test/backfill_orders.test.js && node test/print_station_installer.test.js",
+    "test": "node test/order_creation_guard.test.js && node test/agent_orders.test.js && node test/phase4_cutover.test.js && node test/parity_audit.test.js && node test/backfill_orders.test.js && node test/print_station_installer.test.js && node test/cloud_telemetry.test.js",
     "agent": "node print-agent/index.js",
     "backfill": "node scripts/backfillOrders.mjs",
     "audit": "node scripts/parityAudit.mjs"

@@ -3,6 +3,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import ordersHandler from './api/orders.js'
 import agentOrdersHandler from './api/agent/orders.js'
+import agentHeartbeatHandler from './api/agent/heartbeat.js'
 
 // Load environment variables from .env if present
 dotenv.config()
@@ -81,6 +82,18 @@ app.all('/api/agent/orders/:route(*)', async (req, res) => {
     await agentOrdersHandler(req, res)
   } catch (err) {
     console.error('[SERVER ERROR /api/agent/orders/:route]:', err)
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err.message || 'Internal server error' })
+    }
+  }
+})
+
+// Dedicated Agent Heartbeat Telemetry API
+app.all('/api/agent/heartbeat', async (req, res) => {
+  try {
+    await agentHeartbeatHandler(req, res)
+  } catch (err) {
+    console.error('[SERVER ERROR /api/agent/heartbeat]:', err)
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: err.message || 'Internal server error' })
     }
