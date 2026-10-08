@@ -385,21 +385,36 @@ function ReleasePrintStation({ onLock }) {
       }
 
       // Requirement 9 & 21: NO BROWSER PRINT FALLBACK
-      // If Print Agent is offline or unreachable:
+      // If Print Agent is genuinely offline or unreachable:
       // DO NOT open Chrome/Edge browser print dialog.
       // Instead show: Print Station Offline. Please start/restart XBuddy Print Station.
       // Keep the order safely in the queue.
+      if (!agentOnline) {
+        setResult({
+          success: false,
+          error: `🔴 Print Station Offline. Printing is temporarily unavailable. Please start or restart XBuddy Print Station.`,
+        })
+        return
+      }
+
       setResult({
         success: false,
-        error: `🔴 Print Station Offline. Printing is temporarily unavailable. Please start or restart XBuddy Print Station.`,
+        error: agentRes?.error || `Failed to release print for order ${id}.`,
       })
       return
     } catch (err) {
       console.error('[Direct Print Failed]:', err)
-      setResult({
-        success: false,
-        error: `🔴 Print Station Offline. Printing is temporarily unavailable. Please start or restart XBuddy Print Station. (${err.message})`,
-      })
+      if (!agentOnline) {
+        setResult({
+          success: false,
+          error: `🔴 Print Station Offline. Printing is temporarily unavailable. Please start or restart XBuddy Print Station. (${err.message})`,
+        })
+      } else {
+        setResult({
+          success: false,
+          error: `Print failed: ${err.message}`,
+        })
+      }
     } finally {
       setPrintLoading(false)
     }

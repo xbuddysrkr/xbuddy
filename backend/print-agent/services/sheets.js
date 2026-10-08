@@ -4,6 +4,15 @@ const logger = require('../utils/logger')
 
 const { getConfig } = require('./config')
 
+function getCandidateCloudUrls() {
+  const primary = (process.env.CLOUD_API_URL || getConfig().cloudApiUrl || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
+  return [...new Set([primary, 'https://xbuddy.onrender.com'])]
+}
+
+function getAgentSecretKey() {
+  return process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || getConfig().agentSecretKey || ''
+}
+
 const CLOUD_API_URL = process.env.CLOUD_API_URL || getConfig().cloudApiUrl || 'https://xbuddysrkr.vercel.app'
 const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || getConfig().agentSecretKey || ''
 
@@ -126,48 +135,51 @@ async function getOrderByIdForRelease(orderId) {
   const source = getOrderSource()
 
   if (source === 'mongo') {
-    try {
-      const res = await axios.get(`${CLOUD_API_URL}/api/agent/orders/${encodeURIComponent(cleanId)}`, {
-        headers: { 'x-agent-key': AGENT_SECRET_KEY },
-        timeout: 15000,
-      })
+    const urls = getCandidateCloudUrls()
+    const secretKey = getAgentSecretKey()
+    for (const baseUrl of urls) {
+      try {
+        const res = await axios.get(`${baseUrl}/api/agent/orders/${encodeURIComponent(cleanId)}`, {
+          headers: { 'x-agent-key': secretKey },
+          timeout: 10000,
+        })
 
-      if (res.data?.success && res.data?.order) {
-        const o = res.data.order
-        logger.success(`[AGENT] Got order ${cleanId} from MongoDB primary`)
-        return {
-          orderId:           o.orderId || cleanId,
-          name:              o.name || '',
-          fileName:          o.fileName || `${cleanId}.pdf`,
-          copies:            parseInt(o.copies || '1') || 1,
-          colorMode:         (o.colorMode === 'color' || o.printType === 'Color') ? 'color' : 'bw',
-          printType:         (o.colorMode === 'color' || o.printType === 'Color') ? 'Color' : 'B&W',
-          printSide:         o.printSide || (o.duplex ? 'Double' : 'Single'),
-          duplex:            typeof o.duplex === 'boolean' ? o.duplex : (o.printSide === 'Double'),
-          pageSize:          o.pageSize || o.paperSize || 'A4',
-          paperSize:         o.paperSize || o.pageSize || 'A4',
-          orientation:       o.orientation || 'portrait',
-          pageRange:         o.pageRange || 'all',
-          pageRangeMode:     o.pageRangeMode || 'all',
-          customPages:       o.customPages || '',
-          selectedPages:     Array.isArray(o.selectedPages) ? o.selectedPages : [],
-          selectedPageCount: o.selectedPageCount || 1,
-          totalPages:        o.totalPages || 1,
-          amount:            o.amount || 0,
-          paymentStatus:     o.paymentStatus || 'pending',
-          printStatus:       o.printStatus || 'waiting_for_shopkeeper',
-          driveUrl:          o.driveUrl || '',
-          pdfUrl:            o.pdfUrl || o.driveUrl || `${CLOUD_API_URL}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
-          source:            'mongo',
+        if (res.data?.success && res.data?.order) {
+          const o = res.data.order
+          logger.success(`[AGENT] Got order ${cleanId} from MongoDB primary (${baseUrl})`)
+          return {
+            orderId:           o.orderId || cleanId,
+            name:              o.name || '',
+            fileName:          o.fileName || `${cleanId}.pdf`,
+            copies:            parseInt(o.copies || '1') || 1,
+            colorMode:         (o.colorMode === 'color' || o.printType === 'Color') ? 'color' : 'bw',
+            printType:         (o.colorMode === 'color' || o.printType === 'Color') ? 'Color' : 'B&W',
+            printSide:         o.printSide || (o.duplex ? 'Double' : 'Single'),
+            duplex:            typeof o.duplex === 'boolean' ? o.duplex : (o.printSide === 'Double'),
+            pageSize:          o.pageSize || o.paperSize || 'A4',
+            paperSize:         o.paperSize || o.pageSize || 'A4',
+            orientation:       o.orientation || 'portrait',
+            pageRange:         o.pageRange || 'all',
+            pageRangeMode:     o.pageRangeMode || 'all',
+            customPages:       o.customPages || '',
+            selectedPages:     Array.isArray(o.selectedPages) ? o.selectedPages : [],
+            selectedPageCount: o.selectedPageCount || 1,
+            totalPages:        o.totalPages || 1,
+            amount:            o.amount || 0,
+            paymentStatus:     o.paymentStatus || 'pending',
+            printStatus:       o.printStatus || 'waiting_for_shopkeeper',
+            driveUrl:          o.driveUrl || '',
+            pdfUrl:            o.pdfUrl || o.driveUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
+            source:            'mongo',
+          }
+        }
+      } catch (mongoErr) {
+        if (mongoErr.response?.status === 404) {
+          logger.warn(`[AGENT] Order ${cleanId} not found in MongoDB primary (${baseUrl})`)
+        } else {
+          logger.error(`[AGENT] Error fetching ${cleanId} from MongoDB primary (${baseUrl}): ${mongoErr.message}`)
         }
       }
-    } catch (mongoErr) {
-      if (mongoErr.response?.status === 404) {
-        logger.warn(`[AGENT] Order ${cleanId} not found in MongoDB primary`)
-      } else {
-        logger.error(`[AGENT] Error fetching ${cleanId} from MongoDB primary: ${mongoErr.message}`)
-      }
-      return null
     }
     return null
   }
@@ -239,35 +251,41 @@ async function claimOrder(orderId) {
   const source = getOrderSource()
 
   if (source === 'mongo') {
-    try {
-      const res = await axios.post(
-        `${CLOUD_API_URL}/api/agent/orders/${encodeURIComponent(cleanId)}/claim`,
-        {},
-        {
-          headers: {
-            'x-agent-key': AGENT_SECRET_KEY,
-            'Content-Type': 'application/json',
-          },
-          timeout: 15000,
+    const urls = getCandidateCloudUrls()
+    const secretKey = getAgentSecretKey()
+    for (const baseUrl of urls) {
+      try {
+        const res = await axios.post(
+          `${baseUrl}/api/agent/orders/${encodeURIComponent(cleanId)}/claim`,
+          {},
+          {
+            headers: {
+              'x-agent-key': secretKey,
+              'Content-Type': 'application/json',
+            },
+            timeout: 15000,
+          }
+        )
+        if (res.data?.success) {
+          logger.success(`[AGENT] Claimed order ${cleanId} on ${baseUrl}`)
+          return { success: true, claimed: true, order: res.data.order }
         }
-      )
-      if (res.data?.success) {
-        return { success: true, claimed: true, order: res.data.order }
-      }
-      return { success: false, conflict: res.data?.conflict, error: res.data?.error }
-    } catch (err) {
-      if (err.response?.status === 409) {
-        return {
-          success: false,
-          conflict: true,
-          error: err.response.data?.error || 'Order is already claimed or printing',
+        return { success: false, conflict: res.data?.conflict, error: res.data?.error }
+      } catch (err) {
+        if (err.response?.status === 409) {
+          return {
+            success: false,
+            conflict: true,
+            error: err.response.data?.error || 'Order is already claimed or printing',
+          }
         }
+        if (err.response?.status === 404) {
+          continue
+        }
+        logger.warn(`[AGENT] Claim attempt failed on ${baseUrl}: ${err.message}`)
       }
-      if (err.response?.status === 404) {
-        return { success: false, notFound: true, error: 'Order not found in MongoDB' }
-      }
-      return { success: false, error: err.message }
     }
+    return { success: false, error: 'Failed to claim order in MongoDB primary' }
   }
 
   // In legacy gas mode, return claimed
@@ -314,37 +332,30 @@ async function getAllOrders() {
   const source = getOrderSource()
 
   if (source === 'mongo') {
-    try {
-      const res = await axios.get(`${CLOUD_API_URL}/api/agent/orders`, {
-        headers: { 'x-agent-key': AGENT_SECRET_KEY },
-        timeout: 15000,
-      })
-      if (res.data?.success && Array.isArray(res.data.orders)) {
-        _cachedOrders = res.data.orders.map((o, idx) => ({
-          rowIndex:      idx + 2,
-          orderId:       o.orderId || '',
-          name:          o.name || '',
-          fileName:      o.fileName || '',
-          type:          detectDocumentType(o.fileName),
-          totalPages:    parseInt(o.totalPages || '1') || 1,
-          copies:        parseInt(o.copies || '1') || 1,
-          printType:     (o.colorMode === 'color' || o.printType === 'Color') ? 'Color' : 'B&W',
-          amount:        parseAmount(o.amount),
-          transactionId: o.transactionId || '',
-          screenshotUrl: '',
-          paymentStatus: o.paymentStatus || '',
-          printStatus:   normalizeOrderStatus(o.printStatus),
-          timestamp:     o.createdAt || '',
-          pdfUrl:        o.pdfUrl || o.driveUrl || '',
-          releaseStatus: o.printStatus === 'Printed' ? 'Released' : 'Waiting',
-        }))
-        _cachedOrdersTime = now
-        return _cachedOrders
+    const urls = getCandidateCloudUrls()
+    const secretKey = getAgentSecretKey()
+    for (const baseUrl of urls) {
+      try {
+        const res = await axios.get(`${baseUrl}/api/agent/orders?limit=50`, {
+          headers: { 'x-agent-key': secretKey },
+          timeout: 15000,
+        })
+        if (res.data?.success && Array.isArray(res.data?.orders)) {
+          _cachedOrders = res.data.orders.map(o => ({
+            ...o,
+            copies: parseInt(o.copies || '1') || 1,
+            printType: (o.colorMode === 'color' || o.printType === 'Color') ? 'Color' : 'B&W',
+            printStatus: normalizeOrderStatus(o.printStatus),
+            releaseStatus: o.releaseStatus || o.printStatus || 'Waiting',
+          }))
+          _cachedOrdersTime = now
+          return _cachedOrders
+        }
+      } catch (err) {
+        logger.warn(`[AGENT] Orders fetch from ${baseUrl} error: ${err.message}`)
       }
-    } catch (err) {
-      logger.error(`[AGENT] Failed to read all orders from MongoDB primary: ${err.message}`)
-      return []
     }
+    return []
   }
 
   // ── EMERGENCY ROLLBACK ONLY: GAS MODE ────────────────────────────
