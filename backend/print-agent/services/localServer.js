@@ -10,6 +10,8 @@ const { printPdf, getDefaultPrinter } = require('./printer')
 const { downloadPdf, deletePdf } = require('./downloader')
 const { getTunnelUrl } = require('./tunnel')
 
+const CLOUD_API_URL = process.env.CLOUD_API_URL || 'https://xbuddy.onrender.com'
+
 const app         = express()
 const PORT        = process.env.PRINT_AGENT_PORT || process.env.LOCAL_PORT || 3001
 const PENDING_DIR = path.join(__dirname, '..', 'downloads')
@@ -334,17 +336,20 @@ app.post('/release-print', async (req, res) => {
   if (!global._activePrints) global._activePrints = {}
   global._activePrints[id] = Date.now()
 
-  // 2. ATOMIC CLAIM in MongoDB (TASK 4): only one claimant transitions pending -> Printing
-  logger.info(`[AGENT] Claiming order ${id}`)
-  const claimRes = await claimOrder(id)
-  if (!claimRes.success && claimRes.conflict) {
-    delete global._activePrints[id]
-    logger.warn(`[AGENT] Order ${id} is already claimed or printing`)
-    return res.json({
-      success: false,
-      error: 'Order is already printing or was previously released.',
-      conflict: true,
-    })
+  // 2. ATOMIC CLAIM in MongoDB: only one claimant transitions pending -> Printing (unless reprinting)
+  const isReprint = req.body?.reprint === true || req.body?.force === true
+  if (!isReprint) {
+    logger.info(`[AGENT] Claiming order ${id}`)
+    const claimRes = await claimOrder(id)
+    if (!claimRes.success && claimRes.conflict) {
+      delete global._activePrints[id]
+      logger.warn(`[AGENT] Order ${id} is already claimed or printing`)
+      return res.json({
+        success: false,
+        error: 'Order is already printing or was previously released.',
+        conflict: true,
+      })
+    }
   }
 
   logger.success(`Releasing: ${id} | ${order.fileName || 'document'} | ${order.copies || 1} copy`)

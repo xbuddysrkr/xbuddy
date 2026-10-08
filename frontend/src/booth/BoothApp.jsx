@@ -33,7 +33,8 @@ import {
   fetchOrderPdfBlob,
   getOrderPdfUrl,
   triggerBrowserPrint,
-  prepareOrderPdfForPrint
+  prepareOrderPdfForPrint,
+  isAgentAvailable
 } from '../utils/api'
 
 const SESSION_KEY = 'xbuddy_booth_auth'
@@ -255,6 +256,7 @@ function ReleasePrintStation({ onLock }) {
   const [pendingOrders, setPendingOrders] = useState([])
   const [queueLoading, setQueueLoading] = useState(false)
   const [showKioskModal, setShowKioskModal] = useState(false)
+  const [agentOnline, setAgentOnline] = useState(false)
   const [time, setTime] = useState(new Date())
   const inputRef = useRef()
 
@@ -262,6 +264,18 @@ function ReleasePrintStation({ onLock }) {
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(t)
+  }, [])
+
+  // Poll Print Agent connection status (determines zero-dialog hardware printing)
+  useEffect(() => {
+    let active = true
+    async function checkAgent() {
+      const online = await isAgentAvailable()
+      if (active) setAgentOnline(online)
+    }
+    checkAgent()
+    const timer = setInterval(checkAgent, 8000)
+    return () => { active = false; clearInterval(timer) }
   }, [])
 
   // Auto-focus input on mount
@@ -319,8 +333,8 @@ function ReleasePrintStation({ onLock }) {
     }
   }
 
-  // 1-Click Direct In-Browser Print Action
-  async function handleDirectPrint(orderToPrint) {
+  // 1-Click Hardware Print Action (Zero Dialogs, Enforces Exact Student Settings)
+  async function handleDirectPrint(orderToPrint, isReprint = false) {
     const target = orderToPrint || selectedOrder
     if (!target) return
     const id = (target.orderId || target.id).trim().toUpperCase()
@@ -329,22 +343,62 @@ function ReleasePrintStation({ onLock }) {
     setResult(null)
 
     try {
-      // 1. Fetch raw PDF binary blob directly from cloud backend
-      const rawBlob = await fetchOrderPdfBlob(id)
+      // 1. PRIMARY: Silent Hardware Print via Print Agent
+      //    Zero dialogs! The Print Agent configures the Windows printer driver via PowerShell (-Color 1/0),
+      //    converts to DeviceGray if B&W, and sends the job directly to the hardware printer using
+      //    pdf-to-printer (silent: true).
+      //    This automatically enforces exact student settings: Color/B&W, copies, duplex, custom pages!
+      const agentRes = await validateAndRelease(id, { reprint: isReprint })
 
-      // 2. Pre-slice PDF if customer selected custom pages (e.g., [1, 3] or "2-5")
-      //    This guarantees Chrome's default "Pages: All" prints strictly the customized pages!
-      const processedBlob = await prepareOrderPdfForPrint(rawBlob, target)
+      if (agentRes && agentRes.success) {
+        setLastPrint({
+          orderId: id,
+          fileName: target.fileName || `${id}.pdf`,
+          time: new Date().toLocaleTimeString(),
+        })
 
-      // 3. Update order status to 'Printing' (IN PROGRESS, not prematurely 'Printed')
-      //    Informs student in real-time while keeping order in active spooler
-      try {
-        await updateOrderStatus(id, 'Printing')
-      } catch (statusErr) {
-        console.warn('Could not update status to Printing:', statusErr)
+        if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
+          setSelectedOrder(prev => ({ ...prev, printStatus: 'Printing' }))
+        }
+
+        refreshQueue()
+
+        const isColor = target.colorMode === 'color' || target.printType === 'Color'
+        const colorLabel = isColor ? '🎨 Color' : '⬛ Black & White'
+        const copiesLabel = `${target.copies || 1} ${target.copies > 1 ? 'copies' : 'copy'}`
+        const duplexLabel = (target.duplex || target.printSide === 'Double') ? 'Two-sided' : 'Single-sided'
+
+        setResult({
+          success: true,
+          mode: 'agent',
+          message: `Order ${id} sent directly to physical printer! Zero dialogs — settings applied (${colorLabel}, ${copiesLabel}, ${duplexLabel}).`,
+        })
+        return
       }
 
-      // 4. Trigger browser print (hidden iframe / native dialog)
+      // If Agent reported a duplicate/conflict
+      if (agentRes && agentRes.conflict) {
+        setResult({
+          success: false,
+          error: agentRes.error || `Order ${id} is already printing or was previously released.`,
+        })
+        return
+      }
+
+      // 2. FALLBACK: Print Agent unreachable (e.g. opened booth on phone/tablet without the agent running)
+      //    Inform operator and open browser print dialog fallback
+      setResult({
+        success: false,
+        error: `Hardware Print Agent not connected. Opening browser print dialog fallback. (Run the Print Agent on this PC for zero-dialog printing).`,
+      })
+
+      const rawBlob = await fetchOrderPdfBlob(id)
+      const processedBlob = await prepareOrderPdfForPrint(rawBlob, target)
+
+      try {
+        await updateOrderStatus(id, 'Printing')
+      } catch {}
+
       await triggerBrowserPrint(processedBlob)
 
       const isColor = target.colorMode === 'color' || target.printType === 'Color'
@@ -352,7 +406,6 @@ function ReleasePrintStation({ onLock }) {
       const duplex = target.duplex || target.printSide === 'Double'
       const isCustomPages = target.pageRange === 'custom' || (Array.isArray(target.selectedPages) && target.selectedPages.length > 0)
 
-      // 5. Establish active print session so operator can verify output before marking done
       setActivePrintSession({
         orderId: id,
         order: target,
@@ -365,23 +418,17 @@ function ReleasePrintStation({ onLock }) {
         customPages: target.customPages || ''
       })
 
-      // Update local state to Printing
       if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
         setSelectedOrder(prev => ({ ...prev, printStatus: 'Printing' }))
       } else {
         setSelectedOrder({ ...target, printStatus: 'Printing' })
       }
-
-      setResult({
-        success: true,
-        message: `Print dialog opened for ${id}! Check printer output and confirm below when printed.`,
-      })
     } catch (err) {
       console.error('[Direct Print Failed]:', err)
       const pdfUrl = getOrderPdfUrl(id)
       setResult({
         success: false,
-        error: `Browser print issue: ${err.message}. You can still click "Preview PDF" below.`,
+        error: `Could not send print job: ${err.message}`,
         fallbackUrl: pdfUrl,
       })
     } finally {
@@ -427,18 +474,19 @@ function ReleasePrintStation({ onLock }) {
     }
   }
 
-  // Re-open print dialog if operator cancelled, paper jammed, or changed printer
+  // Re-open print dialog or re-trigger hardware print
   async function handleReopenPrintDialog() {
-    if (!activePrintSession?.pdfBlob) {
-      if (selectedOrder) {
-        handleDirectPrint(selectedOrder)
-      }
+    if (selectedOrder) {
+      // Re-trigger hardware print with reprint flag so agent allows it
+      handleDirectPrint(selectedOrder, true)
       return
     }
-    try {
-      await triggerBrowserPrint(activePrintSession.pdfBlob)
-    } catch (err) {
-      console.error('Failed to reopen print dialog:', err)
+    if (activePrintSession?.pdfBlob) {
+      try {
+        await triggerBrowserPrint(activePrintSession.pdfBlob)
+      } catch (err) {
+        console.error('Failed to reopen print dialog:', err)
+      }
     }
   }
 
@@ -472,12 +520,23 @@ function ReleasePrintStation({ onLock }) {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-slate-900 font-extrabold text-base tracking-tight">X Buddy Station</h2>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Zero-Setup Web Print Active
-              </span>
+              {agentOnline ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Hardware Agent Connected • Zero Dialogs
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  Browser Dialog Mode
+                </span>
+              )}
             </div>
-            <p className="text-slate-500 text-xs">Direct In-Browser Printing (No Agent or Tunnels Needed)</p>
+            <p className="text-slate-500 text-xs">
+              {agentOnline
+                ? 'Direct Hardware Printing • Automatic Color, Duplex, & Copies Enforcement'
+                : 'Direct In-Browser Printing • Start print agent on PC for silent zero-dialog prints'}
+            </p>
           </div>
         </div>
 
@@ -831,15 +890,26 @@ function ReleasePrintStation({ onLock }) {
                     </motion.div>
                   ) : (
                     <div className="space-y-3 pt-2">
-                      {/* Color Warning Banner before printing */}
-                      {(selectedOrder.colorMode === 'color' || selectedOrder.printType === 'Color') && String(selectedOrder.printStatus).toLowerCase() !== 'printed' && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2.5">
-                          <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>
-                            <strong>Color Print Notice:</strong> Student paid <strong>₹{selectedOrder.amount || selectedOrder.totalCost || 0}</strong> for Color.
-                            When the print dialog opens, remember to select <strong>Color</strong> (Chrome defaults to Black &amp; White).
-                          </span>
+                      {/* Hardware Auto-Enforcement Notice */}
+                      {agentOnline ? (
+                        <div className="bg-emerald-50 border border-emerald-200/90 rounded-xl p-3 text-xs text-emerald-900 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>
+                              <strong>Silent Hardware Print Ready:</strong> Exact student specs will be auto-applied directly to printer ({selectedOrder.colorMode === 'color' || selectedOrder.printType === 'Color' ? '🎨 Color' : '⬛ Black & White'} • {selectedOrder.copies || 1} copies • {selectedOrder.duplex || selectedOrder.printSide === 'Double' ? 'Duplex' : 'Single Sided'}) with <strong>zero dialogs</strong>.
+                            </span>
+                          </div>
                         </div>
+                      ) : (
+                        (selectedOrder.colorMode === 'color' || selectedOrder.printType === 'Color') && String(selectedOrder.printStatus).toLowerCase() !== 'printed' && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2.5">
+                            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>
+                              <strong>Color Print Notice:</strong> Student paid <strong>₹{selectedOrder.amount || selectedOrder.totalCost || 0}</strong> for Color.
+                              (Start Print Agent on kiosk PC to print silently without dialogs).
+                            </span>
+                          </div>
+                        )
                       )}
 
                       <div className="flex flex-col sm:flex-row gap-3">
@@ -855,7 +925,7 @@ function ReleasePrintStation({ onLock }) {
                           {printLoading ? (
                             <>
                               <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                              <span>Preparing &amp; Slicing PDF...</span>
+                              <span>{agentOnline ? 'Sending Direct to Printer...' : 'Preparing & Slicing PDF...'}</span>
                             </>
                           ) : String(selectedOrder.printStatus).toLowerCase() === 'printed' ? (
                             <>
@@ -865,7 +935,7 @@ function ReleasePrintStation({ onLock }) {
                           ) : (
                             <>
                               <Printer className="w-5 h-5" />
-                              <span>Print Document Now</span>
+                              <span>{agentOnline ? 'Print Document Now (Zero Dialogs)' : 'Print Document Now'}</span>
                             </>
                           )}
                         </button>
@@ -1023,7 +1093,7 @@ function ReleasePrintStation({ onLock }) {
                             className="flex-1 py-2.5 bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
                           >
                             <Printer className="w-4 h-4" />
-                            <span>Print Now (1-Click)</span>
+                            <span>{agentOnline ? 'Print Now (Hardware Direct)' : 'Print Now (1-Click)'}</span>
                           </button>
 
                           <a

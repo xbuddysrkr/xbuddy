@@ -323,15 +323,43 @@ export async function boothLogin(pin) {
   return { success: false, error: 'Could not connect to booth service. Check internet or print agent.' }
 }
 
-export async function validateAndRelease(orderId) {
+export async function isAgentAvailable() {
+  const isLocalHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  if (isLocalHost) {
+    try {
+      const res = await fetch(`${LOCAL_API}/status`, { signal: AbortSignal.timeout(1000) })
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.success) return true
+      }
+    } catch {}
+  }
+  const tunnel = await getTunnelUrl()
+  if (tunnel) {
+    try {
+      const res = await fetch(`${tunnel}/status`, { signal: AbortSignal.timeout(2500) })
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.success) return true
+      }
+    } catch {}
+  }
+  return false
+}
+
+export async function validateAndRelease(orderId, options = {}) {
+  const isLocalHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   const tunnelUrl = await getTunnelUrl()
-  // Try both tunnel URL and LOCAL_API (so kiosk browser can hit local agent via PNA if tunnel is lagging)
-  const endpoints = [tunnelUrl, LOCAL_API].filter(Boolean)
+  const endpoints = isLocalHost ? [LOCAL_API, tunnelUrl].filter(Boolean) : [tunnelUrl, LOCAL_API].filter(Boolean)
   for (const base of endpoints) {
     try {
       const res = await fetch(`${base}/release-print`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }), signal: AbortSignal.timeout(10000),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, ...options }),
+        signal: AbortSignal.timeout(15000),
       })
       if (res.ok) return await res.json()
     } catch { continue }
