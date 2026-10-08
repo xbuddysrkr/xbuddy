@@ -7,18 +7,104 @@ import { LETTER_TYPES, generateLetter } from '../utils/letterTemplates'
 const EMPTY = { type: 'leave', name: '', receiver: '', department: '', rollNo: '', year: '', reason: '', days: '', extra: '' }
 
 function generatePdfBlob(text, subject) {
-  const doc  = new jsPDF({ unit: 'mm', format: 'a4' })
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const margin = 20
-  const width  = 210 - margin * 2
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(11)
-  const lines = doc.splitTextToSize(text, width)
-  let y = margin
-  lines.forEach(line => {
-    if (y > 270) { doc.addPage(); y = margin }
-    doc.text(line, margin, y)
-    y += 6
+  const width = 210 - margin * 2
+  let y = 25
+
+  doc.setFont('times', 'normal')
+
+  const paragraphs = text.split(/\n\n+/)
+
+  paragraphs.forEach(p => {
+    const trimmed = p.trim()
+    if (!trimmed) return
+
+    // Date line
+    if (trimmed.startsWith('Date:')) {
+      doc.setFont('times', 'normal')
+      doc.setFontSize(11)
+      doc.text(trimmed, 210 - margin, y, { align: 'right' })
+      y += 10
+      return
+    }
+
+    // Subject line
+    if (trimmed.startsWith('Sub:') || trimmed.startsWith('Subject:')) {
+      doc.setFont('times', 'bold')
+      doc.setFontSize(11.5)
+      const subLines = doc.splitTextToSize(trimmed, width)
+      subLines.forEach(line => {
+        if (y > 270) { doc.addPage(); y = margin }
+        doc.text(line, 105, y, { align: 'center' })
+        y += 6
+      })
+      doc.setFont('times', 'normal')
+      y += 4
+      return
+    }
+
+    // Header divider (if ASCII divider)
+    if (trimmed.includes('─'.repeat(10)) || trimmed.includes('═'.repeat(10))) {
+      doc.setDrawColor(180, 180, 180)
+      doc.line(margin, y, 210 - margin, y)
+      y += 6
+      return
+    }
+
+    // Recipient block (To, ...)
+    if (trimmed.startsWith('To,')) {
+      doc.setFont('times', 'normal')
+      doc.setFontSize(11)
+      const lines = trimmed.split('\n')
+      lines.forEach(line => {
+        if (y > 270) { doc.addPage(); y = margin }
+        doc.text(line.trim(), margin, y)
+        y += 5.5
+      })
+      y += 4
+      return
+    }
+
+    // Salutation
+    if (trimmed.startsWith('Respected') || trimmed.startsWith('Dear')) {
+      doc.setFont('times', 'bold')
+      doc.setFontSize(11)
+      doc.text(trimmed, margin, y)
+      doc.setFont('times', 'normal')
+      y += 7
+      return
+    }
+
+    // Sign off block
+    if (trimmed.includes('Yours obediently') || trimmed.includes('Yours sincerely') || trimmed.includes('Thank you')) {
+      doc.setFont('times', 'normal')
+      doc.setFontSize(11)
+      const lines = trimmed.split('\n')
+      lines.forEach(line => {
+        if (y > 270) { doc.addPage(); y = margin }
+        const isName = line.trim() && !line.includes(':') && !line.includes('—') && !line.includes('Thank') && !line.includes('Yours')
+        if (isName) doc.setFont('times', 'bold')
+        doc.text(line.trim(), 210 - margin, y, { align: 'right' })
+        if (isName) doc.setFont('times', 'normal')
+        y += 5.5
+      })
+      return
+    }
+
+    // Normal body paragraph
+    doc.setFont('times', 'normal')
+    doc.setFontSize(11)
+    const lines = doc.splitTextToSize(trimmed, width)
+    lines.forEach((line, idx) => {
+      if (y > 270) { doc.addPage(); y = margin }
+      const xPos = (idx === 0) ? margin + 6 : margin
+      doc.text(line, xPos, y)
+      y += 6
+    })
+    y += 4
   })
+
   return doc
 }
 

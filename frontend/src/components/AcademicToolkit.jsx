@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { jsPDF } from 'jspdf'
 import { Zap, Check, FileEdit, Eye } from 'lucide-react'
 import { DOC_TYPES } from '../utils/letterTemplates'
 
@@ -84,7 +83,80 @@ function escapeHtml(str) {
 
 function fieldSpan(field, val, defaultVal) {
   const displayVal = (val !== undefined && val !== null && val !== '') ? val : defaultVal
-  return `<span data-field="${field}">${escapeHtml(displayVal)}</span>`
+  const isMulti = field === 'reason' || field === 'extra'
+  return `<span data-field="${field}" style="font-weight: 600;${isMulti ? ' white-space: pre-wrap;' : ''}">${escapeHtml(displayVal)}</span>`
+}
+
+// ── Formal Letter Layout Generator ──────────────────────────────────────────
+function renderFormalLetter({ clg, dept, date, to, subject, nm, roll, yr, bodyHtml, extraHtml }) {
+  return `
+<div style="font-family: 'Georgia', 'Times New Roman', serif; line-height: 1.6; color: #0f172a; padding: 4px;">
+  <!-- Letterhead Header -->
+  <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 22px;">
+    <div style="font-size: 15pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; color: #0f172a;">${clg}</div>
+    <div style="font-size: 10.5pt; font-weight: bold; color: #475569; margin-top: 3px; letter-spacing: 0.3px;">DEPARTMENT OF ${dept}</div>
+  </div>
+
+  <!-- Date Row (Right Aligned) -->
+  <div style="display: flex; justify-content: flex-end; margin-bottom: 18px;">
+    <div style="text-align: right; font-size: 11pt; line-height: 1.4;">
+      <div><strong>Date:</strong> ${date}</div>
+      <div style="color: #64748b; font-size: 10pt;">Place: College Campus</div>
+    </div>
+  </div>
+
+  <!-- Recipient Address (To) -->
+  <div style="margin-bottom: 20px; font-size: 11.5pt; line-height: 1.5;">
+    <div style="font-weight: bold; margin-bottom: 2px;">To,</div>
+    <div>${to},</div>
+    <div>Department of ${dept},</div>
+    <div>${clg}.</div>
+  </div>
+
+  <!-- Subject Line (Centered, Bold, Underlined) -->
+  <div style="text-align: center; margin: 22px 0 16px 0; font-size: 11.5pt; font-weight: bold;">
+    <span style="border-bottom: 1.5px solid #0f172a; padding-bottom: 2px;">
+      Subject: ${subject}
+    </span>
+  </div>
+
+  <!-- Salutation -->
+  <div style="margin-bottom: 14px; font-size: 11.5pt; font-weight: bold;">
+    Respected Sir / Madam,
+  </div>
+
+  <!-- Main Body Paragraphs -->
+  <div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;">
+    ${bodyHtml}
+  </div>
+
+  ${extraHtml ? `<div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;">${extraHtml}</div>` : ''}
+
+  <!-- Closing Paragraph -->
+  <div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 32px; text-indent: 36px;">
+    I assure you that I will be proactive in completing all coursework and maintaining exemplary academic discipline. I kindly request you to consider my application favorably and grant approval.
+  </div>
+
+  <!-- Sign-off Block (Two Columns) -->
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; padding-top: 10px;">
+    <div style="text-align: left;">
+      <div style="font-size: 10pt; color: #64748b; margin-bottom: 36px;">Faculty / Mentor Approval:</div>
+      <div style="border-top: 1px dashed #94a3b8; width: 160px; text-align: center; font-size: 9pt; color: #64748b; padding-top: 4px;">
+        (Signature & Date)
+      </div>
+    </div>
+
+    <div style="text-align: right; font-size: 11pt; line-height: 1.5;">
+      <div style="margin-bottom: 4px;">Thanking you,</div>
+      <div style="font-weight: bold; margin-bottom: 32px;">Yours obediently,</div>
+      <div style="font-weight: bold; font-size: 11.5pt; color: #0f172a;">${nm}</div>
+      <div>Roll No: <strong>${roll}</strong></div>
+      <div>${yr} Year — ${dept}</div>
+      <div style="color: #475569; font-size: 10pt;">${clg}</div>
+    </div>
+  </div>
+</div>
+`
 }
 
 // ── Canonical Initial Document HTML with DOM-level Field Mappings ──────────────
@@ -99,74 +171,246 @@ function generateDocumentHtml(type, form) {
   const days = fieldSpan('days', form.days, 'N')
   const weeks = fieldSpan('weeks', form.weeks || form.days, 'N')
 
-  const letterHeader = `Date: ${date}\n\n\nTo,\n${to},\nDepartment of ${dept},\n${clg}.\n\n\n`
-  const letterClose = `\n\n\nThank you for your kind consideration.\n\n\nYours obediently,\n\n\n\n${nm}\nRoll No: ${roll}\n${yr} Year — ${dept}\n${clg}`
-
   switch (type) {
     case 'leave': {
       const reason = fieldSpan('reason', form.reason, '[State your reason]')
-      const extraContent = form.extra ? `\nAdditional details: ${escapeHtml(form.extra)}\n` : ''
-      const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Subject: Application for Leave — ${days} Day(s)\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully request leave of absence for a period of ${days} day(s) from [Start Date] to [End Date].\n\nReason for Leave: ${reason}.\n${extra}\nI assure you that I will be proactive in completing all pending coursework, laboratory experiments, and academic assignments upon my return. I kindly request you to approve my leave application and oblige.${letterClose}`
+      const extraHtml = form.extra ? `<div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;"><span data-field="extra">${escapeHtml(form.extra)}</span></div>` : ''
+      return renderFormalLetter({
+        clg, dept, date, to, nm, roll, yr,
+        subject: `Application for Leave — ${days} Day(s) — Reg.`,
+        bodyHtml: `I am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully request leave of absence for a period of ${days} day(s) from [Start Date] to [End Date] on account of ${reason}.`,
+        extraHtml,
+      })
     }
 
     case 'bonafide': {
       const reason = fieldSpan('reason', form.reason, '[State purpose]')
-      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
-      const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Subject: Request for Official Bonafide Certificate\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to formally request the issuance of an official Bonafide Certificate from the college administration.\n\nPurpose of Certificate: ${reason}.\n${extra}\nThis certificate is urgently required for the purpose mentioned above. I assure you that my academic records and conduct have been exemplary. I kindly request you to issue the certificate at the earliest convenience. I shall be highly grateful for your prompt support.${letterClose}`
+      const extraHtml = form.extra ? `<div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;"><span data-field="extra">${escapeHtml(form.extra)}</span></div>` : ''
+      return renderFormalLetter({
+        clg, dept, date, to, nm, roll, yr,
+        subject: `Request for Official Bonafide Certificate — Reg.`,
+        bodyHtml: `I am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to formally request the issuance of an official Bonafide Certificate from the college administration for ${reason}.`,
+        extraHtml,
+      })
     }
 
     case 'internship': {
       const reason = fieldSpan('reason', form.reason, '[Describe the internship]')
-      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
-      const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Subject: Request for Permission to Attend Internship — ${weeks} Week(s)\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I have been offered a valuable internship opportunity at [Company / Institution Name] for a duration of ${weeks} week(s).\n\nInternship Domain / Profile: ${reason}.\n${extra}\nThis internship will provide vital industry exposure and practical experience that directly complements my academic studies. I assure you that my regular coursework and attendance requirements will be diligently maintained. I kindly request your permission and approval for the required leave to attend this internship program.${letterClose}`
+      const extraHtml = form.extra ? `<div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;"><span data-field="extra">${escapeHtml(form.extra)}</span></div>` : ''
+      return renderFormalLetter({
+        clg, dept, date, to, nm, roll, yr,
+        subject: `Request for Permission to Attend Internship — ${weeks} Week(s) — Reg.`,
+        bodyHtml: `I am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I have been offered a valuable internship opportunity for a duration of ${weeks} week(s) regarding ${reason}.`,
+        extraHtml,
+      })
     }
 
     case 'permission': {
       const reason = fieldSpan('reason', form.reason, '[Event / Purpose]')
-      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
-      const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Subject: Request for Permission — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully seek your permission for ${reason} scheduled to take place on [Date / Time Window].\n\n${extra}\nI assure you that participating in this activity will not adversely impact my academic schedule or college discipline. I will ensure all missed study material is covered promptly. I humbly request you to grant the required permission and oblige.${letterClose}`
+      const extraHtml = form.extra ? `<div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;"><span data-field="extra">${escapeHtml(form.extra)}</span></div>` : ''
+      return renderFormalLetter({
+        clg, dept, date, to, nm, roll, yr,
+        subject: `Request for Permission for ${reason} — Reg.`,
+        bodyHtml: `I am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully seek your permission for ${reason} scheduled to take place on [Date / Time Window].`,
+        extraHtml,
+      })
     }
 
     case 'apology': {
       const reason = fieldSpan('reason', form.reason, '[describe the incident]')
-      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
-      const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Subject: Formal Letter of Apology — ${reason}\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing this letter to tender my sincere and unreserved apology regarding ${reason}.\n\n${extra}\nI deeply regret my actions and fully realize the disruption and inconvenience caused. I assure you that such a lapse in conduct will never recur under any circumstances, and I will strictly adhere to all college rules and expectations moving forward. I humbly request you to pardon my mistake and give me an opportunity to prove my sincere commitment to academic discipline.${letterClose}`
+      const extraHtml = form.extra ? `<div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;"><span data-field="extra">${escapeHtml(form.extra)}</span></div>` : ''
+      return renderFormalLetter({
+        clg, dept, date, to, nm, roll, yr,
+        subject: `Formal Letter of Apology regarding ${reason} — Reg.`,
+        bodyHtml: `I am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing this letter to tender my sincere apology regarding ${reason}. I deeply regret the lapse, take full responsibility, and assure you that such an occurrence will never happen again under any circumstances.`,
+        extraHtml,
+      })
     }
 
     case 'scholarship': {
       const reason = fieldSpan('reason', form.reason, '[State your reason and eligibility]')
-      const extraContent = form.extra ? `\n${escapeHtml(form.extra)}\n` : ''
-      const extra = `<span data-field="extra">${extraContent}</span>`
-      return `${letterHeader}Subject: Application for Institutional Scholarship Assistance\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully submit my application for the scholarship assistance program offered by the institution.\n\nEligibility & Family Background: ${reason}.\n${extra}\nI have consistently maintained a strong academic record and an active presence in departmental coursework. Receiving this scholarship assistance will substantially alleviate my family's financial burden and enable me to focus wholeheartedly on my engineering education. I humbly request you to consider my application favorably and grant me this opportunity.${letterClose}`
+      const extraHtml = form.extra ? `<div style="text-align: justify; font-size: 11.5pt; line-height: 1.8; margin-bottom: 14px; text-indent: 36px;"><span data-field="extra">${escapeHtml(form.extra)}</span></div>` : ''
+      return renderFormalLetter({
+        clg, dept, date, to, nm, roll, yr,
+        subject: `Application for Institutional Scholarship Assistance — Reg.`,
+        bodyHtml: `I am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully submit my application for institutional scholarship assistance on account of ${reason}.`,
+        extraHtml,
+      })
     }
 
     case 'resume': {
       const reason = fieldSpan('reason', form.reason, 'A dedicated engineering student seeking opportunities to apply technical skills and contribute effectively to organizational success.')
-      return `${nm}\n${'─'.repeat(54)}\nEmail: [your.email@example.com]   |   Phone: [+91 98765 43210]   |   Location: [City, State]\nLinkedIn: linkedin.com/in/[profile]       |   GitHub: github.com/[profile]\n\n\nCAREER OBJECTIVE\n${'─'.repeat(54)}\n${reason}\n\n\nACADEMIC BACKGROUND\n${'─'.repeat(54)}\n• B.Tech in ${dept} — ${clg}\n  Year of Study: ${yr} Year   |   CGPA: [X.XX / 10.0]\n• Intermediate / 10+2: [Junior College Name] — [XX.X%]\n• Secondary School Certificate (SSC): [School Name] — [XX.X%]\n\n\nTECHNICAL SKILLS\n${'─'.repeat(54)}\n• Programming Languages : C, Java, Python\n• Web & Frameworks      : HTML5, CSS3, JavaScript, React.js\n• Tools & Databases     : MySQL, Git, GitHub, VS Code\n• Core Concepts         : Data Structures, OOP, DBMS, Computer Networks\n\n\nPROJECT WORK\n${'─'.repeat(54)}\n1. [Project Title 1] — [Tech Stack Used]\n   - Developed a responsive web application implementing core functionalities.\n   - Improved user experience and achieved robust database integration.\n\n2. [Project Title 2] — [Tech Stack Used]\n   - Designed and deployed end-to-end module with real-time data handling.\n\n\nKEY ACHIEVEMENTS & CERTIFICATIONS\n${'─'.repeat(54)}\n• Completed Professional Certification in [Course Name] by [Platform/Issuer].\n• Participated in National Level Technical Symposium / Hackathon.\n\n\nDECLARATION\n${'─'.repeat(54)}\nI hereby affirm that the details furnished above are authentic and complete to the best of my knowledge.\n\nDate: ${date}\nPlace: [City Name]                                Signature: ___________________`
+      return `
+<div style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.5; color: #0f172a; padding: 4px;">
+  <!-- Header -->
+  <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px;">
+    <div style="font-size: 18pt; font-weight: bold; letter-spacing: 0.5px; color: #0f172a;">${nm}</div>
+    <div style="font-size: 9.5pt; color: #475569; margin-top: 4px;">
+      Email: [your.email@example.com] &nbsp;|&nbsp; Phone: [+91 98765 43210] &nbsp;|&nbsp; Location: [City, State]
+    </div>
+    <div style="font-size: 9.5pt; color: #ea580c; font-weight: 500; margin-top: 2px;">
+      LinkedIn: linkedin.com/in/[profile] &nbsp;|&nbsp; GitHub: github.com/[profile]
+    </div>
+  </div>
+
+  <!-- Objective -->
+  <div style="margin-bottom: 16px;">
+    <div style="font-size: 11pt; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 6px; color: #0f172a;">
+      Career Objective
+    </div>
+    <div style="font-size: 10pt; line-height: 1.6; color: #334155;">
+      ${reason}
+    </div>
+  </div>
+
+  <!-- Education -->
+  <div style="margin-bottom: 16px;">
+    <div style="font-size: 11pt; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 6px; color: #0f172a;">
+      Academic Background
+    </div>
+    <div style="font-size: 10pt; line-height: 1.6;">
+      <div style="display: flex; justify-content: space-between; font-weight: bold;">
+        <span>B.Tech in ${dept}</span>
+        <span>${yr} Year &nbsp;|&nbsp; CGPA: [X.XX / 10.0]</span>
+      </div>
+      <div style="color: #475569;">${clg}</div>
+    </div>
+  </div>
+
+  <!-- Technical Skills -->
+  <div style="margin-bottom: 16px;">
+    <div style="font-size: 11pt; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 6px; color: #0f172a;">
+      Technical Competencies
+    </div>
+    <div style="font-size: 10pt; line-height: 1.6; color: #334155;">
+      <div>• <strong>Languages:</strong> C, Java, Python, JavaScript</div>
+      <div>• <strong>Web & Tools:</strong> HTML5, CSS3, React.js, Node.js, Git, GitHub, VS Code</div>
+      <div>• <strong>Core Subjects:</strong> Data Structures, Algorithms, DBMS, Operating Systems</div>
+    </div>
+  </div>
+
+  <!-- Projects -->
+  <div style="margin-bottom: 16px;">
+    <div style="font-size: 11pt; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 6px; color: #0f172a;">
+      Academic Project Work
+    </div>
+    <div style="font-size: 10pt; line-height: 1.6; color: #334155;">
+      <div style="font-weight: bold; color: #0f172a;">1. [Project Title] — [Tech Stack]</div>
+      <div style="padding-left: 12px;">- Developed a full-stack web application with responsive UI and database integration.</div>
+      <div style="padding-left: 12px;">- Implemented secure API communication and real-time state synchronization.</div>
+    </div>
+  </div>
+
+  <!-- Declaration -->
+  <div style="margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 12px; font-size: 9.5pt; color: #475569; display: flex; justify-content: space-between; align-items: flex-end;">
+    <div>
+      <div>Date: ${date}</div>
+      <div>Place: Campus</div>
+    </div>
+    <div style="text-align: right;">
+      <div style="font-weight: bold; color: #0f172a;">Signature: ___________________</div>
+      <div style="font-size: 9pt;">(${nm})</div>
+    </div>
+  </div>
+</div>
+`
     }
 
     case 'assignment': {
-      const clgUpper = fieldSpan('college', (form.college || '[College Name]').toUpperCase(), '[COLLEGE NAME]')
       const reason = fieldSpan('reason', form.reason, '[Assignment Topic]')
-      const doubleLine = '═'.repeat(54)
-      const singleLine = '─'.repeat(54)
-      return `${doubleLine}\n                  ${clgUpper}\n             DEPARTMENT OF ${dept.toUpperCase()}\n${doubleLine}\n\n\n\n                  A S S I G N M E N T   R E P O R T\n\n\n\nSubject Name     : [Subject Name]\nSubject Code     : [Subject Code]\nTopic            : ${reason}\nAcademic Year    : [20XX – 20XX]\nSemester         : [Odd / Even Semester]\n\n\n\n${singleLine}\nSUBMITTED BY:\n  Student Name   : ${nm}\n  Roll Number    : ${roll}\n  Year & Branch  : ${yr} Year — ${dept}\n  Section / Batch: [Section A / B]\n${singleLine}\n\nSUBMITTED TO:\n  Faculty Name   : ${to}\n  Designation    : [Assistant / Associate Professor]\n  Department     : Department of ${dept}\n${singleLine}\n\n\nDate of Submission: ${date}               Faculty Signature: __________________\n${doubleLine}`
+      return `
+<div style="font-family: 'Times New Roman', Georgia, serif; border: 3px double #0f172a; padding: 32px; min-height: 940px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; text-align: center;">
+  <!-- Header -->
+  <div>
+    <div style="font-size: 18pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #0f172a;">${clg}</div>
+    <div style="font-size: 12pt; font-weight: bold; color: #475569; margin-top: 6px; letter-spacing: 0.5px;">DEPARTMENT OF ${dept}</div>
+    <div style="width: 140px; height: 2px; background: #0f172a; margin: 16px auto;"></div>
+  </div>
+
+  <!-- Title -->
+  <div style="margin: 24px 0;">
+    <div style="font-size: 22pt; font-weight: 900; letter-spacing: 3px; color: #0f172a; text-transform: uppercase;">A S S I G N M E N T</div>
+    <div style="font-size: 11pt; font-weight: 600; color: #64748b; margin-top: 6px; letter-spacing: 1px;">ACADEMIC ASSESSMENT REPORT</div>
+  </div>
+
+  <!-- Topic Card -->
+  <div style="max-width: 520px; margin: 0 auto; text-align: left; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 20px 24px; font-size: 11.5pt; line-height: 1.8;">
+    <div><strong>Subject:</strong> [Subject Name]</div>
+    <div><strong>Subject Code:</strong> [Subject Code]</div>
+    <div><strong>Topic:</strong> <span style="font-weight: bold; color: #ea580c;">${reason}</span></div>
+    <div><strong>Academic Year:</strong> [20XX – 20XX]</div>
+    <div><strong>Semester:</strong> [Odd / Even Semester]</div>
+  </div>
+
+  <!-- Submissions Grid -->
+  <div style="display: flex; justify-content: space-between; text-align: left; margin-top: 40px; font-size: 11pt; line-height: 1.6; border-top: 1.5px solid #cbd5e1; padding-top: 24px;">
+    <div>
+      <div style="font-weight: bold; text-decoration: underline; margin-bottom: 8px; color: #0f172a;">SUBMITTED BY:</div>
+      <div>Name: <strong>${nm}</strong></div>
+      <div>Roll No: <strong>${roll}</strong></div>
+      <div>Year: <strong>${yr} Year</strong></div>
+      <div>Branch: <strong>${dept}</strong></div>
+    </div>
+
+    <div>
+      <div style="font-weight: bold; text-decoration: underline; margin-bottom: 8px; color: #0f172a;">SUBMITTED TO:</div>
+      <div>Faculty: <strong>${to}</strong></div>
+      <div>Designation: [Assistant Professor]</div>
+      <div>Dept: <strong>Department of ${dept}</strong></div>
+      <div>Date: <strong>${date}</strong></div>
+    </div>
+  </div>
+</div>
+`
     }
 
     case 'lab': {
-      const clgUpper = fieldSpan('college', (form.college || '[College Name]').toUpperCase(), '[COLLEGE NAME]')
-      const doubleLine = '═'.repeat(54)
-      const singleLine = '─'.repeat(54)
-      return `${doubleLine}\n                  ${clgUpper}\n             DEPARTMENT OF ${dept.toUpperCase()}\n${doubleLine}\n\n\n\n             L A B O R A T O R Y   R E C O R D\n\n\n\nLaboratory Course: [Laboratory Course Name]\nCourse Code      : [Course Code]\nAcademic Year    : [20XX – 20XX]\nSemester         : [Semester Details]\n\n\n\n${singleLine}\nSTUDENT CREDENTIALS:\n  Name           : ${nm}\n  Roll Number    : ${roll}\n  Year & Branch  : ${yr} Year — ${dept}\n  Section / Batch: [Section / Batch]\n${singleLine}\n\nFACULTY IN-CHARGE:\n  Name           : ${to}\n  Designation    : [Faculty Designation]\n  Department     : Department of ${dept}\n${singleLine}\n\n\nCERTIFICATE\nThis is to certify that this is a bonafide record of practical work done by the student in the laboratory during the academic year [20XX – 20XX].\n\n\nStaff In-charge: __________________      Head of Department: __________________\n${doubleLine}`
+      return `
+<div style="font-family: 'Times New Roman', Georgia, serif; border: 3px double #0f172a; padding: 32px; min-height: 940px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; text-align: center;">
+  <div>
+    <div style="font-size: 18pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #0f172a;">${clg}</div>
+    <div style="font-size: 12pt; font-weight: bold; color: #475569; margin-top: 6px; letter-spacing: 0.5px;">DEPARTMENT OF ${dept}</div>
+    <div style="width: 140px; height: 2px; background: #0f172a; margin: 16px auto;"></div>
+  </div>
+
+  <div style="margin: 20px 0;">
+    <div style="font-size: 22pt; font-weight: 900; letter-spacing: 3px; color: #0f172a; text-transform: uppercase;">LABORATORY RECORD</div>
+    <div style="font-size: 11.5pt; font-weight: 600; color: #ea580c; margin-top: 6px;">PRACTICAL COURSE WORK</div>
+  </div>
+
+  <div style="max-width: 520px; margin: 0 auto; text-align: left; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 18px 24px; font-size: 11.5pt; line-height: 1.8;">
+    <div><strong>Lab Course:</strong> [Laboratory Course Name]</div>
+    <div><strong>Course Code:</strong> [Course Code]</div>
+    <div><strong>Academic Year:</strong> [20XX – 20XX]</div>
+  </div>
+
+  <div style="max-width: 520px; margin: 16px auto 0 auto; text-align: left; font-size: 11pt; line-height: 1.6; border: 1px solid #e2e8f0; padding: 16px 20px; border-radius: 8px;">
+    <div><strong>Student Name:</strong> ${nm}</div>
+    <div><strong>Roll Number:</strong> ${roll}</div>
+    <div><strong>Year & Branch:</strong> ${yr} Year — ${dept}</div>
+    <div><strong>Section / Batch:</strong> [Batch A / B]</div>
+  </div>
+
+  <div style="margin-top: 24px; text-align: justify; font-size: 10.5pt; line-height: 1.6; font-style: italic; color: #334155; padding: 0 16px;">
+    "This is to certify that this is a bonafide record of practical work done by the student in the laboratory during the academic year [20XX – 20XX]."
+  </div>
+
+  <div style="display: flex; justify-content: space-between; margin-top: 36px; font-size: 10pt; font-weight: bold; border-top: 1.5px solid #cbd5e1; padding-top: 20px;">
+    <div>Staff In-charge</div>
+    <div>Head of Department</div>
+    <div>External Examiner</div>
+  </div>
+</div>
+`
     }
 
     default:
-      return `${letterHeader}Subject: Application\n\nRespected Sir/Madam,\n\nI am ${nm}, a student of ${yr} Year in the Department of ${dept} (Roll No: ${roll}).\n\nI kindly request your consideration and assistance.${letterClose}`
+      return renderFormalLetter({
+        clg, dept, date, to, nm, roll, yr,
+        subject: `Application for Permission / Request`,
+        bodyHtml: `I am ${nm}, a student of ${yr} Year in the Department of ${dept} bearing Roll Number ${roll}. I am writing to respectfully request your consideration and assistance.`,
+        extraHtml: '',
+      })
   }
 }
 
@@ -199,7 +443,7 @@ async function exportToPdf(canvasElement, docId, opts = {}) {
     font-size: ${canvasElement.style.fontSize || '12pt'};
     line-height: ${canvasElement.style.lineHeight || '1.6'};
     color: #0f172a;
-    white-space: pre-wrap;
+    white-space: normal;
     word-break: break-word;
   `
   clone.innerHTML = canvasElement.innerHTML
@@ -436,7 +680,7 @@ function PreviewPanel({
             onInput={onCanvasInput}
             onKeyDown={onCanvasKeyDown}
             onPaste={onCanvasPaste}
-            className="bg-white text-slate-900 rounded-xs shadow-2xl border border-orange-200/80 outline-none cursor-text select-text whitespace-pre-wrap"
+            className="bg-white text-slate-900 rounded-xs shadow-2xl border border-orange-200/80 outline-none cursor-text select-text"
             style={{
               width: '794px', // True A4 width 210mm
               minHeight: '1123px', // True A4 height 297mm
@@ -445,6 +689,8 @@ function PreviewPanel({
               fontFamily: "'Georgia', 'Times New Roman', serif",
               fontSize: `${fontSize}pt`,
               lineHeight: '1.6',
+              whiteSpace: 'normal',
+              wordBreak: 'break-word',
             }}
           />
         </div>

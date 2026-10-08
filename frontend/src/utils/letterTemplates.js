@@ -30,32 +30,32 @@ export function generateDocument({ type, name, receiver, reason, days, weeks, ex
     leave: {
       title:   'Leave Application',
       subject: `Sub: Application for Leave — ${days || 'N'} Day(s)\n\nRespected Sir/Madam,\n\n`,
-      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to respectfully request leave for ${days || 'N'} day(s) from [Start Date] to [End Date].\n\nReason: ${reason || '[State your reason]'}.\n\n${extra ? `Additional details: ${extra}\n\n` : ''}I assure you that I will complete all pending academic work upon my return. I kindly request you to grant me the leave and oblige.`,
+      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to respectfully request leave of absence for a period of ${days || 'N'} day(s) from [Start Date] to [End Date] on account of ${reason || '[State your reason]'}.\n\n${extra ? `${extra}\n\n` : ''}I assure you that I will complete all pending academic work upon my return. I kindly request you to consider my application favorably and grant approval.`,
     },
     bonafide: {
       title:   'Bonafide Certificate Request',
       subject: `Sub: Request for Bonafide Certificate\n\nRespected Sir/Madam,\n\n`,
-      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to request a Bonafide Certificate for the purpose of ${reason || '[State purpose]'}.\n\n${extra ? `${extra}\n\n` : ''}I kindly request you to issue the certificate at the earliest. I shall be highly grateful for your support.`,
+      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to formally request the issuance of an official Bonafide Certificate from the college administration for ${reason || '[State purpose]'}.\n\n${extra ? `${extra}\n\n` : ''}I kindly request you to issue the certificate at the earliest. I shall be highly grateful for your support.`,
     },
     internship: {
       title:   'Internship Permission Request',
       subject: `Sub: Request for Permission to Attend Internship\n\nRespected Sir/Madam,\n\n`,
-      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I have been offered an internship opportunity at [Company Name] for a duration of ${weeks || days || 'N'} week(s).\n\nPurpose: ${reason || '[Describe the internship]'}.\n\n${extra ? `${extra}\n\n` : ''}I humbly request your permission and necessary leave to attend this internship, which will greatly contribute to my professional development.`,
+      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I have been offered a valuable internship opportunity for a duration of ${weeks || days || 'N'} week(s) regarding ${reason || '[Describe the internship]'}.\n\n${extra ? `${extra}\n\n` : ''}I humbly request your permission and necessary leave to attend this internship, which will greatly contribute to my professional development.`,
     },
     permission: {
       title:   'Permission Letter',
       subject: `Sub: Request for Permission — ${reason || '[Event/Purpose]'}\n\nRespected Sir/Madam,\n\n`,
-      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to seek your kind permission for ${reason || '[State reason]'} on [Date].\n\n${extra ? `${extra}\n\n` : ''}I assure you that this will not affect my academic performance. I kindly request you to grant permission and oblige.`,
+      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to seek your kind permission for ${reason || '[State reason]'} scheduled to take place on [Date].\n\n${extra ? `${extra}\n\n` : ''}I assure you that this will not affect my academic coursework. I kindly request you to grant permission and oblige.`,
     },
     apology: {
       title:   'Apology Letter',
       subject: `Sub: Apology Letter — ${reason || '[Incident]'}\n\nRespected Sir/Madam,\n\n`,
-      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing this letter to sincerely apologize for ${reason || '[describe the incident]'}.\n\nI deeply regret my actions and understand the inconvenience caused. ${extra ? `${extra}\n\n` : '\n\n'}I assure you that such an incident will not recur in the future. I humbly request you to kindly forgive me and give me another opportunity to prove myself.`,
+      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing this letter to sincerely apologize for ${reason || '[describe the incident]'}.\n\nI deeply regret my actions, take full responsibility, and assure you that such a lapse will never happen again under any circumstances. ${extra ? `${extra}\n\n` : ''}I humbly request you to kindly forgive the mistake and grant me an opportunity to prove my commitment.`,
     },
     scholarship: {
       title:   'Scholarship Application',
       subject: `Sub: Application for Scholarship\n\nRespected Sir/Madam,\n\n`,
-      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to apply for the scholarship offered by your institution.\n\nReason / Eligibility: ${reason || '[State your reason and eligibility]'}.\n\n${extra ? `${extra}\n\n` : ''}I am a sincere and dedicated student and this scholarship will greatly support my academic journey. I kindly request you to consider my application favorably.`,
+      body:    `I am ${nm}, a student of ${yr} Year, Department of ${dept} (Roll No: ${roll}). I am writing to apply for institutional scholarship assistance on account of ${reason || '[State your reason and eligibility]'}.\n\n${extra ? `${extra}\n\n` : ''}I am a dedicated student and this scholarship will greatly support my academic journey. I kindly request you to consider my application favorably.`,
     },
     resume: {
       title: 'Resume',
