@@ -65,20 +65,28 @@ async function getJson(p) {
       expression: `
         (async () => {
           const input = document.querySelector('input[type="text"]');
-          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-          nativeSetter.call(input, 'XB7772');
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
+          if (input) {
+            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeSetter.call(input, 'XB7772');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          }
 
           const btn = document.querySelector('button[type="submit"]');
           if (btn) btn.click();
 
-          await new Promise(r => setTimeout(r, 4000));
+          await new Promise(r => setTimeout(r, 6000));
+
+          const text = document.body.innerText;
+          const buttons = Array.from(document.querySelectorAll('button')).map(b => ({
+            text: b.innerText.trim(),
+            disabled: b.disabled
+          }));
 
           return {
-            body: document.body.innerText,
-            inputs: Array.from(document.querySelectorAll('input')).map(i => i.value),
-            buttons: Array.from(document.querySelectorAll('button')).map(b => ({ text: b.innerText, disabled: b.disabled }))
+            hasOrder: text.includes('XB7772'),
+            orderCardPresent: text.includes('DocScanner'),
+            buttons
           };
         })()
       `,
@@ -86,7 +94,12 @@ async function getJson(p) {
       returnByValue: true
     })
 
-    console.log('Result for XB7772 search:', JSON.stringify(res.result?.value, null, 2))
+    console.log('Result for XB7772 search:', JSON.stringify(res, null, 2))
+
+    const scr = await send('Page.captureScreenshot')
+    import('fs').then(fs => {
+      fs.writeFileSync('C:\\Users\\SRKREC\\.gemini\\antigravity-ide\\brain\\b246a3cc-7676-44fc-b93d-8b140db7afd3\\live_booth_xb7772_lookup.png', Buffer.from(scr.data, 'base64'))
+    })
 
     ws.close()
   } catch (err) {

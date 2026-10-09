@@ -131,9 +131,24 @@ try {
       })()
     `
   })
-  await wait(4500)
+  
+  // Wait for search result to populate (wait for button spinner to finish)
+  for (let i = 0; i < 15; i++) {
+    await wait(1000)
+    const checkState = await send('Runtime.evaluate', {
+      expression: `(() => {
+        const t = document.body.innerText;
+        return t.includes('XB7772') && (t.includes('DocScanner') || t.includes('Order Details') || t.includes('Print Document Now'));
+      })()`,
+      returnByValue: true
+    })
+    if (checkState.result?.value) {
+      console.log(`Order XB7772 found and rendered after ${(i + 1)}s`)
+      break
+    }
+  }
 
-  const xb8212Eval = await send('Runtime.evaluate', {
+  const xb7772Eval = await send('Runtime.evaluate', {
     expression: `
       (() => {
         const text = document.body.innerText;
@@ -143,8 +158,8 @@ try {
           classes: b.className
         }));
         return {
-          hasOrder: text.includes('XB8212'),
-          textSnippet: text,
+          hasOrder: text.includes('XB7772'),
+          fileName: text.includes('DocScanner'),
           buttons
         };
       })()
@@ -152,10 +167,11 @@ try {
     returnByValue: true
   })
 
-  console.log('Lookup result for XB8212: hasOrder =', xb8212Eval.result?.value?.hasOrder)
-  const buttons8212 = xb8212Eval.result?.value?.buttons.filter(b => b.text.includes('Print') || b.text.includes('Release'))
-  console.log('Print buttons present for XB8212:', JSON.stringify(buttons8212, null, 2))
-  await takeScreenshot('live_booth_xb8212_lookup.png')
+  console.log('Lookup result for XB7772: hasOrder =', xb7772Eval.result?.value?.hasOrder)
+  console.log('Lookup result for XB7772: fileName =', xb7772Eval.result?.value?.fileName)
+  const buttons7772 = xb7772Eval.result?.value?.buttons.filter(b => b.text.includes('Print') || b.text.includes('Release'))
+  console.log('Print buttons present for XB7772:', JSON.stringify(buttons7772, null, 2))
+  await takeScreenshot('live_booth_xb7772_lookup.png')
 
   // 2. Search for nonexistent order XB0000
   console.log('\n--- VERIFYING REJECTION & GUARD: XB0000 ---')
