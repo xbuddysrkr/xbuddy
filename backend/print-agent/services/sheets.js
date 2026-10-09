@@ -317,8 +317,15 @@ async function claimOrder(orderId) {
           logger.success(`[AGENT] Claimed order ${cleanId} on ${baseUrl}`)
           return { success: true, claimed: true, order: res.data.order }
         }
-        return { success: false, conflict: res.data?.conflict, error: res.data?.error }
       } catch (err) {
+        if (err.response?.status === 402 || err.response?.status === 403) {
+          return {
+            success: false,
+            paymentBlocked: true,
+            status: err.response.status,
+            error: err.response.data?.error || 'Payment authorization required before release',
+          }
+        }
         if (err.response?.status === 409) {
           return {
             success: false,

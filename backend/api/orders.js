@@ -195,7 +195,7 @@ export default async function handler(req, res) {
         selectedPageCount:    normalizedPages.length > 0 ? normalizedPages.length : (Number(payload.selectedPageCount) || 1),
         driveUrl:             String(payload.driveUrl || '').trim(),
         pdfBase64:            (payload.pdfBase64 && typeof payload.pdfBase64 === 'string' && payload.pdfBase64.length < 15 * 1024 * 1024) ? payload.pdfBase64 : '',
-        paymentStatus:        'pending',
+        paymentStatus:        String(payload.paymentStatus || 'pending').trim().toLowerCase(),
         printStatus:          'waiting_for_shopkeeper',
         createdAt:            nowIso,
         updatedAt:            nowIso,
@@ -665,11 +665,41 @@ export default async function handler(req, res) {
 
         // Atomic print-release lock: prevent duplicate release when simultaneous requests arrive
         if (printStatus === 'Printing') {
+          const existing = await orders.findOne({ orderId }, { projection: { pdfBase64: 0 } })
+          if (!existing) {
+            return res.status(404).json({ success: false, error: `Order ${orderId} not found in authoritative database` })
+          }
+
+          const normPay = String(existing.paymentStatus || 'pending').trim().toLowerCase()
+          if (['failed', 'rejected', 'cancelled'].includes(normPay)) {
+            return res.status(403).json({
+              success: false,
+              error: `Order ${orderId} cannot be released: payment status is "${existing.paymentStatus}". Release strictly prohibited.`,
+              paymentBlocked: true,
+              paymentStatus: existing.paymentStatus,
+            })
+          }
+
+          const requirePay = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
+          if (requirePay && !['paid', 'completed'].includes(normPay)) {
+            return res.status(402).json({
+              success: false,
+              error: `Payment authorization required: order ${orderId} payment status is "${existing.paymentStatus}". Verify payment before release.`,
+              paymentBlocked: true,
+              paymentStatus: existing.paymentStatus,
+            })
+          }
+
+          const raceSafeFilter = {
+            orderId,
+            printStatus: { $nin: ['Printing', 'Printed'] },
+            paymentStatus: requirePay
+              ? { $in: ['paid', 'completed'] }
+              : { $nin: ['failed', 'rejected', 'cancelled'] },
+          }
+
           const raceSafeResult = await orders.findOneAndUpdate(
-            {
-              orderId,
-              printStatus: { $nin: ['Printing', 'Printed'] },
-            },
+            raceSafeFilter,
             {
               $set: { printStatus: 'Printing', releasedAt: nowIso, updatedAt: nowIso },
               $inc: { releaseAttempts: 1 },

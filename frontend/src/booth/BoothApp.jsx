@@ -27,6 +27,7 @@ import {
 import {
   getOrderStatus,
   updateOrderStatus,
+  updatePaymentStatus,
   boothLogin,
   validateAndRelease,
   fetchPendingOrders,
@@ -248,6 +249,7 @@ function ReleasePrintStation({ onLock }) {
   const [orderId, setOrderId] = useState('XB')
   const [loading, setLoading] = useState(false)
   const [printLoading, setPrintLoading] = useState(false)
+  const [verifyingPayment, setVerifyingPayment] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [result, setResult] = useState(null)
   const [lastPrint, setLastPrint] = useState(null)
@@ -360,6 +362,40 @@ function ReleasePrintStation({ onLock }) {
     }
   }
 
+  // Shopkeeper Payment Verification Action (Authoritative MongoDB update)
+  async function handleVerifyPayment(targetOrder) {
+    const target = targetOrder || selectedOrder
+    if (!target) return
+    const id = (target.orderId || target.id || '').trim().toUpperCase()
+    if (!id) return
+
+    setVerifyingPayment(true)
+    try {
+      const res = await updatePaymentStatus(id, 'paid')
+      if (res && res.success) {
+        if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
+          setSelectedOrder(prev => prev ? { ...prev, paymentStatus: 'paid' } : null)
+        }
+        setResult({
+          success: true,
+          message: `Payment for order ${id} verified and updated in MongoDB Atlas!`,
+        })
+      } else {
+        setResult({
+          success: false,
+          error: res?.error || 'Failed to update payment status in MongoDB',
+        })
+      }
+    } catch (err) {
+      setResult({
+        success: false,
+        error: err.message || 'Payment update failed',
+      })
+    } finally {
+      setVerifyingPayment(false)
+    }
+  }
+
   // 1-Click Hardware Print Action (Zero Dialogs, Enforces Exact Student Settings)
   async function handleDirectPrint(orderToPrint, isReprint = false) {
     const target = orderToPrint || selectedOrder
@@ -377,6 +413,16 @@ function ReleasePrintStation({ onLock }) {
           ? `Unable to verify order ${id} right now. Please retry.`
           : `Order ${id} is not verified in authoritative database. Print release blocked to maintain system consistency.`,
         unavailable: Boolean(target.unavailable),
+      })
+      return
+    }
+
+    // Requirement 11: Payment safety guard
+    const normPay = String(target.paymentStatus || 'pending').trim().toLowerCase()
+    if (['failed', 'rejected', 'cancelled'].includes(normPay)) {
+      setResult({
+        success: false,
+        error: `Order ${id} cannot be released: payment status is "${target.paymentStatus}". Release strictly prohibited.`,
       })
       return
     }
@@ -414,6 +460,15 @@ function ReleasePrintStation({ onLock }) {
           success: true,
           mode: 'agent',
           message: `Order ${id} sent directly to physical printer! Zero dialogs — settings applied (${colorLabel}, ${copiesLabel}, ${duplexLabel}).`,
+        })
+        return
+      }
+
+      // If Agent reported payment authorization required or payment failure
+      if (agentRes?.paymentBlocked || (agentRes?.error && agentRes.error.toLowerCase().includes('payment'))) {
+        setResult({
+          success: false,
+          error: agentRes.error || `Payment authorization required for order ${id}.`,
         })
         return
       }
@@ -790,12 +845,26 @@ function ReleasePrintStation({ onLock }) {
                       <p className="text-[10px] uppercase font-bold text-slate-400">
                         {String(selectedOrder.paymentStatus).toLowerCase() === 'paid' || String(selectedOrder.paymentStatus).toLowerCase() === 'completed'
                           ? 'Payment Verified'
+                          : ['failed', 'rejected', 'cancelled'].includes(String(selectedOrder.paymentStatus).toLowerCase())
+                          ? 'Payment Failed / Rejected'
                           : 'Order Amount (Payment: Pending)'}
                       </p>
                       {selectedOrder.transactionId && (
                         <p className="text-[10px] text-slate-400 font-mono">
                           UTR: {selectedOrder.transactionId}
                         </p>
+                      )}
+                      {!(String(selectedOrder.paymentStatus).toLowerCase() === 'paid' || String(selectedOrder.paymentStatus).toLowerCase() === 'completed') &&
+                       !['failed', 'rejected', 'cancelled'].includes(String(selectedOrder.paymentStatus).toLowerCase()) && (
+                        <button
+                          onClick={() => handleVerifyPayment(selectedOrder)}
+                          disabled={verifyingPayment}
+                          className="mt-1.5 px-2.5 py-1 text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 border border-emerald-300 rounded-lg transition-all flex items-center gap-1 ml-auto"
+                          title="Verify student payment in authoritative database"
+                        >
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>{verifyingPayment ? 'Verifying...' : 'Verify Payment'}</span>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -975,9 +1044,17 @@ function ReleasePrintStation({ onLock }) {
                       <div className="flex flex-col sm:flex-row gap-3">
                         <button
                           onClick={() => handleDirectPrint(selectedOrder)}
-                          disabled={printLoading || !agentOnline || selectedOrder.unavailable || !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)}
+                          disabled={
+                            printLoading ||
+                            !agentOnline ||
+                            selectedOrder.unavailable ||
+                            !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound) ||
+                            ['failed', 'rejected', 'cancelled'].includes(String(selectedOrder.paymentStatus || '').toLowerCase())
+                          }
                           className={`flex-1 py-4 text-white font-bold text-base rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 active:scale-[0.98] disabled:opacity-50 ${
-                            selectedOrder.unavailable || !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)
+                            ['failed', 'rejected', 'cancelled'].includes(String(selectedOrder.paymentStatus || '').toLowerCase())
+                              ? 'bg-rose-700 cursor-not-allowed opacity-75 shadow-none'
+                              : selectedOrder.unavailable || !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)
                               ? 'bg-slate-500 cursor-not-allowed opacity-60 shadow-none'
                               : !agentOnline
                               ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-900/20'
@@ -990,6 +1067,11 @@ function ReleasePrintStation({ onLock }) {
                             <>
                               <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                               <span>Sending Direct to Printer...</span>
+                            </>
+                          ) : ['failed', 'rejected', 'cancelled'].includes(String(selectedOrder.paymentStatus || '').toLowerCase()) ? (
+                            <>
+                              <AlertTriangle className="w-5 h-5 text-white" />
+                              <span>Release Blocked (Payment Failed / Rejected)</span>
                             </>
                           ) : selectedOrder.unavailable ? (
                             <>

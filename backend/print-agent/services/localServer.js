@@ -855,6 +855,31 @@ app.post('/release-print', async (req, res) => {
   // Local disk file path for physical PDF transmission
   const filePath = path.join(PENDING_DIR, `${id}.pdf`)
 
+  // Check payment authorization on authoritative order record
+  const normPay = String(order.paymentStatus || 'pending').trim().toLowerCase()
+  if (['failed', 'rejected', 'cancelled'].includes(normPay)) {
+    logger.warn(`[AGENT] Release rejected for ${id}: payment status is "${order.paymentStatus}"`)
+    return res.status(403).json({
+      success: false,
+      error: `Cannot release order: payment status is "${order.paymentStatus}". Release strictly prohibited.`,
+      paymentBlocked: true,
+      paymentStatus: order.paymentStatus,
+      orderId: id,
+    })
+  }
+
+  const requirePaymentVerification = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
+  if (requirePaymentVerification && !['paid', 'completed'].includes(normPay)) {
+    logger.warn(`[AGENT] Release rejected for ${id}: payment verification required (current: "${order.paymentStatus}")`)
+    return res.status(402).json({
+      success: false,
+      error: `Payment authorization required: order payment status is "${order.paymentStatus}". Verify payment before release.`,
+      paymentBlocked: true,
+      paymentStatus: order.paymentStatus,
+      orderId: id,
+    })
+  }
+
   // Prevent rapid double-clicks within 15 seconds locally
   if (global._activePrints && global._activePrints[id] && (Date.now() - global._activePrints[id]) < 15000) {
     return res.json({ success: false, error: 'Print command already sent. Please wait for printer.' })
@@ -874,6 +899,15 @@ app.post('/release-print', async (req, res) => {
         success: false,
         error: 'Order is already printing or was previously released.',
         conflict: true,
+      })
+    }
+    if (!claimRes.success && claimRes.paymentBlocked) {
+      delete global._activePrints[id]
+      logger.warn(`[AGENT] Release rejected for ${id}: ${claimRes.error}`)
+      return res.status(claimRes.status || 403).json({
+        success: false,
+        paymentBlocked: true,
+        error: claimRes.error,
       })
     }
     if (!claimRes.success) {

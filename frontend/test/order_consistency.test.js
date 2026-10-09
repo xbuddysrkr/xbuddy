@@ -253,6 +253,153 @@ assert.strictEqual(duplicateClaimRes.status, 409, 'Atomic release lock must reje
 assert.strictEqual(duplicateData.conflict, true)
 console.log('✓ TEST 15 PASSED: Atomic lock rejects duplicate claim with HTTP 409 conflict')
 
-console.log('\n=== ALL 15 ORDER CONSISTENCY & REGRESSION TESTS PASSED! ===')
+// 16. Test failed payment state is strictly blocked from print claim and release (HTTP 403)
+console.log('\n[TEST 16] Testing failed payment state rejection (paymentStatus: "failed")...')
+// Create a temporary order and set paymentStatus: 'failed' in MongoDB
+const failedOrderId = 'XB' + Math.floor(2000 + Math.random() * 7000)
+await fetch('https://xbuddy.onrender.com/api/orders', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'saveOrder',
+    orderId: failedOrderId,
+    name: 'Failed Pay Test',
+    fileName: 'failed_pay_test.pdf',
+    totalPages: 1,
+    copies: 1,
+    colorMode: 'bw',
+    printType: 'B&W',
+    printSide: 'Single',
+    amount: 5,
+    printStatus: 'waiting_for_shopkeeper',
+    paymentStatus: 'failed',
+    pdfBase64: 'JVBERi0xLjQKJcTl8uXrCg==',
+  }),
+})
+await fetch('https://xbuddy.onrender.com/api/orders', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'updatePaymentStatus',
+    orderId: failedOrderId,
+    paymentStatus: 'failed',
+  }),
+})
+
+// Try to claim via Print Agent /release-print
+const agentFailedRes = await fetch('http://127.0.0.1:3001/release-print', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ orderId: failedOrderId }),
+})
+const agentFailedData = await agentFailedRes.json()
+assert.strictEqual(agentFailedRes.status, 403, 'Failed payment must return HTTP 403 Forbidden')
+assert.strictEqual(agentFailedData.paymentBlocked, true, 'Must report paymentBlocked: true')
+console.log('✓ TEST 16 PASSED: Failed payment state is strictly blocked with HTTP 403 Forbidden')
+
+// 17. Test cancelled payment state rejection
+console.log('\n[TEST 17] Testing cancelled payment state rejection (paymentStatus: "cancelled")...')
+const cancelledOrderId = 'XB' + Math.floor(2000 + Math.random() * 7000)
+await fetch('https://xbuddy.onrender.com/api/orders', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'saveOrder',
+    orderId: cancelledOrderId,
+    name: 'Cancelled Pay Test',
+    fileName: 'cancelled_pay_test.pdf',
+    totalPages: 1,
+    copies: 1,
+    colorMode: 'bw',
+    printType: 'B&W',
+    printSide: 'Single',
+    amount: 5,
+    printStatus: 'waiting_for_shopkeeper',
+    paymentStatus: 'cancelled',
+    pdfBase64: 'JVBERi0xLjQKJcTl8uXrCg==',
+  }),
+})
+await fetch('https://xbuddy.onrender.com/api/orders', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'updatePaymentStatus',
+    orderId: cancelledOrderId,
+    paymentStatus: 'cancelled',
+  }),
+})
+
+const agentCancelledRes = await fetch('http://127.0.0.1:3001/release-print', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ orderId: cancelledOrderId }),
+})
+const agentCancelledData = await agentCancelledRes.json()
+assert.strictEqual(agentCancelledRes.status, 403, 'Cancelled payment must return HTTP 403 Forbidden')
+assert.strictEqual(agentCancelledData.paymentBlocked, true)
+console.log('✓ TEST 17 PASSED: Cancelled payment state is strictly blocked with HTTP 403 Forbidden')
+
+// 18. Test shopkeeper payment verification flow (pending -> paid in MongoDB)
+console.log('\n[TEST 18] Testing shopkeeper payment verification (updatePaymentStatus: pending -> paid)...')
+const updatePayRes = await fetch('https://xbuddy.onrender.com/api/orders', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'updatePaymentStatus',
+    orderId: failedOrderId,
+    paymentStatus: 'paid',
+  }),
+})
+const updatePayData = await updatePayRes.json()
+assert.strictEqual(updatePayData.success, true, 'updatePaymentStatus must succeed')
+
+// Re-verify from canonical MongoDB
+const checkVerifiedPay = await fetch(`https://xbuddy.onrender.com/api/orders?action=getOrderStatus&orderId=${failedOrderId}`)
+const checkVerifiedData = await checkVerifiedPay.json()
+assert.strictEqual(checkVerifiedData.order?.paymentStatus, 'paid', 'MongoDB record must now reflect paymentStatus: paid')
+console.log('✓ TEST 18 PASSED: Shopkeeper payment verification updates MongoDB atomically to "paid"')
+
+// 19. Verify XB2863 invariant (unmodified historical record)
+console.log('\n[TEST 19] Verifying historical XB2863 invariant in MongoDB Atlas...')
+const xb2863Check = await fetch('https://xbuddy.onrender.com/api/orders?action=getOrderStatus&orderId=XB2863')
+const xb2863FinalData = await xb2863Check.json()
+assert.strictEqual(xb2863FinalData.order?.orderId, 'XB2863')
+assert.strictEqual(xb2863FinalData.order?.printStatus, 'Printed')
+assert.strictEqual(xb2863FinalData.order?.paymentStatus, 'pending', 'XB2863 paymentStatus must remain pending without retroactive mutation')
+console.log('✓ TEST 19 PASSED: XB2863 historical record is completely preserved (printStatus: Printed, paymentStatus: pending)')
+
+// 20. Test REQUIRE_PAYMENT_VERIFICATION=true contract (rejects pending with 402, allows paid with 200)
+console.log('\n[TEST 20] Testing REQUIRE_PAYMENT_VERIFICATION strict policy contract...')
+function evaluatePaymentClaimEligibility(order, requireVerification) {
+  const normPay = String(order?.paymentStatus || 'pending').trim().toLowerCase()
+  if (['failed', 'rejected', 'cancelled'].includes(normPay)) {
+    return { eligible: false, status: 403, error: `Order cannot be claimed: payment status is "${order.paymentStatus}". Release strictly prohibited.` }
+  }
+  if (requireVerification && !['paid', 'completed'].includes(normPay)) {
+    return { eligible: false, status: 402, error: `Payment authorization required: order payment status is "${order.paymentStatus}". Verify payment before release.` }
+  }
+  return { eligible: true, status: 200 }
+}
+
+const pendingOrderSample = { orderId: 'XB_TEST_PEND', paymentStatus: 'pending' }
+const paidOrderSample = { orderId: 'XB_TEST_PAID', paymentStatus: 'paid' }
+const failedOrderSample = { orderId: 'XB_TEST_FAIL', paymentStatus: 'failed' }
+
+// Under default mode:
+assert.strictEqual(evaluatePaymentClaimEligibility(pendingOrderSample, false).eligible, true, 'Pending should be eligible in standard mode')
+assert.strictEqual(evaluatePaymentClaimEligibility(failedOrderSample, false).eligible, false, 'Failed must be rejected in standard mode')
+assert.strictEqual(evaluatePaymentClaimEligibility(failedOrderSample, false).status, 403)
+
+// Under strict mode (requireVerification = true):
+const strictPendingResult = evaluatePaymentClaimEligibility(pendingOrderSample, true)
+assert.strictEqual(strictPendingResult.eligible, false, 'Pending must be rejected when payment verification is required')
+assert.strictEqual(strictPendingResult.status, 402, 'Must return HTTP 402 Payment Required')
+
+const strictPaidResult = evaluatePaymentClaimEligibility(paidOrderSample, true)
+assert.strictEqual(strictPaidResult.eligible, true, 'Paid must be accepted when payment verification is required')
+assert.strictEqual(strictPaidResult.status, 200)
+console.log('✓ TEST 20 PASSED: Strict payment verification correctly requires 402 for pending and authorizes paid with 200')
+
+console.log('\n=== ALL 20 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
 
 

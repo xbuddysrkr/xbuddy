@@ -483,24 +483,32 @@ export async function updateOrderStatus(orderId, printStatus) {
 }
 
 export async function updatePaymentStatus(orderId, paymentStatus) {
-  // Update via authoritative serverless endpoint (updates MongoDB)
-  try {
-    const res = await fetch(ORDERS_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'updatePaymentStatus', orderId, paymentStatus }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.success) return data
-      return data
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId) return { success: false, error: 'orderId is required' }
+
+  const endpoints = getCandidateOrdersEndpoints()
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updatePaymentStatus', orderId: cleanId, paymentStatus }),
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.ok) {
+        const text = await res.text()
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
+        try {
+          const data = JSON.parse(text)
+          if (data?.success) return data
+        } catch {}
+      }
+    } catch (err) {
+      console.warn(`[updatePaymentStatus] Notice from ${endpoint}:`, err.message)
     }
-  } catch (err) {
-    console.warn('[updatePaymentStatus] /api/orders notice:', err.message)
   }
 
-  return { success: false, error: 'Failed to update payment status' }
+  return { success: false, error: 'Failed to update payment status in authoritative MongoDB' }
 }
 
 export async function submitOrder(orderData, { onStep } = {}) {

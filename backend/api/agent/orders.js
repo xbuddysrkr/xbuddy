@@ -225,12 +225,53 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'orderId is required' })
       }
 
-      // Conditional atomic transition: pending -> Printing
-      const claimResult = await ordersCollection.findOneAndUpdate(
-        {
+      // 1. Verify existing order in MongoDB Atlas first
+      const existing = await ordersCollection.findOne({ orderId: cleanId }, { projection: { pdfBase64: 0 } })
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          error: `Order ${cleanId} not found in MongoDB Atlas`,
           orderId: cleanId,
-          printStatus: { $in: PENDING_PRINT_STATUSES },
-        },
+        })
+      }
+
+      // 2. Reject failed, rejected, or cancelled payments unconditionally
+      const normPayStatus = String(existing.paymentStatus || 'pending').trim().toLowerCase()
+      if (['failed', 'rejected', 'cancelled'].includes(normPayStatus)) {
+        console.warn(`[AGENT_CLAIM_PAYMENT_BLOCKED] Order ${cleanId} claim rejected: paymentStatus is "${existing.paymentStatus}"`)
+        return res.status(403).json({
+          success: false,
+          error: `Order ${cleanId} cannot be claimed or printed: payment status is "${existing.paymentStatus}". Release strictly prohibited.`,
+          paymentStatus: existing.paymentStatus,
+          paymentBlocked: true,
+          orderId: cleanId,
+        })
+      }
+
+      // 3. Check if strict payment verification is required
+      const requirePaymentVerification = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
+      if (requirePaymentVerification && !['paid', 'completed'].includes(normPayStatus)) {
+        console.warn(`[AGENT_CLAIM_PAYMENT_REQUIRED] Order ${cleanId} claim rejected: payment verification required (current: "${existing.paymentStatus}")`)
+        return res.status(402).json({
+          success: false,
+          error: `Payment authorization required: order ${cleanId} payment status is "${existing.paymentStatus}". Verify payment before release.`,
+          paymentStatus: existing.paymentStatus,
+          paymentBlocked: true,
+          orderId: cleanId,
+        })
+      }
+
+      // 4. Conditional atomic transition: pending -> Printing (enforcing payment predicate atomically)
+      const claimFilter = {
+        orderId: cleanId,
+        printStatus: { $in: PENDING_PRINT_STATUSES },
+        paymentStatus: requirePaymentVerification
+          ? { $in: ['paid', 'completed'] }
+          : { $nin: ['failed', 'rejected', 'cancelled'] },
+      }
+
+      const claimResult = await ordersCollection.findOneAndUpdate(
+        claimFilter,
         {
           $set: {
             printStatus: 'Printing',
@@ -244,15 +285,6 @@ export default async function handler(req, res) {
       )
 
       if (!claimResult) {
-        const existing = await ordersCollection.findOne({ orderId: cleanId }, { projection: { pdfBase64: 0 } })
-        if (!existing) {
-          return res.status(404).json({
-            success: false,
-            error: `Order ${cleanId} not found in MongoDB Atlas`,
-            orderId: cleanId,
-          })
-        }
-
         console.warn(`[AGENT_CLAIM_CONFLICT] Order ${cleanId} already claimed or processing. Current status: "${existing.printStatus}"`)
         return res.status(409).json({
           success: false,
