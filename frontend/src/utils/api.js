@@ -159,35 +159,53 @@ async function postToAgent(baseUrl, orderId, orderData, printSettings) {
   return !!data?.success
 }
 
+function getCandidateOrdersEndpoints() {
+  const endpoints = [
+    ORDERS_ENDPOINT,
+    'https://xbuddy.onrender.com/api/orders',
+  ]
+  return [...new Set(endpoints.filter(Boolean))]
+}
+
 export async function getOrderStatus(orderId) {
   if (!orderId) return null
   const cleanId = String(orderId).trim().toUpperCase()
 
   // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
-  try {
-    const res = await fetch(`${ORDERS_ENDPOINT}?action=getOrderStatus&orderId=${cleanId}`, {
-      signal: AbortSignal.timeout(10000),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.success && data?.order) {
-        return {
-          ...data,
-          ...data.order,
-          orderId: data.order.orderId || cleanId,
-          printStatus: data.order.printStatus || data.printStatus || 'waiting_for_shopkeeper',
-          paymentStatus: data.order.paymentStatus || data.paymentStatus || 'pending',
+  const endpoints = getCandidateOrdersEndpoints()
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${endpoint}?action=getOrderStatus&orderId=${cleanId}`, {
+        signal: AbortSignal.timeout(8000),
+      })
+      if (res.ok) {
+        const text = await res.text()
+        try {
+          const data = JSON.parse(text)
+          if (data?.success && data?.order) {
+            return {
+              ...data,
+              ...data.order,
+              orderId: data.order.orderId || cleanId,
+              printStatus: data.order.printStatus || data.printStatus || 'waiting_for_shopkeeper',
+              paymentStatus: data.order.paymentStatus || data.paymentStatus || 'pending',
+              verifiedInMongo: true,
+              source: 'mongo',
+            }
+          }
+          if (data?.error === 'Order not found' || data?.error?.includes('not found')) {
+            return { success: false, error: 'Order not found in authoritative database. Check the Order ID.', notFound: true, verifiedInMongo: false }
+          }
+        } catch {
+          continue
         }
       }
-      if (data?.error === 'Order not found') {
-        return { success: false, error: 'Order not found' }
-      }
+    } catch (err) {
+      console.warn(`[getOrderStatus] Primary API notice (${endpoint}):`, err.message)
     }
-  } catch (err) {
-    console.warn('[getOrderStatus] Primary API notice:', err.message)
   }
 
-  return null
+  return { success: false, error: 'Order not found in authoritative database. Check the Order ID.', notFound: true, verifiedInMongo: false }
 }
 
 export async function fetchAdminOrders() {
@@ -699,20 +717,31 @@ export async function fetchOrderPdfBlob(orderId) {
  * Fetches active pending orders waiting for shopkeeper release
  */
 export async function fetchPendingOrders() {
-  try {
-    const res = await fetch(`${ORDERS_ENDPOINT}?action=listOrders`, { signal: AbortSignal.timeout(10000) })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.success && Array.isArray(data.orders)) {
-        const pending = data.orders.filter(o => {
-          const s = String(o.printStatus || '').toLowerCase()
-          return s === 'waiting_for_shopkeeper' || s === 'queued' || s === 'pending' || s === 'waiting' || s === 'failed'
-        })
-        return pending
+  const endpoints = getCandidateOrdersEndpoints()
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(10000) })
+      if (res.ok) {
+        const text = await res.text()
+        try {
+          const data = JSON.parse(text)
+          if (data?.success && Array.isArray(data.orders)) {
+            const pending = data.orders.filter(o => {
+              const s = String(o.printStatus || '').toLowerCase()
+              return s === 'waiting_for_shopkeeper' || s === 'queued' || s === 'pending' || s === 'waiting' || s === 'failed'
+            }).map(o => ({
+              ...o,
+              verifiedInMongo: true,
+            }))
+            return pending
+          }
+        } catch {
+          continue
+        }
       }
+    } catch (err) {
+      console.warn(`[fetchPendingOrders] notice (${endpoint}):`, err.message)
     }
-  } catch (err) {
-    console.warn('[fetchPendingOrders] notice:', err.message)
   }
   return []
 }

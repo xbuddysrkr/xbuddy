@@ -4,6 +4,15 @@ const logger = require('../utils/logger')
 
 const { getConfig } = require('./config')
 
+function getCandidateCloudUrls() {
+  const primary = (process.env.CLOUD_API_URL || getConfig().cloudApiUrl || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
+  return [...new Set([primary, 'https://xbuddy.onrender.com'])]
+}
+
+function getAgentSecretKey() {
+  return process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || getConfig().agentSecretKey || ''
+}
+
 const CLOUD_API_URL = process.env.CLOUD_API_URL || getConfig().cloudApiUrl || 'https://xbuddysrkr.vercel.app'
 const AGENT_SECRET_KEY = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || getConfig().agentSecretKey || ''
 
@@ -55,22 +64,30 @@ async function updatePrintStatus(orderIdOrRowIndex, statusOrRow, statusParam) {
       return
     }
 
-    try {
-      await axios.post(
-        `${CLOUD_API_URL}/api/agent/orders/${encodeURIComponent(cleanId)}/status`,
-        { status },
-        {
-          headers: {
-            'x-agent-key': AGENT_SECRET_KEY,
-            'Content-Type': 'application/json',
-          },
-          timeout: 15000,
+    const urls = getCandidateCloudUrls()
+    const secretKey = getAgentSecretKey()
+    for (const baseUrl of urls) {
+      try {
+        const res = await axios.post(
+          `${baseUrl}/api/agent/orders/${encodeURIComponent(cleanId)}/status`,
+          { status },
+          {
+            headers: {
+              'x-agent-key': secretKey,
+              'Content-Type': 'application/json',
+            },
+            timeout: 15000,
+          }
+        )
+        if (res.data?.success) {
+          logger.success(`[AGENT] MongoDB printStatus = ${status} (${baseUrl})`)
+          return
         }
-      )
-      logger.success(`[AGENT] MongoDB printStatus = ${status}`)
-    } catch (err) {
-      logger.error(`[AGENT] Failed to update MongoDB printStatus for ${cleanId}: ${err.message}`)
+      } catch (err) {
+        logger.warn(`[AGENT] Status update attempt on ${baseUrl} failed: ${err.message}`)
+      }
     }
+    logger.error(`[AGENT] Failed to update MongoDB printStatus for ${cleanId} across all candidate endpoints`)
     return
   }
 

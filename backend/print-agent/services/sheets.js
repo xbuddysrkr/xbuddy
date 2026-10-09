@@ -65,18 +65,23 @@ async function getWaitingOrders() {
   const source = getOrderSource()
 
   if (source === 'mongo') {
-    try {
-      const res = await axios.get(`${CLOUD_API_URL}/api/agent/orders/pending`, {
-        headers: { 'x-agent-key': AGENT_SECRET_KEY },
-        timeout: 15000,
-      })
-      if (res.data?.success && Array.isArray(res.data.orders)) {
-        return res.data.orders
+    const urls = getCandidateCloudUrls()
+    const secretKey = getAgentSecretKey()
+    for (const baseUrl of urls) {
+      try {
+        const res = await axios.get(`${baseUrl}/api/agent/orders/pending`, {
+          headers: { 'x-agent-key': secretKey },
+          timeout: 15000,
+        })
+        if (res.data?.success && Array.isArray(res.data.orders)) {
+          return res.data.orders
+        }
+      } catch (err) {
+        logger.warn(`[AGENT] Failed to fetch pending orders from ${baseUrl}: ${err.message}`)
       }
-    } catch (err) {
-      logger.error(`[AGENT] Failed to fetch pending orders from MongoDB primary: ${err.message}`)
-      return []
     }
+    logger.error('[AGENT] Failed to fetch pending orders from MongoDB primary across all endpoints')
+    return []
   }
 
   // Legacy fallback (only when explicitly configured)

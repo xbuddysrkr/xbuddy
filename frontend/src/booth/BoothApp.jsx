@@ -314,15 +314,21 @@ function ReleasePrintStation({ onLock }) {
       const res = await getOrderStatus(cleanId)
       if (res?.success && (res?.order || res?.fileName)) {
         const ord = res.order || res
-        setSelectedOrder(ord)
+        setSelectedOrder({
+          ...ord,
+          verifiedInMongo: true,
+          notFound: false,
+        })
         setOrderId(cleanId)
       } else {
+        setSelectedOrder(null)
         setResult({
           success: false,
-          error: `Order ${cleanId} not found in system. Please verify Order ID with the student.`,
+          error: res?.error || `Order ${cleanId} not found in authoritative database. Check the Order ID.`,
         })
       }
     } catch (err) {
+      setSelectedOrder(null)
       setResult({
         success: false,
         error: `Could not fetch order: ${err.message}`,
@@ -337,6 +343,18 @@ function ReleasePrintStation({ onLock }) {
     const target = orderToPrint || selectedOrder
     if (!target) return
     const id = (target.orderId || target.id).trim().toUpperCase()
+
+    // Requirement 5: If an order is absent from MongoDB or cannot be verified, disable Print Document Now and reject release safely.
+    const isTargetVerified = Boolean(
+      (target.verifiedInMongo || target.mongoSaved || target._id) && !target.notFound
+    )
+    if (!isTargetVerified) {
+      setResult({
+        success: false,
+        error: `Order ${id} is not verified in authoritative database. Print release blocked to prevent inconsistency.`,
+      })
+      return
+    }
 
     setPrintLoading(true)
     setResult(null)
@@ -380,6 +398,18 @@ function ReleasePrintStation({ onLock }) {
         setResult({
           success: false,
           error: agentRes.error || `Order ${id} is already printing or was previously released.`,
+        })
+        return
+      }
+
+      // If Agent reported order not found in authoritative database
+      if (agentRes?.error && agentRes.error.includes('authoritative database')) {
+        if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
+          setSelectedOrder(prev => ({ ...prev, notFound: true, verifiedInMongo: false }))
+        }
+        setResult({
+          success: false,
+          error: agentRes.error,
         })
         return
       }
@@ -711,6 +741,12 @@ function ReleasePrintStation({ onLock }) {
                           )}
                           <span>{selectedOrder.printStatus || 'Waiting'}</span>
                         </span>
+                        {(!Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)) && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-rose-600" />
+                            <span>Unverified in Database</span>
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
                         <FileText className="w-3.5 h-3.5 text-orange-500" />
@@ -866,7 +902,14 @@ function ReleasePrintStation({ onLock }) {
                   ) : (
                     <div className="space-y-3 pt-2">
                       {/* Hardware Auto-Enforcement Notice */}
-                      {agentOnline ? (
+                      {!Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound) ? (
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-900 flex items-center gap-2.5">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>
+                            <strong>Unverified in Authoritative Database:</strong> Order {selectedOrder.orderId || selectedOrder.id} is absent or unverified in MongoDB. Release is disabled to maintain system consistency.
+                          </span>
+                        </div>
+                      ) : agentOnline ? (
                         <div className="bg-emerald-50 border border-emerald-200/90 rounded-xl p-3 text-xs text-emerald-900 flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Check className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -887,9 +930,11 @@ function ReleasePrintStation({ onLock }) {
                       <div className="flex flex-col sm:flex-row gap-3">
                         <button
                           onClick={() => handleDirectPrint(selectedOrder)}
-                          disabled={printLoading || !agentOnline}
+                          disabled={printLoading || !agentOnline || !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)}
                           className={`flex-1 py-4 text-white font-bold text-base rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 active:scale-[0.98] disabled:opacity-50 ${
-                            !agentOnline
+                            !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)
+                              ? 'bg-slate-500 cursor-not-allowed opacity-60 shadow-none'
+                              : !agentOnline
                               ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-900/20'
                               : String(selectedOrder.printStatus).toLowerCase() === 'printed'
                               ? 'bg-slate-700 hover:bg-slate-800 shadow-slate-900/20'
@@ -900,6 +945,11 @@ function ReleasePrintStation({ onLock }) {
                             <>
                               <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                               <span>Sending Direct to Printer...</span>
+                            </>
+                          ) : !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound) ? (
+                            <>
+                              <AlertTriangle className="w-5 h-5 text-amber-200" />
+                              <span>Release Disabled (Unverified in Database)</span>
                             </>
                           ) : !agentOnline ? (
                             <>
@@ -1066,13 +1116,40 @@ function ReleasePrintStation({ onLock }) {
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                          {(() => {
+                            const isOrdVerified = Boolean((ord.verifiedInMongo || ord.mongoSaved || ord._id) && !ord.notFound)
+                            return (
+                              <button
+                                onClick={() => handleDirectPrint(ord)}
+                                disabled={printLoading || !isOrdVerified}
+                                className={`flex-1 py-2.5 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 ${
+                                  !isOrdVerified
+                                    ? 'bg-slate-400 opacity-60 cursor-not-allowed shadow-none'
+                                    : 'bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 shadow-orange-500/20'
+                                }`}
+                              >
+                                <Printer className="w-4 h-4" />
+                                <span>
+                                  {!isOrdVerified
+                                    ? '⚠️ Unverified (Blocked)'
+                                    : agentOnline
+                                    ? 'Print Now (Hardware Direct)'
+                                    : 'Print Now (1-Click)'}
+                                </span>
+                              </button>
+                            )
+                          })()}
+
                           <button
-                            onClick={() => handleDirectPrint(ord)}
-                            disabled={printLoading}
-                            className="flex-1 py-2.5 bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
+                            onClick={() => {
+                              setSelectedOrder(ord)
+                              setOrderId(id)
+                              setActiveTab('lookup')
+                            }}
+                            className="p-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 transition-colors"
+                            title="Inspect order details"
                           >
-                            <Printer className="w-4 h-4" />
-                            <span>{agentOnline ? 'Print Now (Hardware Direct)' : 'Print Now (1-Click)'}</span>
+                            <FileText className="w-4 h-4" />
                           </button>
 
                           <a

@@ -876,6 +876,14 @@ app.post('/release-print', async (req, res) => {
         conflict: true,
       })
     }
+    if (!claimRes.success) {
+      delete global._activePrints[id]
+      logger.error(`[AGENT] Atomic claim failed for ${id}: ${claimRes.error || 'Database claim rejection'}`)
+      return res.status(500).json({
+        success: false,
+        error: claimRes.error || 'Failed to claim order in authoritative database. Release blocked.',
+      })
+    }
   }
 
   logger.success(`Releasing: ${id} | ${order.fileName || 'document'} | ${order.copies || 1} copy`)
