@@ -4,6 +4,7 @@ import { connectToDatabase } from './_lib/mongodb.js'
 import {
   savePdfToGridFS,
   getPdfStreamFromGridFS,
+  deletePdfFromGridFS,
   hasPdfInGridFS,
   getGridFSBucket,
 } from './_lib/gridfs.js'
@@ -262,9 +263,9 @@ export default async function handler(req, res) {
         selectedPages:        normalizedPages,
         selectedPageCount:    normalizedPages.length > 0 ? normalizedPages.length : (Number(payload.selectedPageCount) || 1),
         driveUrl:             hasDriveUrl ? String(payload.driveUrl).trim() : '',
-        hasPdf:               Boolean(hasValidPdf || hasDriveUrl),
+        hasPdf:               false,
         hasGridFsPdf:         false,
-        pdfStorage:           hasValidPdf ? 'gridfs' : (hasDriveUrl ? 'drive' : 'none'),
+        pdfStorage:           'none',
         pdfSize:              pdfBuffer ? pdfBuffer.length : 0,
         // Store inline Base64 only for small files (< 2MB) for legacy compatibility.
         // Large files store '' in the document to prevent BSON size limits and Atlas explorer freezing.
@@ -440,29 +441,46 @@ export default async function handler(req, res) {
           try {
             await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
             gridFsSaved = true
-            orderDoc.hasGridFsPdf = true
-            orderDoc.pdfStorage = 'gridfs'
             console.log(`[GRIDFS] Order ${cleanId} PDF successfully stored in MongoDB Atlas GridFS (${pdfBuffer.length} bytes)`)
           } catch (gridErr) {
             console.error(`[GRIDFS_ERROR] Failed to save PDF to GridFS for ${cleanId}:`, gridErr.message)
           }
         }
 
+        // Ephemeral local cache write for read acceleration
         if (pdfBuffer) {
           cacheSaved = savePdfToDiskCache(cleanId, pdfBuffer)
         }
 
-        // Durability gate: PDF must be stored in GridFS, disk cache, or have a valid Drive URL
-        const isDurablyStored = gridFsSaved || cacheSaved || hasDriveUrl
+        const isLargePdf = Boolean(pdfBuffer && pdfBuffer.length >= 2 * 1024 * 1024)
+        const isInlineDurable = Boolean(!isLargePdf && orderDoc.pdfBase64 && orderDoc.pdfBase64.length > 50)
+
+        // DURABLE STORAGE POLICY:
+        // 1. For PDFs >= 2MB: GridFS upload MUST succeed (or valid Drive URL).
+        //    Render local filesystem alone MUST NEVER qualify as durable storage.
+        // 2. For PDFs < 2MB: Either GridFS upload succeeds OR inline Base64 is stored in the MongoDB Atlas order document (or valid Drive URL).
+        // 3. Disk cache on Render is ephemeral acceleration ONLY and never satisfies durable storage.
+        const isDurablyStored = isLargePdf
+          ? Boolean(gridFsSaved || hasDriveUrl)
+          : Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
+
         if (!isDurablyStored) {
-          console.error(`[DURABILITY_GATE_FAILED] Order ${cleanId} PDF could not be persisted to GridFS or disk cache. Rejecting order.`)
+          console.error(`[DURABILITY_GATE_FAILED] Order ${cleanId} PDF could not be persisted to durable storage. Ephemeral local cache alone does NOT qualify. Rejecting order.`)
           return res.status(500).json({
             success: false,
             orderId: cleanId,
-            error: 'Failed to durably store order PDF in GridFS or disk cache. Order was not saved.',
+            error: isLargePdf
+              ? 'Failed to durably store large PDF in MongoDB Atlas GridFS. Local disk cache alone does not qualify as durable storage. Order was not saved.'
+              : 'Failed to durably store order PDF in MongoDB Atlas (GridFS or inline document). Order was not saved.',
             hasPdf: false,
+            hasGridFsPdf: false,
           })
         }
+
+        // Set authoritative durable storage metadata on orderDoc
+        orderDoc.hasGridFsPdf = Boolean(gridFsSaved)
+        orderDoc.hasPdf = Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
+        orderDoc.pdfStorage = gridFsSaved ? 'gridfs' : (isInlineDurable ? 'inline' : (hasDriveUrl ? 'drive' : 'none'))
 
         try {
           orderDoc.mongoSaved = true
@@ -473,7 +491,8 @@ export default async function handler(req, res) {
           return res.status(200).json({
             success: true,
             orderId: cleanId,
-            hasPdf: true,
+            hasPdf: orderDoc.hasPdf,
+            hasGridFsPdf: orderDoc.hasGridFsPdf,
             pdfStorage: orderDoc.pdfStorage,
             mongoSaved: true,
             sheetsSaved: false,
@@ -482,10 +501,21 @@ export default async function handler(req, res) {
           })
         } catch (mErr) {
           console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
+          // Rollback: Clean up orphaned GridFS file if GridFS upload had succeeded
+          if (gridFsSaved && mongoDb) {
+            try {
+              await deletePdfFromGridFS(mongoDb, cleanId)
+              console.log(`[GRIDFS_ROLLBACK] Cleaned up orphaned GridFS PDF for ${cleanId} after MongoDB insert failure`)
+            } catch (delErr) {
+              console.warn(`[GRIDFS_ROLLBACK_WARN] Failed to delete GridFS file for ${cleanId}:`, delErr.message)
+            }
+          }
           return res.status(500).json({
             success: false,
             orderId: cleanId,
             error: `MongoDB write failed: ${mErr.message}`,
+            hasPdf: false,
+            hasGridFsPdf: false,
           })
         }
       }
@@ -516,25 +546,48 @@ export default async function handler(req, res) {
       // Step A: Save to MongoDB
       if (ordersCollection) {
         try {
+          const isLargePdf = Boolean(pdfBuffer && pdfBuffer.length >= 2 * 1024 * 1024)
+          let gridFsSaved = false
+
           if (pdfBuffer && mongoDb) {
             try {
               await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
-              orderDoc.hasGridFsPdf = true
-              orderDoc.pdfStorage = 'gridfs'
+              gridFsSaved = true
             } catch (gErr) {
               console.error(`[GRIDFS_ERROR] ${cleanId}:`, gErr.message)
             }
           }
           if (pdfBuffer) savePdfToDiskCache(cleanId, pdfBuffer)
+
+          const isInlineDurable = Boolean(!isLargePdf && orderDoc.pdfBase64 && orderDoc.pdfBase64.length > 50)
+          const isDurablyStored = isLargePdf
+            ? Boolean(gridFsSaved || hasDriveUrl)
+            : Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
+
+          if (!isDurablyStored) {
+            throw new Error(isLargePdf
+              ? 'Failed to durably store large PDF in MongoDB Atlas GridFS. Local disk cache alone does not qualify.'
+              : 'Failed to durably store order PDF in MongoDB Atlas (GridFS or inline document).')
+          }
+
+          orderDoc.hasGridFsPdf = Boolean(gridFsSaved)
+          orderDoc.hasPdf = Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
+          orderDoc.pdfStorage = gridFsSaved ? 'gridfs' : (isInlineDurable ? 'inline' : (hasDriveUrl ? 'drive' : 'none'))
           orderDoc.mongoSaved = true
           orderDoc.sheetsSaved = existingInSheets
           orderDoc.syncStatus = existingInSheets ? 'synced' : 'pending'
+
           await ordersCollection.insertOne(orderDoc)
           mongoSaved = true
           console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} saved to MongoDB Atlas (dual-write mode)`)
         } catch (mErr) {
           mongoError = mErr.message
           console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
+          if (mongoDb) {
+            try {
+              await deletePdfFromGridFS(mongoDb, cleanId)
+            } catch {}
+          }
         }
       }
 
@@ -650,18 +703,13 @@ export default async function handler(req, res) {
         if (order) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
           let hasPdf = Boolean(
-            order.hasPdf === true ||
             order.hasGridFsPdf === true ||
             Boolean(order.driveUrl && order.driveUrl.trim()) ||
             Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
           )
+          // If not confirmed by document fields, check GridFS bucket directly (durable storage)
           if (!hasPdf) {
-            const cachePath = path.join(PDF_CACHE_DIR, `${orderId}.pdf`)
-            if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 100) {
-              hasPdf = true
-            } else {
-              hasPdf = await hasPdfInGridFS(db, orderId)
-            }
+            hasPdf = await hasPdfInGridFS(db, orderId)
           }
           const cleanOrder = {
             ...order,

@@ -164,9 +164,13 @@ const createRes = await fetch('https://xbuddy.onrender.com/api/orders', {
     printType: 'B&W',
     amount: 5,
     transactionId: 'TXN_REG_TEST',
+    pdfBase64: Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n').toString('base64'),
   }),
 })
 const createData = await createRes.json()
+if (createRes.status !== 200) {
+  console.error('Simulated order creation failed on Render:', createRes.status, createData)
+}
 assert.strictEqual(createRes.status, 200)
 assert.strictEqual(createData.success, true)
 assert.strictEqual(createData.mongoSaved, true)
@@ -273,7 +277,7 @@ await fetch('https://xbuddy.onrender.com/api/orders', {
     amount: 5,
     printStatus: 'waiting_for_shopkeeper',
     paymentStatus: 'failed',
-    pdfBase64: 'JVBERi0xLjQKJcTl8uXrCg==',
+    pdfBase64: Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n').toString('base64'),
   }),
 })
 await fetch('https://xbuddy.onrender.com/api/orders', {
@@ -316,7 +320,7 @@ await fetch('https://xbuddy.onrender.com/api/orders', {
     amount: 5,
     printStatus: 'waiting_for_shopkeeper',
     paymentStatus: 'cancelled',
-    pdfBase64: 'JVBERi0xLjQKJcTl8uXrCg==',
+    pdfBase64: Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n').toString('base64'),
   }),
 })
 await fetch('https://xbuddy.onrender.com/api/orders', {

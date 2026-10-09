@@ -141,3 +141,30 @@ export async function hasPdfInGridFS(db, orderId) {
     return false
   }
 }
+
+/**
+ * Deletes all GridFS files associated with an orderId.
+ * Used for rollbacks when order document creation fails.
+ */
+export async function deletePdfFromGridFS(db, orderId) {
+  if (!db || !orderId) return false
+  const cleanId = String(orderId).trim().toUpperCase()
+  const filename = `${cleanId}.pdf`
+  const bucket = getGridFSBucket(db)
+  try {
+    const files = await bucket.find({
+      $or: [{ filename }, { 'metadata.orderId': cleanId }]
+    }).toArray()
+    for (const file of files) {
+      try {
+        await bucket.delete(file._id)
+      } catch (delErr) {
+        console.warn(`[GridFS delete error] File ${file._id} for ${cleanId}:`, delErr.message)
+      }
+    }
+    return true
+  } catch (err) {
+    console.warn(`[GridFS delete lookup error] ${cleanId}:`, err.message)
+    return false
+  }
+}

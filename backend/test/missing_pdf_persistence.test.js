@@ -4,7 +4,7 @@ import path from 'node:path'
 import { Writable } from 'node:stream'
 import dotenv from 'dotenv'
 import { connectToDatabase, closeDatabaseConnection } from '../api/_lib/mongodb.js'
-import { savePdfToGridFS, getPdfStreamFromGridFS, getPdfBufferFromGridFS, hasPdfInGridFS } from '../api/_lib/gridfs.js'
+import { savePdfToGridFS, getPdfStreamFromGridFS, getPdfBufferFromGridFS, hasPdfInGridFS, deletePdfFromGridFS } from '../api/_lib/gridfs.js'
 import ordersHandler, { validateOrderPayload } from '../api/orders.js'
 
 const envCandidates = [
@@ -284,6 +284,218 @@ async function runMissingPdfTests() {
     console.log('  ✓ .gitignore properly ignores runtime PDF cache')
   }
   console.log('✓ TEST 7 PASSED: Security audit verified\n')
+
+  // ── TEST 8: GridFS Failure with Local-Cache Success (> 2MB PDF) ────────────
+  console.log('[TEST 8] Testing durability gate: GridFS failure with local-cache success (> 2MB)...')
+  const test8Size = Math.floor(2.1 * 1024 * 1024)
+  const test8Header = Buffer.from('%PDF-1.4\n% Test 8 large PDF\n')
+  const test8Trailer = Buffer.from('\n%%EOF\n')
+  const test8Buffer = Buffer.concat([test8Header, Buffer.alloc(test8Size - test8Header.length - test8Trailer.length, 67), test8Trailer])
+  const test8Base64 = test8Buffer.toString('base64')
+  const test8OrderId = `XB80${Math.floor(10000 + Math.random() * 90000)}`
+
+  const { GridFSBucket } = await import('mongodb')
+  const origOpenUploadStream = GridFSBucket.prototype.openUploadStream
+
+  // Monkey-patch openUploadStream to simulate GridFS network/Atlas storage failure
+  GridFSBucket.prototype.openUploadStream = function (...args) {
+    throw new Error('Simulated GridFS Atlas storage failure / upload timeout')
+  }
+
+  try {
+    const payloadTest8 = {
+      action: 'saveOrder',
+      orderId: test8OrderId,
+      fileName: 'large_failing_gfs.pdf',
+      amount: 40,
+      copies: 1,
+      totalPages: 12,
+      pdfBase64: test8Base64,
+    }
+
+    const { req: req8, res: res8 } = createMockReqRes({ body: payloadTest8 })
+    await ordersHandler(req8, res8)
+
+    // MUST reject with HTTP 500 because local-cache alone never satisfies durable storage
+    assert.strictEqual(res8.statusCode, 500, `Handler must reject with 500 when GridFS fails for large PDF, got ${res8.statusCode}`)
+    assert.strictEqual(res8.bodyData.success, false)
+    assert.strictEqual(res8.bodyData.hasPdf, false)
+    assert.ok(
+      res8.bodyData.error.includes('GridFS') || res8.bodyData.error.includes('durable'),
+      'Error message must cite durable storage failure'
+    )
+
+    // Verify order was NEVER inserted into MongoDB Atlas
+    const orderInDb = await db.collection('orders').findOne({ orderId: test8OrderId })
+    assert.strictEqual(orderInDb, null, 'Order must NOT exist in MongoDB orders collection')
+
+    // Verify getOrderStatus returns 404
+    const { req: reqStatus8, res: resStatus8 } = createMockReqRes({
+      method: 'GET',
+      query: { action: 'getOrderStatus', orderId: test8OrderId },
+    })
+    await ordersHandler(reqStatus8, resStatus8)
+    assert.strictEqual(resStatus8.statusCode, 404, 'getOrderStatus must return 404')
+
+    console.log('  ✓ Durability gate successfully rejected order; no unprintable record created in MongoDB Atlas')
+  } finally {
+    GridFSBucket.prototype.openUploadStream = origOpenUploadStream
+    const cachePath8 = path.resolve('.pdf_cache', `${test8OrderId}.pdf`)
+    if (fs.existsSync(cachePath8)) fs.unlinkSync(cachePath8)
+  }
+  console.log('✓ TEST 8 PASSED: Large PDF with GridFS failure rejected; local filesystem alone never qualifies\n')
+
+  // ── TEST 9: GridFS Success Followed by MongoDB Insert Failure (Rollback) ───
+  console.log('[TEST 9] Testing rollback cleanup: GridFS upload succeeds but ordersCollection.insertOne fails...')
+  const test9OrderId = `XB81${Math.floor(10000 + Math.random() * 90000)}`
+  const test9Buffer = Buffer.from('%PDF-1.4\n% Test 9 rollback PDF\nTrailer\n%%EOF\n', 'utf-8')
+  const test9Base64 = test9Buffer.toString('base64')
+
+  const origCollection = db.collection.bind(db)
+  let insertIntercepted = false
+  db.collection = function (name) {
+    const col = origCollection(name)
+    if (name === 'orders') {
+      col.insertOne = async function (...args) {
+        insertIntercepted = true
+        throw new Error('Simulated duplicate key / write conflict during ordersCollection.insertOne')
+      }
+    }
+    return col
+  }
+
+  try {
+    const payloadTest9 = {
+      action: 'saveOrder',
+      orderId: test9OrderId,
+      fileName: 'rollback_test.pdf',
+      amount: 15,
+      copies: 1,
+      totalPages: 1,
+      pdfBase64: test9Base64,
+    }
+
+    const { req: req9, res: res9 } = createMockReqRes({ body: payloadTest9 })
+    await ordersHandler(req9, res9)
+
+    assert.ok(insertIntercepted, 'ordersCollection.insertOne must have been called and intercepted')
+    assert.strictEqual(res9.statusCode, 500, 'Must return 500 on MongoDB insert failure')
+    assert.strictEqual(res9.bodyData.success, false)
+
+    // Verify orphaned GridFS file was cleaned up by deletePdfFromGridFS
+    const hasGfs = await hasPdfInGridFS(db, test9OrderId)
+    assert.strictEqual(hasGfs, false, 'Orphaned GridFS PDF must be completely cleaned up / rolled back')
+
+    // Verify order was not created in collection
+    db.collection = origCollection
+    const docCheck = await db.collection('orders').findOne({ orderId: test9OrderId })
+    assert.strictEqual(docCheck, null, 'No order document should exist')
+
+    console.log('  ✓ Orphaned GridFS file automatically deleted on MongoDB insert failure')
+  } finally {
+    db.collection = origCollection
+    await deletePdfFromGridFS(db, test9OrderId)
+    const p9 = path.resolve('.pdf_cache', `${test9OrderId}.pdf`)
+    if (fs.existsSync(p9)) fs.unlinkSync(p9)
+  }
+  console.log('✓ TEST 9 PASSED: GridFS rollback cleans up orphaned storage chunks on order-insert failure\n')
+
+  // ── TEST 10: Smaller PDFs Stored Inline (< 2MB) in MongoDB Order Document ──
+  console.log('[TEST 10] Testing smaller PDF (< 2MB) inline storage and fallback retrieval...')
+  const test10OrderId = `XB82${Math.floor(10000 + Math.random() * 90000)}`
+  const smallPdfContent = '%PDF-1.4\n% Minimal valid small PDF for inline storage test\n%%EOF\n'
+  const smallBuffer = Buffer.from(smallPdfContent, 'utf-8')
+  const smallBase64 = smallBuffer.toString('base64')
+
+  const payloadSmall = {
+    action: 'saveOrder',
+    orderId: test10OrderId,
+    fileName: 'small_test.pdf',
+    amount: 10,
+    copies: 1,
+    totalPages: 1,
+    pdfBase64: smallBase64,
+  }
+
+  const { req: req10, res: res10 } = createMockReqRes({ body: payloadSmall })
+  await ordersHandler(req10, res10)
+  assert.strictEqual(res10.statusCode, 200)
+  assert.strictEqual(res10.bodyData.success, true)
+  assert.strictEqual(res10.bodyData.hasPdf, true)
+
+  // Verify in MongoDB Atlas: orderDoc contains non-empty pdfBase64
+  const storedSmallDoc = await db.collection('orders').findOne({ orderId: test10OrderId })
+  assert.ok(storedSmallDoc, 'Order document must exist')
+  assert.strictEqual(storedSmallDoc.hasPdf, true)
+  assert.ok(
+    storedSmallDoc.pdfBase64 && typeof storedSmallDoc.pdfBase64 === 'string',
+    'Small PDF must include pdfBase64 string in MongoDB document'
+  )
+  assert.ok(storedSmallDoc.pdfBase64.length > 50, 'pdfBase64 must be substantive')
+  assert.strictEqual(
+    Buffer.from(storedSmallDoc.pdfBase64, 'base64').toString('utf-8'),
+    smallPdfContent,
+    'Inline Base64 must match original bytes'
+  )
+
+  // Now delete from disk cache AND delete from GridFS to test Tier 3 inline retrieval
+  const cachePath10 = path.resolve('.pdf_cache', `${test10OrderId}.pdf`)
+  if (fs.existsSync(cachePath10)) fs.unlinkSync(cachePath10)
+  await deletePdfFromGridFS(db, test10OrderId)
+
+  // Retrieve PDF via getOrderPdf (must be served from inline MongoDB document)
+  const { req: reqGetSmall, res: resGetSmall } = createMockReqRes({
+    method: 'GET',
+    query: { action: 'getOrderPdf', orderId: test10OrderId },
+  })
+  await ordersHandler(reqGetSmall, resGetSmall)
+  assert.strictEqual(resGetSmall.statusCode, 200)
+  assert.strictEqual(resGetSmall.headers['x-pdf-source'], 'mongo-atlas', 'Should be served from mongo-atlas inline tier')
+  assert.strictEqual(resGetSmall.bodyData.toString('utf-8'), smallPdfContent, 'Payload retrieved from inline storage matches byte-for-byte')
+
+  // Clean up test order
+  await db.collection('orders').deleteOne({ orderId: test10OrderId })
+  if (fs.existsSync(cachePath10)) fs.unlinkSync(cachePath10)
+  console.log('✓ TEST 10 PASSED: Small PDFs (< 2MB) include inline Base64 in MongoDB order write and retrieve accurately\n')
+
+  // ── TEST 11: Retrieval When Local Cache is Absent ──────────────────────────
+  console.log('[TEST 11] Verifying PDF retrieval from GridFS when local cache is completely absent...')
+  const test11OrderId = `XB83${Math.floor(10000 + Math.random() * 90000)}`
+  const sample11Content = '%PDF-1.4\n% Test 11 fresh cold-start retrieval\n%%EOF\n'
+  const sample11Buffer = Buffer.from(sample11Content, 'utf-8')
+  const payload11 = {
+    action: 'saveOrder',
+    orderId: test11OrderId,
+    fileName: 'cold_start_test.pdf',
+    amount: 15,
+    copies: 1,
+    pdfBase64: sample11Buffer.toString('base64'),
+  }
+
+  const { req: req11, res: res11 } = createMockReqRes({ body: payload11 })
+  await ordersHandler(req11, res11)
+  assert.strictEqual(res11.statusCode, 200)
+
+  // Ensure local cache is completely absent
+  const cachePath11 = path.resolve('.pdf_cache', `${test11OrderId}.pdf`)
+  if (fs.existsSync(cachePath11)) fs.unlinkSync(cachePath11)
+  assert.strictEqual(fs.existsSync(cachePath11), false, 'Local cache must be absent')
+
+  // Request PDF cold
+  const { req: reqGet11, res: resGet11 } = createMockReqRes({
+    method: 'GET',
+    query: { action: 'getOrderPdf', orderId: test11OrderId },
+  })
+  await ordersHandler(reqGet11, resGet11)
+  assert.strictEqual(resGet11.statusCode, 200)
+  assert.strictEqual(resGet11.headers['x-pdf-source'], 'mongo-gridfs', 'Must stream from MongoDB GridFS')
+  assert.strictEqual(resGet11.bodyData.toString('utf-8'), sample11Content)
+
+  // Clean up
+  await db.collection('orders').deleteOne({ orderId: test11OrderId })
+  await deletePdfFromGridFS(db, test11OrderId)
+  if (fs.existsSync(cachePath11)) fs.unlinkSync(cachePath11)
+  console.log('✓ TEST 11 PASSED: Order PDF cleanly streamed from GridFS when local cache is absent\n')
 
   // Clean up test orders from Atlas and GridFS
   try {
