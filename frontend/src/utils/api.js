@@ -577,6 +577,22 @@ export async function submitOrder(orderData, { onStep } = {}) {
     throw { step: 'save_order', reason: 'Invalid order parameters' }
   }
 
+  // Pre-flight PDF validation: order must have a valid PDF (%PDF- header) or Drive URL
+  const hasDrive = Boolean(orderData.driveUrl && typeof orderData.driveUrl === 'string' && orderData.driveUrl.trim().startsWith('http'))
+  const rawB64 = orderData.pdfBase64
+  const hasB64 = Boolean(rawB64 && typeof rawB64 === 'string' && rawB64.length >= 50)
+
+  if (!hasDrive && !hasB64) {
+    throw { step: 'upload_file', reason: 'Order must include a valid PDF file or Drive URL' }
+  }
+
+  if (hasB64) {
+    // Magic header check: %PDF- in Base64 starts with JVBERi0
+    if (!rawB64.startsWith('JVBERi0') && !rawB64.slice(0, 10).includes('JVBE')) {
+      throw { step: 'upload_file', reason: 'Selected file is not a valid PDF document (missing %PDF- header)' }
+    }
+  }
+
   try {
     const orderPayload = {
       action: 'saveOrder',

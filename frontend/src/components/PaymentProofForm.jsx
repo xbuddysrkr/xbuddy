@@ -50,7 +50,13 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
       if (!retryFromStep || retryFromStep === 'upload_file') {
         setStep('upload_file', 'active')
         try {
-          if (!cache.pdfBase64) cache.pdfBase64 = await fileToBase64(orderMeta.pdfFile)
+          if (!cache.pdfBase64) {
+            const b64 = await fileToBase64(orderMeta.pdfFile)
+            if (!b64 || b64.length < 50 || (!b64.startsWith('JVBERi0') && !b64.slice(0, 10).includes('JVBE'))) {
+              throw new Error('Selected file is not a valid PDF document (missing %PDF- header)')
+            }
+            cache.pdfBase64 = b64
+          }
         } catch (err) {
           throw { step: 'upload_file', reason: err.message || 'Failed to read file' }
         }

@@ -1,19 +1,30 @@
 import fs from 'fs'
 import path from 'path'
 import { connectToDatabase } from './_lib/mongodb.js'
+import {
+  savePdfToGridFS,
+  getPdfStreamFromGridFS,
+  hasPdfInGridFS,
+  getGridFSBucket,
+} from './_lib/gridfs.js'
 
 const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
 
-export function savePdfToDiskCache(orderId, pdfBase64) {
-  if (!orderId || !pdfBase64 || typeof pdfBase64 !== 'string') return false
+export function savePdfToDiskCache(orderId, pdfInput) {
+  if (!orderId || !pdfInput) return false
   try {
     if (!fs.existsSync(PDF_CACHE_DIR)) {
       fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
     }
     const cleanId = String(orderId).trim().toUpperCase()
     const filePath = path.join(PDF_CACHE_DIR, `${cleanId}.pdf`)
-    const pdfBuffer = Buffer.from(pdfBase64, 'base64')
-    if (pdfBuffer.length > 0) {
+    let pdfBuffer = null
+    if (Buffer.isBuffer(pdfInput)) {
+      pdfBuffer = pdfInput
+    } else if (typeof pdfInput === 'string' && pdfInput.length > 0) {
+      pdfBuffer = Buffer.from(pdfInput, 'base64')
+    }
+    if (pdfBuffer && pdfBuffer.length > 0) {
       fs.writeFileSync(filePath, pdfBuffer)
       console.log(`[PDF_CACHE] Cached ${cleanId}.pdf (${pdfBuffer.length} bytes) to disk`)
       return true
@@ -121,6 +132,24 @@ export function validateOrderPayload(data) {
     errors.push('Amount must be a non-negative number')
   }
 
+  // Strict PDF Validation: order MUST include either a valid Base64 PDF or Google Drive URL
+  const hasDriveUrl = Boolean(data.driveUrl && typeof data.driveUrl === 'string' && data.driveUrl.trim().startsWith('http'))
+  const rawPdfBase64 = data.pdfBase64
+  const hasBase64 = Boolean(rawPdfBase64 && typeof rawPdfBase64 === 'string' && rawPdfBase64.length >= 50)
+
+  if (!hasDriveUrl && !hasBase64) {
+    errors.push('Order must include a valid PDF file (Base64) or Google Drive URL')
+  } else if (hasBase64) {
+    try {
+      const sample = Buffer.from(rawPdfBase64.slice(0, 100), 'base64')
+      if (sample.length < 5 || sample.subarray(0, 4).toString('ascii') !== '%PDF') {
+        errors.push('Uploaded file is not a valid PDF document (missing %PDF- header)')
+      }
+    } catch {
+      errors.push('Invalid Base64 encoding for PDF document')
+    }
+  }
+
   return {
     isValid: errors.length === 0,
     errors,
@@ -193,6 +222,21 @@ export default async function handler(req, res) {
       const isDuplex = payload.duplex === true || payload.duplex === 'true' || payload.printSide === 'Double'
       const resolvedPaperSize = String(payload.paperSize || payload.pageSize || 'A4').trim().toUpperCase()
 
+      const rawPdfBase64 = typeof payload.pdfBase64 === 'string' ? payload.pdfBase64.trim() : ''
+      let pdfBuffer = null
+      let hasValidPdf = false
+      if (rawPdfBase64 && rawPdfBase64.length >= 50) {
+        try {
+          const buf = Buffer.from(rawPdfBase64, 'base64')
+          if (buf.length >= 5 && buf.subarray(0, 4).toString('ascii') === '%PDF') {
+            pdfBuffer = buf
+            hasValidPdf = true
+          }
+        } catch {}
+      }
+
+      const hasDriveUrl = Boolean(payload.driveUrl && typeof payload.driveUrl === 'string' && payload.driveUrl.trim().startsWith('http'))
+
       const orderDoc = {
         orderId:              cleanId,
         name:                 String(payload.name || '').trim(),
@@ -217,8 +261,14 @@ export default async function handler(req, res) {
         printableCount:       Number(payload.printableCount) || (normalizedPages.length > 0 ? normalizedPages.length : 1),
         selectedPages:        normalizedPages,
         selectedPageCount:    normalizedPages.length > 0 ? normalizedPages.length : (Number(payload.selectedPageCount) || 1),
-        driveUrl:             String(payload.driveUrl || '').trim(),
-        pdfBase64:            (payload.pdfBase64 && typeof payload.pdfBase64 === 'string' && payload.pdfBase64.length < 15 * 1024 * 1024) ? payload.pdfBase64 : '',
+        driveUrl:             hasDriveUrl ? String(payload.driveUrl).trim() : '',
+        hasPdf:               Boolean(hasValidPdf || hasDriveUrl),
+        hasGridFsPdf:         false,
+        pdfStorage:           hasValidPdf ? 'gridfs' : (hasDriveUrl ? 'drive' : 'none'),
+        pdfSize:              pdfBuffer ? pdfBuffer.length : 0,
+        // Store inline Base64 only for small files (< 2MB) for legacy compatibility.
+        // Large files store '' in the document to prevent BSON size limits and Atlas explorer freezing.
+        pdfBase64:            (hasValidPdf && pdfBuffer.length < 2 * 1024 * 1024) ? rawPdfBase64 : '',
         paymentStatus:        String(payload.paymentStatus || 'pending').trim().toLowerCase(),
         printStatus:          'waiting_for_shopkeeper',
         createdAt:            nowIso,
@@ -382,16 +432,49 @@ export default async function handler(req, res) {
           })
         }
 
+        // DURABLE PERSISTENCE: Save PDF buffer to GridFS and Disk Cache before inserting orderDoc
+        let gridFsSaved = false
+        let cacheSaved = false
+
+        if (pdfBuffer && mongoDb) {
+          try {
+            await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
+            gridFsSaved = true
+            orderDoc.hasGridFsPdf = true
+            orderDoc.pdfStorage = 'gridfs'
+            console.log(`[GRIDFS] Order ${cleanId} PDF successfully stored in MongoDB Atlas GridFS (${pdfBuffer.length} bytes)`)
+          } catch (gridErr) {
+            console.error(`[GRIDFS_ERROR] Failed to save PDF to GridFS for ${cleanId}:`, gridErr.message)
+          }
+        }
+
+        if (pdfBuffer) {
+          cacheSaved = savePdfToDiskCache(cleanId, pdfBuffer)
+        }
+
+        // Durability gate: PDF must be stored in GridFS, disk cache, or have a valid Drive URL
+        const isDurablyStored = gridFsSaved || cacheSaved || hasDriveUrl
+        if (!isDurablyStored) {
+          console.error(`[DURABILITY_GATE_FAILED] Order ${cleanId} PDF could not be persisted to GridFS or disk cache. Rejecting order.`)
+          return res.status(500).json({
+            success: false,
+            orderId: cleanId,
+            error: 'Failed to durably store order PDF in GridFS or disk cache. Order was not saved.',
+            hasPdf: false,
+          })
+        }
+
         try {
           orderDoc.mongoSaved = true
           orderDoc.sheetsSaved = false
           orderDoc.syncStatus = 'mongo_only'
           await ordersCollection.insertOne(orderDoc)
-          savePdfToDiskCache(cleanId, orderDoc.pdfBase64)
-          console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} successfully saved to MongoDB Atlas`)
+          console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} successfully saved to MongoDB Atlas (hasPdf=${orderDoc.hasPdf}, storage=${orderDoc.pdfStorage})`)
           return res.status(200).json({
             success: true,
             orderId: cleanId,
+            hasPdf: true,
+            pdfStorage: orderDoc.pdfStorage,
             mongoSaved: true,
             sheetsSaved: false,
             syncStatus: 'mongo_only',
@@ -433,11 +516,20 @@ export default async function handler(req, res) {
       // Step A: Save to MongoDB
       if (ordersCollection) {
         try {
+          if (pdfBuffer && mongoDb) {
+            try {
+              await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
+              orderDoc.hasGridFsPdf = true
+              orderDoc.pdfStorage = 'gridfs'
+            } catch (gErr) {
+              console.error(`[GRIDFS_ERROR] ${cleanId}:`, gErr.message)
+            }
+          }
+          if (pdfBuffer) savePdfToDiskCache(cleanId, pdfBuffer)
           orderDoc.mongoSaved = true
           orderDoc.sheetsSaved = existingInSheets
           orderDoc.syncStatus = existingInSheets ? 'synced' : 'pending'
           await ordersCollection.insertOne(orderDoc)
-          savePdfToDiskCache(cleanId, orderDoc.pdfBase64)
           mongoSaved = true
           console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} saved to MongoDB Atlas (dual-write mode)`)
         } catch (mErr) {
@@ -557,7 +649,25 @@ export default async function handler(req, res) {
         const order = await db.collection('orders').findOne({ orderId }, { projection: { pdfBase64: 0 } })
         if (order) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
-          const cleanOrder = { ...order, hasPdf: Boolean(order.hasPdf || order.driveUrl || order.pdfBase64) }
+          let hasPdf = Boolean(
+            order.hasPdf === true ||
+            order.hasGridFsPdf === true ||
+            Boolean(order.driveUrl && order.driveUrl.trim()) ||
+            Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
+          )
+          if (!hasPdf) {
+            const cachePath = path.join(PDF_CACHE_DIR, `${orderId}.pdf`)
+            if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 100) {
+              hasPdf = true
+            } else {
+              hasPdf = await hasPdfInGridFS(db, orderId)
+            }
+          }
+          const cleanOrder = {
+            ...order,
+            hasPdf,
+            pdfStorage: order.pdfStorage || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none')))),
+          }
           return res.status(200).json({ success: true, order: cleanOrder, source: 'mongo' })
         } else {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} not found in MongoDB Atlas`)
@@ -569,7 +679,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── 2.5 GET PDF BINARY STREAM (FAST DISK CACHE + STREAMING) ──────────────
+    // ── 2.5 GET PDF BINARY STREAM (FAST DISK CACHE + GRIDFS STREAMING) ────────
     if (action === 'getPdf' || action === 'downloadPdf' || action === 'getOrderPdf') {
       const orderId = String(req.query?.orderId || req.body?.orderId || '').trim().toUpperCase()
       if (!orderId) {
@@ -585,13 +695,15 @@ export default async function handler(req, res) {
           const stat = fs.statSync(cachePath)
           if (stat.size > 100) {
             const buf = fs.readFileSync(cachePath)
-            console.log(`[GET_PDF_CACHE_HIT] Serving ${orderId}.pdf from disk cache (${buf.length} bytes in ${Date.now() - tStart}ms)`)
-            res.setHeader('Content-Type', 'application/pdf')
-            res.setHeader('Content-Length', buf.length)
-            res.setHeader('Content-Disposition', `inline; filename="${orderId}.pdf"`)
-            res.setHeader('Access-Control-Allow-Origin', '*')
-            res.setHeader('X-PDF-Source', 'disk-cache')
-            return res.status(200).send(buf)
+            if (buf.subarray(0, 4).toString('ascii') === '%PDF') {
+              console.log(`[GET_PDF_CACHE_HIT] Serving ${orderId}.pdf from disk cache (${buf.length} bytes in ${Date.now() - tStart}ms)`)
+              res.setHeader('Content-Type', 'application/pdf')
+              res.setHeader('Content-Length', buf.length)
+              res.setHeader('Content-Disposition', `inline; filename="${orderId}.pdf"`)
+              res.setHeader('Access-Control-Allow-Origin', '*')
+              res.setHeader('X-PDF-Source', 'disk-cache')
+              return res.status(200).send(buf)
+            }
           }
         } catch (cacheErr) {
           console.warn(`[GET_PDF_CACHE_READ_ERR] ${orderId}: ${cacheErr.message}`)
@@ -603,7 +715,7 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const order = await db.collection('orders').findOne(
           { orderId },
-          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1 } }
+          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1, hasGridFsPdf: 1 } }
         )
         if (!order) {
           return res.status(404).json({ success: false, error: 'Order not found' })
@@ -611,11 +723,46 @@ export default async function handler(req, res) {
 
         const safeFileName = (order.fileName || `${orderId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_')
 
-        // 1. Return from stored MongoDB base64 if present & populate disk cache
-        if (order.pdfBase64 && typeof order.pdfBase64 === 'string') {
+        // TIER 2: GridFS stream from MongoDB Atlas
+        try {
+          const gridResult = await getPdfStreamFromGridFS(db, orderId)
+          if (gridResult) {
+            const { file, stream } = gridResult
+            console.log(`[GET_PDF_GRIDFS_SERVED] Serving ${orderId}.pdf from MongoDB Atlas GridFS (${file.length} bytes in ${Date.now() - tStart}ms)`)
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader('Content-Length', file.length)
+            res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
+            res.setHeader('Access-Control-Allow-Origin', '*')
+            res.setHeader('X-PDF-Source', 'mongo-gridfs')
+
+            await new Promise((resolve, reject) => {
+              stream.on('error', (streamErr) => {
+                console.error(`[GET_PDF_GRIDFS_STREAM_ERR] ${orderId}:`, streamErr.message)
+                if (!res.headersSent) {
+                  res.status(500).json({ success: false, error: `GridFS download error: ${streamErr.message}` })
+                }
+                reject(streamErr)
+              })
+              try {
+                if (!fs.existsSync(PDF_CACHE_DIR)) fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
+                const diskWriter = fs.createWriteStream(cachePath)
+                stream.pipe(diskWriter)
+              } catch {}
+              res.on('finish', () => resolve())
+              res.on('close', () => resolve())
+              stream.pipe(res)
+            })
+            return
+          }
+        } catch (gridErr) {
+          console.warn(`[GridFS retrieval notice] ${orderId}:`, gridErr.message)
+        }
+
+        // TIER 3: Inline Base64 from MongoDB document
+        if (order.pdfBase64 && typeof order.pdfBase64 === 'string' && order.pdfBase64.length > 50) {
           const pdfBuffer = Buffer.from(order.pdfBase64, 'base64')
-          savePdfToDiskCache(orderId, order.pdfBase64)
-          console.log(`[GET_PDF_MONGO_SERVED] Served ${orderId} from MongoDB Atlas (${pdfBuffer.length} bytes in ${Date.now() - tStart}ms)`)
+          savePdfToDiskCache(orderId, pdfBuffer)
+          console.log(`[GET_PDF_MONGO_SERVED] Served ${orderId} from MongoDB Atlas inline Base64 (${pdfBuffer.length} bytes in ${Date.now() - tStart}ms)`)
           res.setHeader('Content-Type', 'application/pdf')
           res.setHeader('Content-Length', pdfBuffer.length)
           res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
@@ -624,7 +771,7 @@ export default async function handler(req, res) {
           return res.status(200).send(pdfBuffer)
         }
 
-        // 2. Fallback: Stream from Google Drive if driveUrl is present
+        // TIER 4: Fallback to Google Drive if driveUrl is present
         if (order.driveUrl && typeof order.driveUrl === 'string') {
           let driveDownloadUrl = order.driveUrl
           const patterns = [
@@ -649,10 +796,7 @@ export default async function handler(req, res) {
           if (driveRes.ok) {
             const arrayBuffer = await driveRes.arrayBuffer()
             const pdfBuffer = Buffer.from(arrayBuffer)
-            try {
-              if (!fs.existsSync(PDF_CACHE_DIR)) fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
-              fs.writeFileSync(cachePath, pdfBuffer)
-            } catch {}
+            savePdfToDiskCache(orderId, pdfBuffer)
             res.setHeader('Content-Type', 'application/pdf')
             res.setHeader('Content-Length', pdfBuffer.length)
             res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
@@ -666,11 +810,83 @@ export default async function handler(req, res) {
 
         return res.status(404).json({
           success: false,
-          error: 'No PDF file found for this order. Neither MongoDB base64 nor Google Drive document is available.',
+          error: 'No PDF file found for this order. Neither MongoDB GridFS, disk cache, inline Base64, nor Google Drive document is available.',
+          hasPdf: false,
         })
       } catch (pdfErr) {
         console.error(`[GET_PDF_ERROR] Order ${orderId}:`, pdfErr.message)
         return res.status(500).json({ success: false, error: `Failed to retrieve PDF: ${pdfErr.message}` })
+      }
+    }
+
+    // ── 2.8 REPAIR / ATTACH PDF TO ORDER (AUTHORIZED SHOPKEEPER / ADMIN) ────
+    if (action === 'repairOrderPdf') {
+      const pin = String(req.body?.pin || req.headers?.['x-pin'] || '').trim()
+      const apiKey = String(req.body?.apiKey || req.headers?.['x-api-key'] || '').trim()
+      const boothPin = process.env.BOOTH_PIN || '4921'
+      const isAuthorized = (pin && pin === boothPin) || (apiKey && apiKey === GAS_API_KEY)
+
+      if (!isAuthorized) {
+        return res.status(401).json({ success: false, error: 'Unauthorized: valid shopkeeper PIN or API key required' })
+      }
+
+      const orderId = String(req.body?.orderId || '').trim().toUpperCase()
+      const rawPdfBase64 = String(req.body?.pdfBase64 || '').trim()
+
+      if (!orderId || !rawPdfBase64 || rawPdfBase64.length < 50) {
+        return res.status(400).json({ success: false, error: 'Valid orderId and pdfBase64 required' })
+      }
+
+      let pdfBuffer = null
+      try {
+        pdfBuffer = Buffer.from(rawPdfBase64, 'base64')
+        if (pdfBuffer.length < 5 || pdfBuffer.subarray(0, 4).toString('ascii') !== '%PDF') {
+          return res.status(400).json({ success: false, error: 'Invalid PDF payload (missing %PDF- header)' })
+        }
+      } catch {
+        return res.status(400).json({ success: false, error: 'Invalid Base64 string' })
+      }
+
+      try {
+        const { db } = await connectToDatabase()
+        const orders = db.collection('orders')
+        const existing = await orders.findOne({ orderId }, { projection: { pdfBase64: 0 } })
+        if (!existing) {
+          return res.status(404).json({ success: false, error: `Order ${orderId} not found in database` })
+        }
+
+        // Save to GridFS & disk cache
+        await savePdfToGridFS(db, orderId, pdfBuffer, { fileName: existing.fileName || `${orderId}.pdf` })
+        savePdfToDiskCache(orderId, pdfBuffer)
+
+        // Update MongoDB document
+        const updateFields = {
+          hasPdf: true,
+          hasGridFsPdf: true,
+          pdfStorage: 'gridfs',
+          pdfSize: pdfBuffer.length,
+          updatedAt: new Date().toISOString(),
+        }
+
+        // If printStatus was 'Failed', reset to 'waiting_for_shopkeeper' so shopkeeper can release it
+        if (String(existing.printStatus || '').toLowerCase() === 'failed') {
+          updateFields.printStatus = 'waiting_for_shopkeeper'
+        }
+
+        await orders.updateOne({ orderId }, { $set: updateFields })
+
+        return res.status(200).json({
+          success: true,
+          orderId,
+          hasPdf: true,
+          pdfStorage: 'gridfs',
+          pdfSize: pdfBuffer.length,
+          printStatus: updateFields.printStatus || existing.printStatus,
+          message: `PDF successfully attached and stored in GridFS for ${orderId}`,
+        })
+      } catch (repairErr) {
+        console.error(`[REPAIR_PDF_ERROR] Order ${orderId}:`, repairErr.message)
+        return res.status(500).json({ success: false, error: `Failed to repair PDF: ${repairErr.message}` })
       }
     }
 
@@ -696,8 +912,17 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const orders = await db.collection('orders').find({}, { projection: { pdfBase64: 0 } }).sort({ createdAt: -1 }).limit(100).toArray()
         if (Array.isArray(orders)) {
-          console.log(`[MONGO_ORDER_READ_PRIMARY] Successfully retrieved ${orders.length} orders from MongoDB Atlas`)
-          return res.status(200).json({ success: true, orders, source: 'mongo' })
+          const cleanOrders = orders.map(order => ({
+            ...order,
+            hasPdf: Boolean(
+              order.hasPdf === true ||
+              order.hasGridFsPdf === true ||
+              Boolean(order.driveUrl && order.driveUrl.trim()) ||
+              Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
+            ),
+          }))
+          console.log(`[MONGO_ORDER_READ_PRIMARY] Successfully retrieved ${cleanOrders.length} orders from MongoDB Atlas`)
+          return res.status(200).json({ success: true, orders: cleanOrders, source: 'mongo' })
         }
       } catch (mongoErr) {
         console.error(`[MONGO_READ_ERROR] MongoDB listOrders error: ${mongoErr.message}`)

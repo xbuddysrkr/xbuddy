@@ -159,13 +159,24 @@ app.listen(PORT, () => {
         .limit(10)
         .toArray()
 
+      const { getPdfBufferFromGridFS } = await import('./api/_lib/gridfs.js')
       let count = 0
       for (const order of activeOrders) {
-        if (!order.orderId || !order.pdfBase64 || typeof order.pdfBase64 !== 'string') continue
+        if (!order.orderId) continue
         const target = path.join(PDF_CACHE_DIR, `${order.orderId}.pdf`)
-        if (!fs.existsSync(target)) {
+        if (fs.existsSync(target)) continue
+
+        if (order.pdfBase64 && typeof order.pdfBase64 === 'string') {
           fs.writeFileSync(target, Buffer.from(order.pdfBase64, 'base64'))
           count++
+        } else {
+          try {
+            const gridData = await getPdfBufferFromGridFS(db, order.orderId)
+            if (gridData && gridData.buffer) {
+              fs.writeFileSync(target, gridData.buffer)
+              count++
+            }
+          } catch {}
         }
       }
       if (count > 0) {

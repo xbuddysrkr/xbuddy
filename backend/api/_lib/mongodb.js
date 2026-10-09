@@ -6,7 +6,6 @@ try {
   dns.setServers(['8.8.8.8', '1.1.1.1'])
 } catch (_) {}
 
-const uri = process.env.MONGODB_URI
 const dbName = process.env.MONGODB_DB_NAME || 'xbuddy'
 
 let cachedClient = null
@@ -18,6 +17,7 @@ let indexesCreated = false
  * Strictly uses process.env.MONGODB_URI (never exposed to frontend/browser).
  */
 export async function connectToDatabase() {
+  const uri = process.env.MONGODB_URI
   if (!uri) {
     const error = new Error('MONGODB_URI environment variable is not defined')
     error.code = 'ERR_NO_URI'

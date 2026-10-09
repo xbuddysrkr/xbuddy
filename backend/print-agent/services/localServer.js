@@ -900,6 +900,25 @@ app.post('/release-print', async (req, res) => {
     })
   }
 
+  // 2.5 Verify PDF presence before claiming: prevent claiming an order that has no document
+  const hasKnownPdf = Boolean(
+    order.hasPdf === true ||
+    order.hasGridFsPdf === true ||
+    Boolean(order.driveUrl && order.driveUrl.trim()) ||
+    Boolean(order.pdfBase64 && order.pdfBase64.length > 50) ||
+    (fs.existsSync(filePath) && fs.statSync(filePath).size > 100)
+  )
+
+  if (!hasKnownPdf) {
+    logger.warn(`[AGENT] Release rejected for ${id}: Order has no associated PDF`)
+    return res.status(400).json({
+      success: false,
+      error: 'Cannot release order: no PDF file is associated with this order. Re-upload or repair required.',
+      missingPdf: true,
+      orderId: id,
+    })
+  }
+
   // Prevent rapid double-clicks within 15 seconds locally
   if (global._activePrints && global._activePrints[id] && (Date.now() - global._activePrints[id]) < 15000) {
     return res.json({ success: false, error: 'Print command already sent. Please wait for printer.' })
