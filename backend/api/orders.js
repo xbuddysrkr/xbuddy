@@ -635,9 +635,8 @@ export default async function handler(req, res) {
       // PRIMARY & AUTHORITATIVE: MongoDB Atlas (project out heavy pdfBase64)
       try {
         const { db } = await connectToDatabase()
-        const orders = await db.collection('orders').find({}).sort({ createdAt: -1 }).limit(100).toArray()
+        const orders = await db.collection('orders').find({}, { projection: { pdfBase64: 0 } }).sort({ createdAt: -1 }).limit(100).toArray()
         if (Array.isArray(orders)) {
-          orders.forEach(o => { if (o.pdfBase64) delete o.pdfBase64 })
           console.log(`[MONGO_ORDER_READ_PRIMARY] Successfully retrieved ${orders.length} orders from MongoDB Atlas`)
           return res.status(200).json({ success: true, orders, source: 'mongo' })
         }

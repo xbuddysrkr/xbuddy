@@ -217,16 +217,24 @@ export async function fetchAdminOrders() {
 
   // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
   let ordersList = null
-  try {
-    const res = await fetch(`${ORDERS_ENDPOINT}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.success && Array.isArray(data.orders)) {
-        ordersList = data.orders
+  const endpoints = getCandidateOrdersEndpoints()
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
+      if (res.ok) {
+        const text = await res.text()
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
+        try {
+          const data = JSON.parse(text)
+          if (data?.success && Array.isArray(data.orders)) {
+            ordersList = data.orders
+            break
+          }
+        } catch {}
       }
+    } catch (err) {
+      console.warn(`[fetchAdminOrders] Notice for ${endpoint}:`, err.message)
     }
-  } catch (err) {
-    console.warn('[fetchAdminOrders] Primary /api/orders list notice:', err.message)
   }
 
   // Populate map with orders from MongoDB
@@ -741,9 +749,10 @@ export async function fetchPendingOrders() {
   const endpoints = getCandidateOrdersEndpoints()
   for (const endpoint of endpoints) {
     try {
-      const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(10000) })
+      const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const text = await res.text()
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
         try {
           const data = JSON.parse(text)
           if (data?.success && Array.isArray(data.orders)) {
