@@ -197,7 +197,7 @@ export default async function handler(req, res) {
       }
 
       const pendingOrders = await ordersCollection
-        .find({ printStatus: { $in: PENDING_PRINT_STATUSES } })
+        .find({ printStatus: { $in: PENDING_PRINT_STATUSES } }, { projection: { pdfBase64: 0 } })
         .sort({ createdAt: 1 })
         .toArray()
 
@@ -240,11 +240,11 @@ export default async function handler(req, res) {
           },
           $inc: { claimAttempts: 1 },
         },
-        { returnDocument: 'after' }
+        { returnDocument: 'after', projection: { pdfBase64: 0 } }
       )
 
       if (!claimResult) {
-        const existing = await ordersCollection.findOne({ orderId: cleanId })
+        const existing = await ordersCollection.findOne({ orderId: cleanId }, { projection: { pdfBase64: 0 } })
         if (!existing) {
           return res.status(404).json({
             success: false,
@@ -346,7 +346,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'orderId is required' })
       }
 
-      const order = await ordersCollection.findOne({ orderId: cleanId })
+      const order = await ordersCollection.findOne({ orderId: cleanId }, { projection: { pdfBase64: 0 } })
       if (!order) {
         return res.status(404).json({
           success: false,
@@ -370,7 +370,7 @@ export default async function handler(req, res) {
       }
 
       const orders = await ordersCollection
-        .find({})
+        .find({}, { projection: { pdfBase64: 0 } })
         .sort({ createdAt: -1 })
         .limit(100)
         .toArray()

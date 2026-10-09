@@ -146,7 +146,7 @@ async function getOrderByIdForRelease(orderId) {
       try {
         const res = await axios.get(`${baseUrl}/api/agent/orders/${encodeURIComponent(cleanId)}`, {
           headers: { 'x-agent-key': secretKey },
-          timeout: 10000,
+          timeout: 20000,
         })
 
         if (res.data?.success && res.data?.order) {
@@ -180,9 +180,51 @@ async function getOrderByIdForRelease(orderId) {
         }
       } catch (mongoErr) {
         if (mongoErr.response?.status === 404) {
-          logger.warn(`[AGENT] Order ${cleanId} not found in MongoDB primary (${baseUrl})`)
+          logger.warn(`[AGENT] Order ${cleanId} not found in MongoDB agent route (${baseUrl}), trying canonical orders API...`)
         } else {
-          logger.error(`[AGENT] Error fetching ${cleanId} from MongoDB primary (${baseUrl}): ${mongoErr.message}`)
+          logger.warn(`[AGENT] Notice fetching ${cleanId} from MongoDB agent route (${baseUrl}): ${mongoErr.message}, trying canonical orders API...`)
+        }
+
+        // Fast fallback to canonical MongoDB /api/orders endpoint
+        try {
+          const fallbackRes = await axios.get(`${baseUrl}/api/orders?action=getOrderStatus&orderId=${encodeURIComponent(cleanId)}`, {
+            timeout: 15000,
+          })
+          if (fallbackRes.data?.success && (fallbackRes.data?.order || fallbackRes.data?.fileName)) {
+            const o = fallbackRes.data.order || fallbackRes.data
+            logger.success(`[AGENT] Got order ${cleanId} via canonical MongoDB fallback (${baseUrl})`)
+            return {
+              orderId:           o.orderId || cleanId,
+              name:              o.name || '',
+              fileName:          o.fileName || `${cleanId}.pdf`,
+              copies:            parseInt(o.copies || '1') || 1,
+              colorMode:         (o.colorMode === 'color' || o.printType === 'Color') ? 'color' : 'bw',
+              printType:         (o.colorMode === 'color' || o.printType === 'Color') ? 'Color' : 'B&W',
+              printSide:         o.printSide || (o.duplex ? 'Double' : 'Single'),
+              duplex:            typeof o.duplex === 'boolean' ? o.duplex : (o.printSide === 'Double'),
+              pageSize:          o.pageSize || o.paperSize || 'A4',
+              paperSize:         o.paperSize || o.pageSize || 'A4',
+              orientation:       o.orientation || 'portrait',
+              pageRange:         o.pageRange || 'all',
+              pageRangeMode:     o.pageRangeMode || 'all',
+              customPages:       o.customPages || '',
+              selectedPages:     Array.isArray(o.selectedPages) ? o.selectedPages : [],
+              selectedPageCount: o.selectedPageCount || 1,
+              totalPages:        o.totalPages || 1,
+              amount:            o.amount || 0,
+              paymentStatus:     o.paymentStatus || 'pending',
+              printStatus:       o.printStatus || 'waiting_for_shopkeeper',
+              driveUrl:          o.driveUrl || '',
+              pdfUrl:            o.pdfUrl || o.driveUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
+              source:            'mongo',
+            }
+          }
+        } catch (fbErr) {
+          if (fbErr.response?.status === 404) {
+            logger.warn(`[AGENT] Order ${cleanId} confirmed not found in MongoDB Atlas (${baseUrl})`)
+          } else {
+            logger.error(`[AGENT] Canonical MongoDB fallback failed for ${cleanId} (${baseUrl}): ${fbErr.message}`)
+          }
         }
       }
     }

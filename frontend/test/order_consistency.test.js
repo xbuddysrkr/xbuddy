@@ -117,4 +117,78 @@ assert.throws(
 )
 console.log('✓ TEST 7 PASSED: Submission is strictly rejected if MongoDB write fails')
 
-console.log('\n=== ALL 7 ORDER CONSISTENCY TESTS PASSED SUCCESSFULLY! ===')
+// 8. Test authoritative MongoDB lookup for order XB2863
+console.log('\n[TEST 8] Testing authoritative MongoDB lookup for order XB2863...')
+const xb2863Res = await fetch('https://xbuddy.onrender.com/api/orders?action=getOrderStatus&orderId=XB2863')
+const xb2863Data = await xb2863Res.json()
+assert.strictEqual(xb2863Res.status, 200)
+assert.strictEqual(xb2863Data.success, true)
+assert.strictEqual(xb2863Data.order.orderId, 'XB2863')
+assert.strictEqual(xb2863Data.source, 'mongo')
+console.log(`✓ TEST 8 PASSED: XB2863 found in authoritative MongoDB (printStatus="${xb2863Data.order.printStatus}")`)
+
+// 9. Test print-agent getOrderByIdForRelease for XB2863
+console.log('\n[TEST 9] Testing Print Agent getOrderByIdForRelease for XB2863...')
+const { getOrderByIdForRelease } = await import('../../backend/print-agent/services/sheets.js')
+const agentOrder2863 = await getOrderByIdForRelease('XB2863')
+assert.ok(agentOrder2863, 'Print agent must find XB2863 via MongoDB')
+assert.strictEqual(agentOrder2863.orderId, 'XB2863')
+assert.strictEqual(agentOrder2863.source, 'mongo')
+console.log(`✓ TEST 9 PASSED: Print agent successfully retrieved XB2863 from MongoDB primary`)
+
+// 10. Test nonexistent order XB0000 rejection
+console.log('\n[TEST 10] Testing nonexistent order XB0000 rejection...')
+const nonExistentRes = await fetch('https://xbuddy.onrender.com/api/orders?action=getOrderStatus&orderId=XB0000')
+const nonExistentData = await nonExistentRes.json()
+assert.strictEqual(nonExistentRes.status, 404)
+assert.strictEqual(nonExistentData.success, false)
+const agentOrder0000 = await getOrderByIdForRelease('XB0000')
+assert.strictEqual(agentOrder0000, null, 'Print agent must return null for nonexistent order')
+console.log('✓ TEST 10 PASSED: Nonexistent order XB0000 is rejected with 404 and null by both API and Agent')
+
+// 11. Test simulated newly created order immediate discoverability
+console.log('\n[TEST 11] Testing simulated order immediate discoverability across Find Order and Live Queue...')
+const simDigits = Math.floor(1000 + Math.random() * 8999).toString()
+const simOrderId = `XB${simDigits}`
+const createRes = await fetch('https://xbuddy.onrender.com/api/orders', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'saveOrder',
+    orderId: simOrderId,
+    name: 'RegressionTest',
+    fileName: 'test_regression.pdf',
+    totalPages: 1,
+    copies: 1,
+    colorMode: 'bw',
+    printType: 'B&W',
+    amount: 5,
+    transactionId: 'TXN_REG_TEST',
+  }),
+})
+const createData = await createRes.json()
+assert.strictEqual(createRes.status, 200)
+assert.strictEqual(createData.success, true)
+assert.strictEqual(createData.mongoSaved, true)
+
+// Immediate discovery via Find Order (action=getOrderStatus)
+const simLookupRes = await fetch(`https://xbuddy.onrender.com/api/orders?action=getOrderStatus&orderId=${simOrderId}`)
+const simLookupData = await simLookupRes.json()
+assert.strictEqual(simLookupRes.status, 200)
+assert.strictEqual(simLookupData.success, true)
+assert.strictEqual(simLookupData.order.orderId, simOrderId)
+assert.strictEqual(simLookupData.order.printStatus, 'waiting_for_shopkeeper')
+
+// Immediate discovery via Live Queue (action=listOrders)
+const simQueueRes = await fetch('https://xbuddy.onrender.com/api/orders?action=listOrders')
+const simQueueData = await simQueueRes.json()
+assert.strictEqual(simQueueRes.status, 200)
+assert.strictEqual(simQueueData.success, true)
+assert.ok(Array.isArray(simQueueData.orders))
+const foundInQueue = simQueueData.orders.some(o => o.orderId === simOrderId)
+assert.strictEqual(foundInQueue, true, `New order ${simOrderId} must appear immediately in listOrders`)
+
+console.log(`✓ TEST 11 PASSED: Simulated order ${simOrderId} persisted to MongoDB and immediately discoverable in Find Order & Live Queue`)
+
+console.log('\n=== ALL 11 ORDER CONSISTENCY & REGRESSION TESTS PASSED! ===')
+

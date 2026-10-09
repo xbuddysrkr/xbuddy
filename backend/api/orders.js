@@ -249,7 +249,7 @@ export default async function handler(req, res) {
       let existingMongo = null
       if (ordersCollection) {
         try {
-          existingMongo = await ordersCollection.findOne({ orderId: cleanId })
+          existingMongo = await ordersCollection.findOne({ orderId: cleanId }, { projection: { pdfBase64: 0 } })
         } catch (findErr) {
           console.warn(`[MongoDB find notice]: ${findErr.message}`)
         }
@@ -769,7 +769,7 @@ export default async function handler(req, res) {
         const uniqueOrderIndex = indexes.find(idx => idx.key?.orderId === 1 && idx.unique === true)
         const isUniqueIndexVerified = !!uniqueOrderIndex
 
-        const mongoOrders = await ordersCollection.find({}).toArray()
+        const mongoOrders = await ordersCollection.find({}, { projection: { pdfBase64: 0 } }).toArray()
 
         const { runParityAudit, formatAuditReport } = await import('./_lib/parityAudit.js')
         const auditResult = runParityAudit({
@@ -803,7 +803,7 @@ export default async function handler(req, res) {
 
         const { db } = await connectToDatabase()
         const ordersCollection = db.collection('orders')
-        const mongoOrders = await ordersCollection.find({}).toArray()
+        const mongoOrders = await ordersCollection.find({}, { projection: { pdfBase64: 0 } }).toArray()
 
         const { planBackfill, executeBackfill, formatBackfillReport } = await import('./_lib/backfill.js')
         const plan = planBackfill({ sheetOrders, mongoOrders })
@@ -818,7 +818,7 @@ export default async function handler(req, res) {
         let updatedAudit = null
         if (isExecute) {
           const { runParityAudit } = await import('./_lib/parityAudit.js')
-          const updatedMongoOrders = await ordersCollection.find({}).toArray()
+          const updatedMongoOrders = await ordersCollection.find({}, { projection: { pdfBase64: 0 } }).toArray()
           const indexes = await ordersCollection.indexes()
           const isUniqueIndexVerified = !!indexes.find(idx => idx.key?.orderId === 1 && idx.unique === true)
           updatedAudit = runParityAudit({
