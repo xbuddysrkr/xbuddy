@@ -3,10 +3,9 @@ import { CheckCircle2, XCircle, Clock, RotateCcw } from 'lucide-react'
 
 // Steps that map 1-to-1 with real network calls / backend responses
 const STEPS = [
-  { id: 'upload_file', label: 'Uploading File',       desc: 'Reading & encoding document' },
-  { id: 'save_order',  label: 'Saving Order',          desc: 'Recording order on server' },
-  { id: 'print_agent', label: 'Sending to Print Agent', desc: 'Transferring PDF to kiosk' },
-  { id: 'confirmed',   label: 'Order Confirmed',        desc: 'Server issued your Order ID' },
+  { id: 'upload_file', label: 'Preparing Document',   desc: 'Reading & preparing document' },
+  { id: 'save_order',  label: 'Saving Order',        desc: 'Securing order in cloud database' },
+  { id: 'confirmed',   label: 'Order Confirmed',      desc: 'Order verified & queued for shopkeeper' },
 ]
 
 function StepIcon({ status }) {

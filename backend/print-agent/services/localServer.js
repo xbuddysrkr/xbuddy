@@ -970,16 +970,25 @@ app.post('/release-print', async (req, res) => {
     // 4. Try cloud backend direct fetch
     if (!pdfReady) {
       const currentConfig = getConfig()
-      const cloudPdfUrl = `${currentConfig.cloudApiUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(id)}`
-      logger.info(`Fetching PDF directly from cloud backend: ${cloudPdfUrl}`)
-      try {
-        await downloadFile(cloudPdfUrl, filePath)
-        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 100) {
-          pdfReady = true
-          logger.success(`[AGENT] PDF downloaded directly from cloud backend for ${id}`)
+      const candidateBases = [...new Set([
+        'https://xbuddy.onrender.com',
+        (currentConfig.cloudApiUrl || '').replace(/\/$/, ''),
+        'https://xbuddysrkr.vercel.app',
+      ].filter(Boolean))]
+
+      for (const base of candidateBases) {
+        const cloudPdfUrl = `${base}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(id)}`
+        logger.info(`Fetching PDF directly from cloud backend: ${cloudPdfUrl}`)
+        try {
+          await downloadFile(cloudPdfUrl, filePath)
+          if (fs.existsSync(filePath) && fs.statSync(filePath).size > 100) {
+            pdfReady = true
+            logger.success(`[AGENT] PDF downloaded directly from cloud backend (${base}) for ${id}`)
+            break
+          }
+        } catch (e) {
+          logger.warn(`Cloud backend PDF fetch failed on ${base}: ${e.message}`)
         }
-      } catch (e) {
-        logger.error(`Cloud backend PDF fetch failed: ${e.message}`)
       }
     }
 

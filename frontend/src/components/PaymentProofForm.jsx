@@ -8,7 +8,7 @@ import OrderProgress from './OrderProgress'
 
 const inputCls = 'w-full bg-[#FAFAFA] border border-orange-200 rounded-xl px-4 py-2.5 text-[#222222] text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all'
 
-const PENDING_STATUSES = { upload_file: 'pending', save_order: 'pending', print_agent: 'pending', confirmed: 'pending' }
+const PENDING_STATUSES = { upload_file: 'pending', save_order: 'pending', confirmed: 'pending' }
 
 export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
   const [phone,         setPhone]         = useState('')
@@ -22,8 +22,8 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
   const [errorReason,   setErrorReason]   = useState('')
   const [result,        setResult]        = useState(null)   // { orderId, message }
 
-  // Cached base64 values so retry can skip re-encoding
-  const cachedRef = useRef({ pdfBase64: null })
+  // Cached base64 values and orderId so retry can skip re-encoding and reuse order ID idempotently
+  const cachedRef = useRef({ pdfBase64: null, orderId: null })
 
   // beforeunload guard while processing
   useEffect(() => {
@@ -57,26 +57,34 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
         setStep('upload_file', 'done')
       }
 
-      // ── Steps: save_order + print_agent (handled inside submitOrder) ───────
+      // Generate or reuse deterministic client orderId for idempotency
+      if (!cache.orderId) {
+        cache.orderId = 'XB' + String(Math.floor(1000 + Math.random() * 9000))
+      }
+
+      // ── Step: save_order (authoritative MongoDB persistence) ──────────────
+      setStep('save_order', 'active')
+
       const res = await submitOrder(
         {
-          name:             phone.trim(),
-          fileName:         orderMeta.fileName,
-          totalPages:       orderMeta.totalPages,
-          printableCount:   orderMeta.printableCount || orderMeta.totalPages,
-          copies:           orderMeta.copies,
-          colorMode:        orderMeta.colorMode || (orderMeta.printType === 'Color' ? 'color' : 'bw'),
-          printType:        orderMeta.printType,
-          printSide:        orderMeta.printSide,
-          duplex:           orderMeta.duplex,
-          pageSize:         orderMeta.pageSize,
-          paperSize:        orderMeta.paperSize || orderMeta.pageSize,
-          orientation:      orderMeta.orientation,
-          pageRange:        orderMeta.pageRange,
-          pageRangeMode:    orderMeta.pageRangeMode,
-          customPages:      orderMeta.customPages,
-          selectedPages:    orderMeta.selectedPages || [],
-          selectedPageCount: orderMeta.selectedPageCount || (orderMeta.selectedPages ? orderMeta.selectedPages.length : 0),
+          orderId:              cache.orderId,
+          name:                 phone.trim(),
+          fileName:             orderMeta.fileName,
+          totalPages:           orderMeta.totalPages,
+          printableCount:       orderMeta.printableCount || orderMeta.totalPages,
+          copies:               orderMeta.copies,
+          colorMode:            orderMeta.colorMode || (orderMeta.printType === 'Color' ? 'color' : 'bw'),
+          printType:            orderMeta.printType,
+          printSide:            orderMeta.printSide,
+          duplex:               orderMeta.duplex,
+          pageSize:             orderMeta.pageSize,
+          paperSize:            orderMeta.paperSize || orderMeta.pageSize,
+          orientation:          orderMeta.orientation,
+          pageRange:            orderMeta.pageRange,
+          pageRangeMode:        orderMeta.pageRangeMode,
+          customPages:          orderMeta.customPages,
+          selectedPages:        orderMeta.selectedPages || [],
+          selectedPageCount:    orderMeta.selectedPageCount || (orderMeta.selectedPages ? orderMeta.selectedPages.length : 0),
           printingCost:         orderMeta.printingCost || 0,
           digitalProcessingFee: orderMeta.digitalProcessingFee || orderMeta.serviceFee || 0,
           serviceFee:           orderMeta.digitalProcessingFee || orderMeta.serviceFee || 0,
@@ -87,15 +95,16 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
         },
         {
           onStep: (stepId) => {
-            // Mark previous step done when next one starts
-            if (stepId === 'print_agent') setStep('save_order', 'done')
-            setStep(stepId, 'active')
+            if (stepId === 'save_order') {
+              setStep('upload_file', 'done')
+              setStep('save_order', 'active')
+            }
           },
         }
       )
 
-      // Mark last two steps done
-      setStep('print_agent', 'done')
+      // Verified saved to MongoDB Atlas: mark save_order and confirmed done
+      setStep('save_order', 'done')
       setStep('confirmed', 'done')
       setResult({ orderId: res.orderId, message: res.message })
       if (res?.orderId) {
@@ -148,10 +157,11 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
 
   function handleRetry() {
     // Reset only the failed step and everything after it, keep earlier done steps
-    const failIdx = ['upload_file', 'save_order', 'print_agent', 'confirmed'].indexOf(failedStep)
+    const stepsList = ['upload_file', 'save_order', 'confirmed']
+    const failIdx = stepsList.indexOf(failedStep)
     setStepStatuses(prev => {
       const next = { ...prev }
-      ;['upload_file', 'save_order', 'print_agent', 'confirmed'].forEach((id, i) => {
+      stepsList.forEach((id, i) => {
         if (i >= failIdx) next[id] = 'pending'
       })
       return next

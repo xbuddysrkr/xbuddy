@@ -542,7 +542,7 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
 }
 
 export async function submitOrder(orderData, { onStep } = {}) {
-  const clientOrderId = 'XB' + String(Math.floor(1000 + Math.random() * 9000))
+  const clientOrderId = orderData.orderId || ('XB' + String(Math.floor(1000 + Math.random() * 9000)))
 
   const normalizedColor = (orderData.colorMode === 'color' || orderData.printType === 'Color') ? 'color' : 'bw'
   const isDuplex = orderData.duplex === true || orderData.printSide === 'Double'
@@ -616,7 +616,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(orderPayload),
-          signal: AbortSignal.timeout(60000),
+          signal: AbortSignal.timeout(90000),
         })
 
         if (res.ok) {
@@ -656,59 +656,8 @@ export async function submitOrder(orderData, { onStep } = {}) {
     }
   }
 
-  // ── Step 2: Deliver PDF to agent for local staging (best-effort optimization) ────
-  onStep?.('print_agent')
-
-  // Try local print agent directly (if client is running on the shopkeeper PC)
-  try {
-    if (await postToAgent(LOCAL_API, orderId, orderData, printSettings))
-      return { success: true, orderId, message: null }
-  } catch {}
-
-  // Try active Cloudflare tunnel
-  const tunnelUrl = await getTunnelUrl()
-  if (tunnelUrl) {
-    try {
-      if (await postToAgent(tunnelUrl, orderId, orderData, printSettings))
-        return { success: true, orderId, message: null }
-    } catch {}
-  }
-
-  // Non-blocking background staging: Try Google Drive metadata upload if agent is remote.
-  // CRITICAL: The order and PDF are already 100% saved authoritatively in MongoDB Atlas (Step 1).
-  // The shopkeeper can release and print directly via booth.html or the print agent cloud fetch.
-  try {
-    const driveUrl = await uploadPdfViaGas(orderId, orderData.fileName, orderData.pdfBase64 || '').catch(() => null)
-    if (driveUrl) {
-      try {
-        await fetch(ORDERS_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
-          body: JSON.stringify({
-            action: 'updateOrderStatus',
-            orderId,
-            printStatus: 'waiting_for_shopkeeper',
-            driveUrl,
-          }),
-        })
-      } catch {}
-
-      const metaBody = JSON.stringify({ orderId, driveUrl, screenshotBase64: orderData.screenshotBase64 || '', ...printSettings })
-      for (const base of [LOCAL_API, tunnelUrl].filter(Boolean)) {
-        try {
-          const r = await fetch(`${base}/save-order-meta`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: metaBody, signal: AbortSignal.timeout(4000),
-          })
-          if (r.ok) { const d = await r.json(); if (d?.success) break }
-        } catch {}
-      }
-    }
-  } catch (err) {
-    console.warn('[Print Agent / Drive Delivery Non-Fatal Notice]:', err.message)
-  }
-
-  // Order is successfully placed and secured in MongoDB Atlas
+  // Order is successfully placed and secured in MongoDB Atlas.
+  // The Print Agent retrieves the PDF on-demand from the cloud backend at release time.
   return { success: true, orderId, message: null }
 }
 
