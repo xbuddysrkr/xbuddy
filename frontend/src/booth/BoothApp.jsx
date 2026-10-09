@@ -321,11 +321,21 @@ function ReleasePrintStation({ onLock }) {
         })
         setOrderId(cleanId)
       } else {
-        setSelectedOrder(null)
-        setResult({
-          success: false,
-          error: res?.error || `Order ${cleanId} not found in authoritative database. Check the Order ID.`,
-        })
+        const queuedOrder = pendingOrders.find(p => (p.orderId || p.id || '').toUpperCase() === cleanId)
+        if (queuedOrder) {
+          setSelectedOrder({
+            ...queuedOrder,
+            verifiedInMongo: true,
+            notFound: false,
+          })
+          setOrderId(cleanId)
+        } else {
+          setSelectedOrder(null)
+          setResult({
+            success: false,
+            error: res?.error || `Order ${cleanId} not found in authoritative database. Check the Order ID.`,
+          })
+        }
       }
     } catch (err) {
       setSelectedOrder(null)

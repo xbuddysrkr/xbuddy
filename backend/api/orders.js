@@ -528,11 +528,10 @@ export default async function handler(req, res) {
       // PRIMARY & AUTHORITATIVE: MongoDB Atlas
       try {
         const { db } = await connectToDatabase()
-        const order = await db.collection('orders').findOne({ orderId })
+        const order = await db.collection('orders').findOne({ orderId }, { projection: { pdfBase64: 0 } })
         if (order) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
-          const cleanOrder = { ...order, hasPdf: Boolean(order.pdfBase64 || order.driveUrl) }
-          if (cleanOrder.pdfBase64) delete cleanOrder.pdfBase64
+          const cleanOrder = { ...order, hasPdf: Boolean(order.hasPdf || order.driveUrl || order.pdfBase64) }
           return res.status(200).json({ success: true, order: cleanOrder, source: 'mongo' })
         } else {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} not found in MongoDB Atlas`)
