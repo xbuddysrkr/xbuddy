@@ -22,3 +22,9 @@ print-agent/agent_*.log
 # Binaries
 *.exe
 print-agent/bin/*.exe
+
+# PDF Cache (auto-managed at runtime; track pre-warmed problem orders)
+.pdf_cache/*
+!.pdf_cache/.gitkeep
+!.pdf_cache/XB9532.pdf
+!.pdf_cache/XB4611.pdf

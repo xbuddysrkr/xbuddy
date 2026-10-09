@@ -1,12 +1,20 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import fs from 'fs'
+import path from 'path'
 import ordersHandler from './api/orders.js'
 import agentOrdersHandler from './api/agent/orders.js'
 import agentHeartbeatHandler from './api/agent/heartbeat.js'
 
 // Load environment variables from .env if present
 dotenv.config()
+
+// Ensure persistent PDF cache directory exists
+const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve('.pdf_cache')
+if (!fs.existsSync(PDF_CACHE_DIR)) {
+  fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
+}
 
 const app = express()
 const PORT = process.env.PORT || 3000

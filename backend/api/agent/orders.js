@@ -53,7 +53,7 @@ export function normalizeAgentOrder(order = {}) {
     name: String(order.name || ''),
     fileName: String(order.fileName || `${cleanId}.pdf`),
     driveUrl: String(order.driveUrl || ''),
-    pdfUrl: String(order.pdfUrl || order.driveUrl || (order.pdfBase64 ? `/api/orders?action=getOrderPdf&orderId=${cleanId}` : '')),
+    pdfUrl: String(order.pdfUrl || order.driveUrl || `https://xbuddy.onrender.com/api/orders?action=getOrderPdf&orderId=${cleanId}`),
     copies,
     colorMode,
     printType,

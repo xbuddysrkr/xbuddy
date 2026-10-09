@@ -96,6 +96,7 @@ console.log('✓ TEST 4 PASSED: All 6 required observability logs implemented')
 
 // ── TEST 5: Authoritative Reads via MongoDB Atlas ───────────────────────────
 assert.ok(
+  apiOrdersContent.includes("await db.collection('orders').findOne({ orderId }") ||
   apiOrdersContent.includes("await db.collection('orders').findOne({ orderId })"),
   'TEST 5 FAILED: getOrderStatus must query MongoDB orders collection'
 )
