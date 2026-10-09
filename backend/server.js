@@ -47,8 +47,25 @@ app.get('/', (req, res) => {
   })
 })
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() })
+app.get('/health', async (req, res) => {
+  let mongoStatus = 'unknown'
+  let mongoError = null
+  try {
+    const { connectToDatabase } = await import('./api/_lib/mongodb.js')
+    const { db } = await connectToDatabase()
+    await db.command({ ping: 1 })
+    mongoStatus = 'connected'
+  } catch (err) {
+    mongoStatus = 'error'
+    mongoError = err.message
+  }
+  res.json({
+    status: 'healthy',
+    mongoStatus,
+    hasMongoUri: Boolean(process.env.MONGODB_URI),
+    mongoError,
+    timestamp: new Date().toISOString()
+  })
 })
 
 // Primary Authoritative Orders API (MongoDB Atlas)
