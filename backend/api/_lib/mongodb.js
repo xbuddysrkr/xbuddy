@@ -1,4 +1,10 @@
 import { MongoClient } from 'mongodb'
+import dns from 'dns'
+
+// Prevent querySrv EBADRESP DNS resolution failures for MongoDB Atlas SRV URIs in Node.js
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1'])
+} catch (_) {}
 
 const uri = process.env.MONGODB_URI
 const dbName = process.env.MONGODB_DB_NAME || 'xbuddy'
