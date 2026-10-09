@@ -159,6 +159,23 @@ async function postToAgent(baseUrl, orderId, orderData, printSettings) {
   return !!data?.success
 }
 
+export function isHtmlResponse(text, contentType = '') {
+  if (!text || typeof text !== 'string') return false
+  const lowerCt = String(contentType || '').toLowerCase()
+  if (lowerCt.includes('text/html') || lowerCt.includes('application/xhtml+xml')) return true
+  const lowerText = text.slice(0, 500).toLowerCase().trim()
+  return (
+    lowerText.startsWith('<!doctype') ||
+    lowerText.startsWith('<html') ||
+    lowerText.includes('<head') ||
+    lowerText.includes('<body') ||
+    lowerText.includes('/assets/main-') ||
+    lowerText.includes('/assets/booth-') ||
+    lowerText.includes('__next') ||
+    lowerText.includes('vite')
+  )
+}
+
 function getCandidateOrdersEndpoints() {
   const endpoints = [
     'https://xbuddy.onrender.com/api/orders',
@@ -182,16 +199,22 @@ export async function getOrderStatus(orderId) {
         signal: AbortSignal.timeout(15000),
       })
 
-      // Skip HTML responses (e.g. Vercel SPA 404 rewrite fallback)
+      const contentType = res.headers.get('content-type') || ''
       const text = await res.text()
-      if (text.startsWith('<!DOCTYPE') || text.startsWith('<html') || text.includes('__next') || text.includes('vite')) {
+
+      // Skip HTML responses (e.g. Vercel SPA rewrite fallback or proxy misconfiguration)
+      if (isHtmlResponse(text, contentType)) {
+        hasTimeoutOrNetworkError = true
+        lastErrorMessage = `Received HTML response from ${endpoint} instead of JSON`
         continue
       }
 
       let data = null
       try {
         data = JSON.parse(text)
-      } catch {
+      } catch (parseErr) {
+        hasTimeoutOrNetworkError = true
+        lastErrorMessage = `Malformed JSON from ${endpoint}: ${parseErr.message}`
         continue
       }
 
@@ -257,7 +280,7 @@ export async function fetchAdminOrders() {
       const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const text = await res.text()
-        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
+        if (isHtmlResponse(text, res.headers.get('content-type'))) continue
         try {
           const data = JSON.parse(text)
           if (data?.success && Array.isArray(data.orders)) {
@@ -463,20 +486,27 @@ export async function updateOrderStatus(orderId, printStatus) {
   }
 
   // 2. Update via authoritative serverless endpoint (atomic print release lock in MongoDB)
-  try {
-    const res = await fetch(ORDERS_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.success) return data
-      return data
+  const candidateEndpoints = getCandidateOrdersEndpoints()
+  for (const endpoint of candidateEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
+        signal: AbortSignal.timeout(10000),
+      })
+      if (res.ok) {
+        const text = await res.text()
+        if (isHtmlResponse(text, res.headers.get('content-type'))) continue
+        try {
+          const data = JSON.parse(text)
+          if (data?.success) return data
+          return data
+        } catch {}
+      }
+    } catch (err) {
+      console.warn(`[updateOrderStatus] Notice on ${endpoint}:`, err.message)
     }
-  } catch (err) {
-    console.warn('[updateOrderStatus] /api/orders notice:', err.message)
   }
 
   return { success: false, error: 'Failed to update order status' }
@@ -497,7 +527,7 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
       })
       if (res.ok) {
         const text = await res.text()
-        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
+        if (isHtmlResponse(text, res.headers.get('content-type'))) continue
         try {
           const data = JSON.parse(text)
           if (data?.success) return data
@@ -591,7 +621,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
 
         if (res.ok) {
           const text = await res.text()
-          if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
+          if (isHtmlResponse(text, res.headers.get('content-type'))) continue
           try {
             const data = JSON.parse(text)
             if (data?.success && data?.mongoSaved) {
@@ -771,17 +801,34 @@ export function getOrderPdfUrl(orderId) {
  * Fetches PDF binary blob directly from cloud backend for browser printing
  */
 export async function fetchOrderPdfBlob(orderId) {
-  const url = getOrderPdfUrl(orderId)
-  const res = await fetch(url, { signal: AbortSignal.timeout(45000) })
-  if (!res.ok) {
-    let errText = `HTTP ${res.status}`
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  const endpoints = getCandidateOrdersEndpoints()
+  let lastErr = 'Failed to load PDF'
+
+  for (const endpoint of endpoints) {
     try {
-      const j = await res.json()
-      if (j?.error) errText = j.error
-    } catch {}
-    throw new Error(`Failed to load PDF: ${errText}`)
+      const url = `${endpoint}?action=getPdf&orderId=${encodeURIComponent(cleanId)}`
+      const res = await fetch(url, { signal: AbortSignal.timeout(45000) })
+      if (res.ok) {
+        const ct = res.headers.get('content-type') || ''
+        if (ct.includes('text/html')) {
+          lastErr = 'Received HTML instead of PDF'
+          continue
+        }
+        return await res.blob()
+      } else {
+        const text = await res.text().catch(() => '')
+        try {
+          const j = JSON.parse(text)
+          if (j?.error) lastErr = j.error
+        } catch {}
+      }
+    } catch (err) {
+      lastErr = err.message
+    }
   }
-  return await res.blob()
+
+  throw new Error(`Failed to load PDF: ${lastErr}`)
 }
 
 /**
@@ -794,7 +841,7 @@ export async function fetchPendingOrders() {
       const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const text = await res.text()
-        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
+        if (isHtmlResponse(text, res.headers.get('content-type'))) continue
         try {
           const data = JSON.parse(text)
           if (data?.success && Array.isArray(data.orders)) {

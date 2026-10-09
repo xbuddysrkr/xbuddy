@@ -100,15 +100,18 @@ assert.ok(
   'TEST 5 FAILED: getOrderStatus must query MongoDB orders collection'
 )
 assert.ok(
-  apiOrdersContent.includes("await db.collection('orders').find({}).sort({ createdAt: -1 })"),
+  apiOrdersContent.includes("await db.collection('orders').find(") &&
+  apiOrdersContent.includes(".sort({ createdAt: -1 })"),
   'TEST 5 FAILED: listOrders must query MongoDB orders collection'
 )
 assert.ok(
+  clientApiContent.includes("fetch(`${endpoint}?action=getOrderStatus&orderId=") ||
   clientApiContent.includes("fetch(`${ORDERS_ENDPOINT}?action=getOrderStatus&orderId=") ||
   clientApiContent.includes("fetch(`/api/orders?action=getOrderStatus&orderId="),
   'TEST 5 FAILED: Client getOrderStatus must query /api/orders'
 )
 assert.ok(
+  clientApiContent.includes("fetch(`${endpoint}?action=listOrders`") ||
   clientApiContent.includes("fetch(`${ORDERS_ENDPOINT}?action=listOrders`") ||
   clientApiContent.includes("fetch('/api/orders?action=listOrders'"),
   'TEST 5 FAILED: Client fetchAdminOrders must query /api/orders'

@@ -1,5 +1,21 @@
 {
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Permissions-Policy",
+          "value": "loopback-network=*, local-network=*"
+        }
+      ]
+    }
+  ],
   "rewrites": [
-    { "source": "/((?!assets/|booth.html|qr-code.png|favicon.ico|manifest.json|xbuddy-icon-.*\\.png).*)", "destination": "/index.html" }
+    { "source": "/api/agent/orders/:path*", "destination": "https://xbuddy.onrender.com/api/agent/orders/:path*" },
+    { "source": "/api/agent/heartbeat", "destination": "https://xbuddy.onrender.com/api/agent/heartbeat" },
+    { "source": "/api/orders/:path*", "destination": "https://xbuddy.onrender.com/api/orders/:path*" },
+    { "source": "/api/orders", "destination": "https://xbuddy.onrender.com/api/orders" },
+    { "source": "/api/:path*", "destination": "https://xbuddy.onrender.com/api/:path*" },
+    { "source": "/((?!api/|assets/|booth.html|qr-code.png|favicon.ico|manifest.json|xbuddy-icon-.*\\.png).*)", "destination": "/index.html" }
   ]
 }
