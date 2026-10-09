@@ -161,8 +161,8 @@ async function postToAgent(baseUrl, orderId, orderData, printSettings) {
 
 function getCandidateOrdersEndpoints() {
   const endpoints = [
-    ORDERS_ENDPOINT,
     'https://xbuddy.onrender.com/api/orders',
+    ORDERS_ENDPOINT,
   ]
   return [...new Set(endpoints.filter(Boolean))]
 }
@@ -176,19 +176,23 @@ export async function getOrderStatus(orderId) {
   for (const endpoint of endpoints) {
     try {
       const res = await fetch(`${endpoint}?action=getOrderStatus&orderId=${cleanId}`, {
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(15000),
       })
       if (res.ok) {
         const text = await res.text()
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+          continue
+        }
         try {
           const data = JSON.parse(text)
-          if (data?.success && data?.order) {
+          if (data?.success && (data?.order || data?.fileName)) {
+            const ord = data.order || data
             return {
               ...data,
-              ...data.order,
-              orderId: data.order.orderId || cleanId,
-              printStatus: data.order.printStatus || data.printStatus || 'waiting_for_shopkeeper',
-              paymentStatus: data.order.paymentStatus || data.paymentStatus || 'pending',
+              ...ord,
+              orderId: ord.orderId || cleanId,
+              printStatus: ord.printStatus || data.printStatus || 'waiting_for_shopkeeper',
+              paymentStatus: ord.paymentStatus || data.paymentStatus || 'pending',
               verifiedInMongo: true,
               source: 'mongo',
             }
@@ -524,23 +528,40 @@ export async function submitOrder(orderData, { onStep } = {}) {
       pdfBase64: orderData.pdfBase64 || '',
     }
 
-    const res = await fetch(ORDERS_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(orderPayload),
-      signal: AbortSignal.timeout(60000),
-    })
+    const endpoints = getCandidateOrdersEndpoints()
+    let saved = false
+    for (const endpoint of endpoints) {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload),
+          signal: AbortSignal.timeout(60000),
+        })
 
-    if (res.ok) {
-      orderResult = await res.json()
-      if (orderResult?.success && orderResult?.mongoSaved) {
-        orderId = orderResult.orderId || clientOrderId
-        console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${orderId} successfully saved to MongoDB Atlas`)
+        if (res.ok) {
+          const text = await res.text()
+          if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) continue
+          try {
+            const data = JSON.parse(text)
+            if (data?.success && data?.mongoSaved) {
+              orderResult = data
+              orderId = data.orderId || clientOrderId
+              console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${orderId} successfully saved to MongoDB Atlas (${endpoint})`)
+              saved = true
+              break
+            } else {
+              orderResult = data
+            }
+          } catch {}
+        } else {
+          const errData = await res.json().catch(() => null)
+          console.warn(`[MongoDB Orders API Error on ${endpoint}]:`, errData || res.status)
+          orderResult = errData
+        }
+      } catch (endpointErr) {
+        console.warn(`[submitOrder] Attempt on ${endpoint} failed:`, endpointErr.message)
       }
-    } else {
-      const errData = await res.json().catch(() => null)
-      console.warn('[MongoDB Orders API Error]:', errData || res.status)
-      orderResult = errData
     }
   } catch (apiErr) {
     console.error('[MongoDB Orders API Call Error]:', apiErr.message)

@@ -4,7 +4,7 @@ const path = require('path')
 const DEFAULT_CONFIG = {
   stationId: 'SRKR-XEROX-01',
   selectedPrinter: '',
-  cloudApiUrl: process.env.CLOUD_API_URL || 'https://xbuddysrkr.vercel.app',
+  cloudApiUrl: process.env.CLOUD_API_URL || 'https://xbuddy.onrender.com',
   agentSecretKey: process.env.AGENT_SECRET_KEY || '',
   port: parseInt(process.env.PRINT_AGENT_PORT || '3001', 10),
   version: '2.1.0',

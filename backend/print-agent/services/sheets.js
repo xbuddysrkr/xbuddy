@@ -5,8 +5,8 @@ const logger = require('../utils/logger')
 const { getConfig } = require('./config')
 
 function getCandidateCloudUrls() {
-  const primary = (process.env.CLOUD_API_URL || getConfig().cloudApiUrl || 'https://xbuddysrkr.vercel.app').replace(/\/$/, '')
-  return [...new Set([primary, 'https://xbuddy.onrender.com'])]
+  const primary = (process.env.CLOUD_API_URL || getConfig().cloudApiUrl || '').replace(/\/$/, '')
+  return [...new Set(['https://xbuddy.onrender.com', primary].filter(Boolean))]
 }
 
 function getAgentSecretKey() {

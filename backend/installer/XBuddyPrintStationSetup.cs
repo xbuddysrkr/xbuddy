@@ -633,7 +633,7 @@ namespace XBuddyPrintStation
                 string configPath = Path.Combine(stationDataDir, "config.json");
                 string existingKey = "";
                 string existingPrinter = "";
-                string existingCloudUrl = "https://xbuddysrkr.vercel.app";
+                string existingCloudUrl = "https://xbuddy.onrender.com";
 
                 if (File.Exists(configPath))
                 {

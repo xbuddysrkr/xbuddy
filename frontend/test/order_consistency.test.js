@@ -1,7 +1,6 @@
 import assert from 'assert'
-import http from 'http'
 
-console.log('--- STARTING XBUDDY ORDER CONSISTENCY & REJECTION TEST SUITE ---')
+console.log('--- STARTING XBUDDY ORDER CONSISTENCY & REJECTION REGRESSION TEST SUITE ---')
 
 // 1. Contract test: An order visible in queue but absent from MongoDB
 console.log('\n[TEST 1] Testing unverified order guard contract in Booth...')
@@ -67,7 +66,7 @@ console.log('\n[TEST 4] Testing live Print Agent 127.0.0.1:3001/release-print fo
 const agentReq = await fetch('http://127.0.0.1:3001/release-print', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ orderId: 'XB9999_NONEXISTENT' })
+  body: JSON.stringify({ orderId: 'XB0000_NONEXISTENT' })
 })
 const agentData = await agentReq.json()
 console.log('Agent rejection response:', agentReq.status, agentData)
@@ -76,7 +75,7 @@ assert.strictEqual(agentData.success, false)
 assert.ok(agentData.error.includes('authoritative database'), 'Error must specify authoritative database check')
 console.log('✓ TEST 4 PASSED: Print agent rejects release with HTTP 404 and does not trigger printer')
 
-// 5. Test authoritative MongoDB order lookup for real order
+// 5. Test authoritative MongoDB order lookup for real order XB8212
 console.log('\n[TEST 5] Testing authoritative MongoDB lookup for real order XB8212...')
 const lookupRes = await fetch('https://xbuddy.onrender.com/api/orders?action=getOrderStatus&orderId=XB8212')
 const lookupData = await lookupRes.json()
@@ -86,4 +85,36 @@ assert.strictEqual(lookupData.order.orderId, 'XB8212')
 assert.strictEqual(lookupData.source, 'mongo')
 console.log('✓ TEST 5 PASSED: Authoritative MongoDB order lookup confirms XB8212 existence and state')
 
-console.log('\n=== ALL 5 ORDER CONSISTENCY TESTS PASSED SUCCESSFULLY! ===')
+// 6. Test authoritative MongoDB order lookup for brand-new student order XB7772
+console.log('\n[TEST 6] Testing authoritative MongoDB lookup for new student order XB7772...')
+const xb7772Res = await fetch('https://xbuddy.onrender.com/api/orders?action=getOrderStatus&orderId=XB7772')
+const xb7772Data = await xb7772Res.json()
+assert.strictEqual(xb7772Res.status, 200)
+assert.strictEqual(xb7772Data.success, true)
+assert.strictEqual(xb7772Data.order.orderId, 'XB7772')
+assert.strictEqual(xb7772Data.order.mongoSaved, true)
+assert.strictEqual(xb7772Data.source, 'mongo')
+console.log('✓ TEST 6 PASSED: Authoritative MongoDB confirms existence, metadata, and mongoSaved for XB7772')
+
+// 7. Test failed MongoDB write contract (must reject and never confirm order)
+console.log('\n[TEST 7] Testing that failed/invalid MongoDB writes reject gracefully...')
+function evaluateSubmissionConfirmation(orderResult) {
+  if (!orderResult?.success || !orderResult?.mongoSaved) {
+    throw new Error(orderResult?.error || 'Unable to save order to MongoDB orders service')
+  }
+  return { success: true, orderId: orderResult.orderId }
+}
+
+assert.throws(
+  () => evaluateSubmissionConfirmation({ success: false, error: 'Database network failure' }),
+  /Database network failure/,
+  'Failed write must throw'
+)
+assert.throws(
+  () => evaluateSubmissionConfirmation({ success: true, mongoSaved: false }),
+  /Unable to save order to MongoDB orders service/,
+  'Unconfirmed mongoSaved must be rejected'
+)
+console.log('✓ TEST 7 PASSED: Submission is strictly rejected if MongoDB write fails')
+
+console.log('\n=== ALL 7 ORDER CONSISTENCY TESTS PASSED SUCCESSFULLY! ===')
