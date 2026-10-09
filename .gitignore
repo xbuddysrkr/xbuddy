@@ -49,3 +49,10 @@ backend/print-agent/agent_*.log
 backend/installer/payload/
 backend/installer/*.zip
 backend/installer/Provisioning.cs
+
+# PDF Cache & Uploaded Documents (strictly runtime-only, zero student documents tracked)
+.pdf_cache/
+backend/.pdf_cache/
+downloads/
+backend/downloads/
+

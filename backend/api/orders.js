@@ -1,4 +1,28 @@
+import fs from 'fs'
+import path from 'path'
 import { connectToDatabase } from './_lib/mongodb.js'
+
+const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
+
+export function savePdfToDiskCache(orderId, pdfBase64) {
+  if (!orderId || !pdfBase64 || typeof pdfBase64 !== 'string') return false
+  try {
+    if (!fs.existsSync(PDF_CACHE_DIR)) {
+      fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
+    }
+    const cleanId = String(orderId).trim().toUpperCase()
+    const filePath = path.join(PDF_CACHE_DIR, `${cleanId}.pdf`)
+    const pdfBuffer = Buffer.from(pdfBase64, 'base64')
+    if (pdfBuffer.length > 0) {
+      fs.writeFileSync(filePath, pdfBuffer)
+      console.log(`[PDF_CACHE] Cached ${cleanId}.pdf (${pdfBuffer.length} bytes) to disk`)
+      return true
+    }
+  } catch (err) {
+    console.warn(`[PDF_CACHE_WARN] Failed to write disk cache for ${orderId}: ${err.message}`)
+  }
+  return false
+}
 
 const GAS_API_URL = process.env.GAS_ORDERS_URL || process.env.GAS_URL || process.env.GAS_API_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
 const GAS_API_KEY = process.env.GAS_API_KEY || process.env.API_KEY || 'XB_API_SECRET_KEY_2026'
@@ -363,6 +387,7 @@ export default async function handler(req, res) {
           orderDoc.sheetsSaved = false
           orderDoc.syncStatus = 'mongo_only'
           await ordersCollection.insertOne(orderDoc)
+          savePdfToDiskCache(cleanId, orderDoc.pdfBase64)
           console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} successfully saved to MongoDB Atlas`)
           return res.status(200).json({
             success: true,
@@ -412,6 +437,7 @@ export default async function handler(req, res) {
           orderDoc.sheetsSaved = existingInSheets
           orderDoc.syncStatus = existingInSheets ? 'synced' : 'pending'
           await ordersCollection.insertOne(orderDoc)
+          savePdfToDiskCache(cleanId, orderDoc.pdfBase64)
           mongoSaved = true
           console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} saved to MongoDB Atlas (dual-write mode)`)
         } catch (mErr) {
@@ -543,29 +569,58 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── 2.5 GET PDF BINARY STREAM (IN-BROWSER DIRECT PRINT & PREVIEW) ────────
+    // ── 2.5 GET PDF BINARY STREAM (FAST DISK CACHE + STREAMING) ──────────────
     if (action === 'getPdf' || action === 'downloadPdf' || action === 'getOrderPdf') {
       const orderId = String(req.query?.orderId || req.body?.orderId || '').trim().toUpperCase()
       if (!orderId) {
         return res.status(400).json({ success: false, error: 'orderId is required' })
       }
 
+      const tStart = Date.now()
+      const cachePath = path.join(PDF_CACHE_DIR, `${orderId}.pdf`)
+
+      // FAST PATH 1: Serve directly from local disk cache (< 10ms response)
+      if (fs.existsSync(cachePath)) {
+        try {
+          const stat = fs.statSync(cachePath)
+          if (stat.size > 100) {
+            const buf = fs.readFileSync(cachePath)
+            console.log(`[GET_PDF_CACHE_HIT] Serving ${orderId}.pdf from disk cache (${buf.length} bytes in ${Date.now() - tStart}ms)`)
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader('Content-Length', buf.length)
+            res.setHeader('Content-Disposition', `inline; filename="${orderId}.pdf"`)
+            res.setHeader('Access-Control-Allow-Origin', '*')
+            res.setHeader('X-PDF-Source', 'disk-cache')
+            return res.status(200).send(buf)
+          }
+        } catch (cacheErr) {
+          console.warn(`[GET_PDF_CACHE_READ_ERR] ${orderId}: ${cacheErr.message}`)
+        }
+      }
+
+      // SLOW PATH 2: Query MongoDB Atlas with targeted projection
       try {
         const { db } = await connectToDatabase()
-        const order = await db.collection('orders').findOne({ orderId })
+        const order = await db.collection('orders').findOne(
+          { orderId },
+          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1 } }
+        )
         if (!order) {
           return res.status(404).json({ success: false, error: 'Order not found' })
         }
 
         const safeFileName = (order.fileName || `${orderId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_')
 
-        // 1. Return from stored MongoDB base64 if present
+        // 1. Return from stored MongoDB base64 if present & populate disk cache
         if (order.pdfBase64 && typeof order.pdfBase64 === 'string') {
           const pdfBuffer = Buffer.from(order.pdfBase64, 'base64')
+          savePdfToDiskCache(orderId, order.pdfBase64)
+          console.log(`[GET_PDF_MONGO_SERVED] Served ${orderId} from MongoDB Atlas (${pdfBuffer.length} bytes in ${Date.now() - tStart}ms)`)
           res.setHeader('Content-Type', 'application/pdf')
           res.setHeader('Content-Length', pdfBuffer.length)
           res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
           res.setHeader('Access-Control-Allow-Origin', '*')
+          res.setHeader('X-PDF-Source', 'mongo-atlas')
           return res.status(200).send(pdfBuffer)
         }
 
@@ -594,10 +649,15 @@ export default async function handler(req, res) {
           if (driveRes.ok) {
             const arrayBuffer = await driveRes.arrayBuffer()
             const pdfBuffer = Buffer.from(arrayBuffer)
+            try {
+              if (!fs.existsSync(PDF_CACHE_DIR)) fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
+              fs.writeFileSync(cachePath, pdfBuffer)
+            } catch {}
             res.setHeader('Content-Type', 'application/pdf')
             res.setHeader('Content-Length', pdfBuffer.length)
             res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
             res.setHeader('Access-Control-Allow-Origin', '*')
+            res.setHeader('X-PDF-Source', 'google-drive')
             return res.status(200).send(pdfBuffer)
           } else {
             console.warn(`[DRIVE_PDF_FETCH_FAILED] HTTP ${driveRes.status} for ${orderId}`)

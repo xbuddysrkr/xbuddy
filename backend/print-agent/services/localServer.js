@@ -99,16 +99,36 @@ async function downloadFile(url, destPath) {
   const axios = require('axios')
   const response = await axios.get(url, {
     responseType: 'stream',
-    timeout: 35000,
+    timeout: 120000,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
     headers: { 'User-Agent': 'Mozilla/5.0' },
     maxRedirects: 5,
   })
+
+  const contentType = String(response.headers?.['content-type'] || '').toLowerCase()
+  if (contentType.includes('application/json') || contentType.includes('text/html')) {
+    throw new Error(`Endpoint returned non-PDF content-type: "${contentType}"`)
+  }
+
   await new Promise((resolve, reject) => {
     const file = fs.createWriteStream(destPath)
     response.data.pipe(file)
     file.on('finish', () => { file.close(); resolve() })
     file.on('error', (err) => { fs.unlink(destPath, () => {}); reject(err) })
   })
+
+  // Validate PDF magic header
+  if (fs.existsSync(destPath)) {
+    const fd = fs.openSync(destPath, 'r')
+    const headerBuf = Buffer.alloc(5)
+    fs.readSync(fd, headerBuf, 0, 5, 0)
+    fs.closeSync(fd)
+    if (headerBuf.toString() !== '%PDF-') {
+      try { fs.unlinkSync(destPath) } catch {}
+      throw new Error(`Downloaded file is invalid: magic header is "${headerBuf.toString()}", expected "%PDF-"`)
+    }
+  }
 }
 
 const BOOTH_PIN = process.env.BOOTH_PIN || '4921'

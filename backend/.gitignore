@@ -22,3 +22,10 @@ print-agent/agent_*.log
 # Binaries
 *.exe
 print-agent/bin/*.exe
+
+# PDF Cache & Customer Uploads (strictly runtime-only, zero student documents tracked)
+.pdf_cache/
+.pdf_cache/*
+downloads/
+*.pdf
+!test/color_test.pdf

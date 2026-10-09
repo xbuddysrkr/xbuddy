@@ -1,12 +1,20 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import fs from 'fs'
+import path from 'path'
 import ordersHandler from './api/orders.js'
 import agentOrdersHandler from './api/agent/orders.js'
 import agentHeartbeatHandler from './api/agent/heartbeat.js'
 
 // Load environment variables from .env if present
 dotenv.config()
+
+// Ensure persistent PDF cache directory exists
+const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve('.pdf_cache')
+if (!fs.existsSync(PDF_CACHE_DIR)) {
+  fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
+}
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -136,6 +144,37 @@ app.listen(PORT, () => {
   console.log(`  Health Check: http://localhost:${PORT}/health`)
   console.log(`  Orders API:   http://localhost:${PORT}/api/orders`)
   console.log(`=======================================================`)
+
+  // Non-blocking background startup cache pre-warming from authoritative MongoDB Atlas
+  setTimeout(async () => {
+    try {
+      const { connectToDatabase } = await import('./api/_lib/mongodb.js')
+      const { db } = await connectToDatabase()
+      const activeOrders = await db.collection('orders')
+        .find(
+          { printStatus: { $in: ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed'] } },
+          { projection: { orderId: 1, pdfBase64: 1 } }
+        )
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .toArray()
+
+      let count = 0
+      for (const order of activeOrders) {
+        if (!order.orderId || !order.pdfBase64 || typeof order.pdfBase64 !== 'string') continue
+        const target = path.join(PDF_CACHE_DIR, `${order.orderId}.pdf`)
+        if (!fs.existsSync(target)) {
+          fs.writeFileSync(target, Buffer.from(order.pdfBase64, 'base64'))
+          count++
+        }
+      }
+      if (count > 0) {
+        console.log(`[PDF_CACHE_STARTUP] Pre-warmed ${count} active order(s) into runtime disk cache`)
+      }
+    } catch (err) {
+      console.warn(`[PDF_CACHE_STARTUP_WARN] Background cache notice: ${err.message}`)
+    }
+  }, 2000)
 })
 
 export default app
