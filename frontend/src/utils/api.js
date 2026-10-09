@@ -171,45 +171,79 @@ export async function getOrderStatus(orderId) {
   if (!orderId) return null
   const cleanId = String(orderId).trim().toUpperCase()
 
-  // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
+  // 1. PRIMARY & AUTHORITATIVE READ: Canonical Serverless Orders API (MongoDB Atlas)
   const endpoints = getCandidateOrdersEndpoints()
+  let hasTimeoutOrNetworkError = false
+  let lastErrorMessage = ''
+
   for (const endpoint of endpoints) {
     try {
       const res = await fetch(`${endpoint}?action=getOrderStatus&orderId=${cleanId}`, {
         signal: AbortSignal.timeout(15000),
       })
-      if (res.ok) {
-        const text = await res.text()
-        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
-          continue
-        }
-        try {
-          const data = JSON.parse(text)
-          if (data?.success && (data?.order || data?.fileName)) {
-            const ord = data.order || data
-            return {
-              ...data,
-              ...ord,
-              orderId: ord.orderId || cleanId,
-              printStatus: ord.printStatus || data.printStatus || 'waiting_for_shopkeeper',
-              paymentStatus: ord.paymentStatus || data.paymentStatus || 'pending',
-              verifiedInMongo: true,
-              source: 'mongo',
-            }
-          }
-          if (data?.error === 'Order not found' || data?.error?.includes('not found')) {
-            return { success: false, error: 'Order not found in authoritative database. Check the Order ID.', notFound: true, verifiedInMongo: false }
-          }
-        } catch {
-          continue
+
+      // Skip HTML responses (e.g. Vercel SPA 404 rewrite fallback)
+      const text = await res.text()
+      if (text.startsWith('<!DOCTYPE') || text.startsWith('<html') || text.includes('__next') || text.includes('vite')) {
+        continue
+      }
+
+      let data = null
+      try {
+        data = JSON.parse(text)
+      } catch {
+        continue
+      }
+
+      // Outcome 1 (HTTP 200): Order returned and verified from authoritative MongoDB
+      if (res.status === 200 && data?.success && (data?.order || data?.fileName)) {
+        const ord = data.order || data
+        return {
+          ...data,
+          ...ord,
+          orderId: ord.orderId || cleanId,
+          printStatus: ord.printStatus || data.printStatus || 'waiting_for_shopkeeper',
+          paymentStatus: ord.paymentStatus || data.paymentStatus || 'pending',
+          verifiedInMongo: true,
+          verified: true,
+          notFound: false,
+          unavailable: false,
+          source: 'mongo',
         }
       }
+
+      // Outcome 2 (HTTP 404): Authoritative database definitively confirms order does not exist
+      if (res.status === 404 || data?.notFound || data?.error === 'Order not found') {
+        return {
+          success: false,
+          error: `Order ${cleanId} not found in authoritative database. Check the Order ID.`,
+          notFound: true,
+          unavailable: false,
+          verifiedInMongo: false,
+        }
+      }
+
+      // Outcome 3 (HTTP 503 / 5xx): Database / service temporarily unavailable
+      if (res.status >= 500 || data?.unavailable) {
+        hasTimeoutOrNetworkError = true
+        lastErrorMessage = data?.error || 'Database service temporarily unavailable'
+      }
     } catch (err) {
-      console.warn(`[getOrderStatus] Primary API notice (${endpoint}):`, err.message)
+      console.warn(`[getOrderStatus] Notice on ${endpoint}:`, err.message)
+      hasTimeoutOrNetworkError = true
+      lastErrorMessage = err.message
     }
   }
 
-  return { success: false, error: 'Order not found in authoritative database. Check the Order ID.', notFound: true, verifiedInMongo: false }
+  // CRITICAL ARCHITECTURAL CONTRACT: NEVER convert timeouts, network failures, or 5xx into "not found"
+  return {
+    success: false,
+    error: 'Unable to verify order right now. Please retry.',
+    unavailable: true,
+    notFound: false,
+    verifiedInMongo: false,
+    details: lastErrorMessage || 'Network verification timeout',
+  }
 }
 
 export async function fetchAdminOrders() {

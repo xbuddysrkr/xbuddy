@@ -302,46 +302,58 @@ function ReleasePrintStation({ onLock }) {
     return () => clearInterval(timer)
   }, [refreshQueue])
 
-  // Look up order details
+  // Look up order details against canonical MongoDB Atlas
   async function handleLookupOrder(targetId) {
     const cleanId = (targetId || orderId).trim().toUpperCase()
     if (!cleanId || cleanId.length < 4) return
     setLoading(true)
-    setResult(null)
-    setSelectedOrder(null)
+    setResult(null) // Requirement 6: Clear conflicting stale lookup message immediately
 
     try {
       const res = await getOrderStatus(cleanId)
+
+      // Outcome 1 (HTTP 200): Verified from canonical MongoDB Atlas
       if (res?.success && (res?.order || res?.fileName)) {
         const ord = res.order || res
         setSelectedOrder({
           ...ord,
           verifiedInMongo: true,
+          verified: true,
           notFound: false,
+          unavailable: false,
         })
         setOrderId(cleanId)
-      } else {
-        const queuedOrder = pendingOrders.find(p => (p.orderId || p.id || '').toUpperCase() === cleanId)
-        if (queuedOrder) {
-          setSelectedOrder({
-            ...queuedOrder,
-            verifiedInMongo: true,
-            notFound: false,
-          })
-          setOrderId(cleanId)
-        } else {
-          setSelectedOrder(null)
-          setResult({
-            success: false,
-            error: res?.error || `Order ${cleanId} not found in authoritative database. Check the Order ID.`,
-          })
+        setResult(null)
+      } 
+      // Outcome 2 (HTTP 404): Definitively confirmed not found in authoritative database
+      else if (res?.notFound) {
+        setSelectedOrder(null) // Requirement 6: Never combine a lookup error with stale order-card state
+        setResult({
+          success: false,
+          error: res.error || `Order ${cleanId} not found in authoritative database. Check the Order ID.`,
+          notFound: true,
+        })
+      } 
+      // Outcome 3 (HTTP 503 / timeout / network failure): Verification temporarily unavailable
+      else {
+        // Requirement 7: Disable printing safely without falsely labeling as missing
+        if (selectedOrder && (selectedOrder.orderId === cleanId || selectedOrder.id === cleanId)) {
+          setSelectedOrder(prev => ({ ...prev, unavailable: true }))
         }
+        setResult({
+          success: false,
+          error: 'Unable to verify order right now. Please retry.',
+          unavailable: true,
+        })
       }
     } catch (err) {
-      setSelectedOrder(null)
+      if (selectedOrder && (selectedOrder.orderId === cleanId || selectedOrder.id === cleanId)) {
+        setSelectedOrder(prev => ({ ...prev, unavailable: true }))
+      }
       setResult({
         success: false,
-        error: `Could not fetch order: ${err.message}`,
+        error: 'Unable to verify order right now. Please retry.',
+        unavailable: true,
       })
     } finally {
       setLoading(false)
@@ -354,14 +366,17 @@ function ReleasePrintStation({ onLock }) {
     if (!target) return
     const id = (target.orderId || target.id).trim().toUpperCase()
 
-    // Requirement 5: If an order is absent from MongoDB or cannot be verified, disable Print Document Now and reject release safely.
+    // Requirement 5 & 10: Strict canonical verification guard before physical print release
     const isTargetVerified = Boolean(
-      (target.verifiedInMongo || target.mongoSaved || target._id) && !target.notFound
+      (target.verifiedInMongo || target.mongoSaved || target._id) && !target.notFound && !target.unavailable
     )
     if (!isTargetVerified) {
       setResult({
         success: false,
-        error: `Order ${id} is not verified in authoritative database. Print release blocked to prevent inconsistency.`,
+        error: target.unavailable
+          ? `Unable to verify order ${id} right now. Please retry.`
+          : `Order ${id} is not verified in authoritative database. Print release blocked to maintain system consistency.`,
+        unavailable: Boolean(target.unavailable),
       })
       return
     }
@@ -414,12 +429,11 @@ function ReleasePrintStation({ onLock }) {
 
       // If Agent reported order not found in authoritative database
       if (agentRes?.error && agentRes.error.includes('authoritative database')) {
-        if (selectedOrder && (selectedOrder.orderId === id || selectedOrder.id === id)) {
-          setSelectedOrder(prev => ({ ...prev, notFound: true, verifiedInMongo: false }))
-        }
+        setSelectedOrder(null) // Clear card immediately so no contradictory card state exists
         setResult({
           success: false,
           error: agentRes.error,
+          notFound: true,
         })
         return
       }
@@ -751,12 +765,17 @@ function ReleasePrintStation({ onLock }) {
                           )}
                           <span>{selectedOrder.printStatus || 'Waiting'}</span>
                         </span>
-                        {(!Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)) && (
+                        {selectedOrder.unavailable ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            <span>Verification Unavailable</span>
+                          </span>
+                        ) : (!Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)) ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-rose-600" />
                             <span>Unverified in Database</span>
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
                         <FileText className="w-3.5 h-3.5 text-orange-500" />
@@ -768,7 +787,16 @@ function ReleasePrintStation({ onLock }) {
                       <span className="text-2xl font-black text-[#EA580C]">
                         ₹{selectedOrder.amount || selectedOrder.totalCost || 0}
                       </span>
-                      <p className="text-[10px] uppercase font-bold text-slate-400">Paid Amount</p>
+                      <p className="text-[10px] uppercase font-bold text-slate-400">
+                        {String(selectedOrder.paymentStatus).toLowerCase() === 'paid' || String(selectedOrder.paymentStatus).toLowerCase() === 'completed'
+                          ? 'Payment Verified'
+                          : 'Order Amount (Payment: Pending)'}
+                      </p>
+                      {selectedOrder.transactionId && (
+                        <p className="text-[10px] text-slate-400 font-mono">
+                          UTR: {selectedOrder.transactionId}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -912,7 +940,14 @@ function ReleasePrintStation({ onLock }) {
                   ) : (
                     <div className="space-y-3 pt-2">
                       {/* Hardware Auto-Enforcement Notice */}
-                      {!Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound) ? (
+                      {selectedOrder.unavailable ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>
+                            <strong>Verification Temporarily Unavailable:</strong> Unable to verify order {selectedOrder.orderId || selectedOrder.id} right now. Please retry Find Order.
+                          </span>
+                        </div>
+                      ) : !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound) ? (
                         <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-900 flex items-center gap-2.5">
                           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                           <span>
@@ -940,9 +975,9 @@ function ReleasePrintStation({ onLock }) {
                       <div className="flex flex-col sm:flex-row gap-3">
                         <button
                           onClick={() => handleDirectPrint(selectedOrder)}
-                          disabled={printLoading || !agentOnline || !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)}
+                          disabled={printLoading || !agentOnline || selectedOrder.unavailable || !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)}
                           className={`flex-1 py-4 text-white font-bold text-base rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2.5 active:scale-[0.98] disabled:opacity-50 ${
-                            !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)
+                            selectedOrder.unavailable || !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound)
                               ? 'bg-slate-500 cursor-not-allowed opacity-60 shadow-none'
                               : !agentOnline
                               ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-900/20'
@@ -955,6 +990,11 @@ function ReleasePrintStation({ onLock }) {
                             <>
                               <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                               <span>Sending Direct to Printer...</span>
+                            </>
+                          ) : selectedOrder.unavailable ? (
+                            <>
+                              <AlertTriangle className="w-5 h-5 text-amber-200" />
+                              <span>Verification Unavailable (Retry Required)</span>
                             </>
                           ) : !Boolean((selectedOrder.verifiedInMongo || selectedOrder.mongoSaved || selectedOrder._id) && !selectedOrder.notFound) ? (
                             <>
@@ -1126,35 +1166,28 @@ function ReleasePrintStation({ onLock }) {
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                          {(() => {
-                            const isOrdVerified = Boolean((ord.verifiedInMongo || ord.mongoSaved || ord._id) && !ord.notFound)
-                            return (
-                              <button
-                                onClick={() => handleDirectPrint(ord)}
-                                disabled={printLoading || !isOrdVerified}
-                                className={`flex-1 py-2.5 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 ${
-                                  !isOrdVerified
-                                    ? 'bg-slate-400 opacity-60 cursor-not-allowed shadow-none'
-                                    : 'bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 shadow-orange-500/20'
-                                }`}
-                              >
-                                <Printer className="w-4 h-4" />
-                                <span>
-                                  {!isOrdVerified
-                                    ? '⚠️ Unverified (Blocked)'
-                                    : agentOnline
-                                    ? 'Print Now (Hardware Direct)'
-                                    : 'Print Now (1-Click)'}
-                                </span>
-                              </button>
-                            )
-                          })()}
+                          <button
+                            onClick={() => {
+                              // Requirement 8: Queue previews must trigger a fresh canonical lookup when selected
+                              setOrderId(id)
+                              setActiveTab('lookup')
+                              handleLookupOrder(id)
+                            }}
+                            disabled={printLoading}
+                            className="flex-1 py-2.5 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 shadow-orange-500/20"
+                          >
+                            <Printer className="w-4 h-4" />
+                            <span>
+                              {agentOnline ? 'Print Now (Hardware Direct)' : 'Print Now (1-Click)'}
+                            </span>
+                          </button>
 
                           <button
                             onClick={() => {
-                              setSelectedOrder(ord)
+                              // Requirement 8: Queue previews must trigger a fresh canonical lookup when selected
                               setOrderId(id)
                               setActiveTab('lookup')
+                              handleLookupOrder(id)
                             }}
                             className="p-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 transition-colors"
                             title="Inspect order details"
