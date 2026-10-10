@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, XCircle, Clock, RotateCcw } from 'lucide-react'
+import PerfectStackGame from './PerfectStackGame'
 
 // Steps that map 1-to-1 with real network calls / backend responses
 const STEPS = [
@@ -76,8 +77,15 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
           <span className="text-xs text-gray-400 font-mono">{progress}%</span>
         </div>
 
+        {/* XBuddy Perfect Stack — Automatic Waiting Mini-Game while actively processing */}
+        {!isSuccess && !hasFailed && (
+          <div className="pt-0.5">
+            <PerfectStackGame />
+          </div>
+        )}
+
         {/* Steps */}
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {STEPS.map((step) => {
             const status = stepStatuses[step.id] ?? 'pending'
             const isFailed = step.id === failedStep
@@ -86,7 +94,7 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
                 key={step.id}
                 animate={isFailed ? { x: [-4, 4, -3, 3, 0] } : {}}
                 transition={{ duration: 0.35 }}
-                className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-colors ${
+                className={`flex items-center gap-3 px-3 py-1.5 rounded-xl transition-colors ${
                   status === 'active' ? 'bg-orange-50 border border-orange-200' :
                   isFailed           ? 'bg-red-50 border border-red-200' :
                   status === 'done'  ? 'bg-green-50/60' : 'opacity-50'
