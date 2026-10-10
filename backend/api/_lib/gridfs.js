@@ -2,6 +2,7 @@ import { GridFSBucket } from 'mongodb'
 import { Readable } from 'node:stream'
 
 export const GRIDFS_BUCKET_NAME = 'order_pdfs'
+export const GRIDFS_CHUNK_SIZE = 1024 * 1024 // 1 MB chunks to minimize network roundtrips to MongoDB Atlas
 
 /**
  * Returns a GridFSBucket instance for the given database.
@@ -12,20 +13,27 @@ export function getGridFSBucket(db, bucketName = GRIDFS_BUCKET_NAME) {
 }
 
 /**
- * Uploads a PDF buffer to GridFS under filename `${orderId}.pdf`.
+ * Uploads a PDF buffer or Readable stream to GridFS under filename `${orderId}.pdf`.
  * Automatically purges any pre-existing files for the same orderId to prevent duplicates.
  */
-export async function savePdfToGridFS(db, orderId, pdfBuffer, metadata = {}) {
+export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
   if (!db) throw new Error('Database instance is required')
   if (!orderId) throw new Error('orderId is required')
-  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
-    throw new Error('Valid PDF Buffer is required')
+
+  const isBuffer = Buffer.isBuffer(pdfSource)
+  const isStream = Boolean(pdfSource && typeof pdfSource.pipe === 'function')
+
+  if (!isBuffer && !isStream) {
+    throw new Error('Valid PDF Buffer or Readable stream is required')
   }
 
-  // Validate magic header
-  const magic = pdfBuffer.subarray(0, 5).toString('ascii')
-  if (magic !== '%PDF-') {
-    throw new Error(`Invalid PDF header: expected "%PDF-", got "${magic}"`)
+  if (isBuffer) {
+    if (pdfSource.length === 0) throw new Error('PDF Buffer is empty')
+    // Validate magic header
+    const magic = pdfSource.subarray(0, 5).toString('ascii')
+    if (magic !== '%PDF-') {
+      throw new Error(`Invalid PDF header: expected "%PDF-", got "${magic}"`)
+    }
   }
 
   const cleanId = String(orderId).trim().toUpperCase()
@@ -48,14 +56,18 @@ export async function savePdfToGridFS(db, orderId, pdfBuffer, metadata = {}) {
 
   const tUploadStart = performance.now()
 
-  // Upload new file stream
+  // Upload new file stream with 1MB chunk size
   return new Promise((resolve, reject) => {
+    let bytesWritten = 0
+    let validatedHeader = false
+
     const uploadStream = bucket.openUploadStream(filename, {
+      chunkSizeBytes: GRIDFS_CHUNK_SIZE,
       contentType: 'application/pdf',
       metadata: {
         orderId: cleanId,
         fileName: metadata.fileName || filename,
-        size: pdfBuffer.length,
+        size: isBuffer ? pdfSource.length : (metadata.size || 0),
         uploadedAt: new Date().toISOString(),
         ...metadata,
       },
@@ -71,13 +83,29 @@ export async function savePdfToGridFS(db, orderId, pdfBuffer, metadata = {}) {
       resolve({
         fileId: uploadStream.id,
         filename,
-        size: pdfBuffer.length,
+        size: isBuffer ? pdfSource.length : bytesWritten,
         durationMs,
       })
     })
 
-    const readable = Readable.from(pdfBuffer)
-    readable.pipe(uploadStream)
+    if (isBuffer) {
+      const readable = Readable.from(pdfSource)
+      readable.pipe(uploadStream)
+    } else {
+      // Validate stream signature on first chunk
+      pdfSource.on('data', (chunk) => {
+        bytesWritten += chunk.length
+        if (!validatedHeader && bytesWritten >= 5) {
+          const magic = chunk.subarray(0, 5).toString('ascii')
+          if (magic !== '%PDF-') {
+            uploadStream.destroy(new Error(`Invalid PDF header: expected "%PDF-", got "${magic}"`))
+            return
+          }
+          validatedHeader = true
+        }
+      })
+      pdfSource.pipe(uploadStream)
+    }
   })
 }
 

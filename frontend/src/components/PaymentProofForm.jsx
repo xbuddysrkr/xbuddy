@@ -56,6 +56,18 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
         if (orderMeta?.isReprint) {
           // Document PDF is already stored durably in MongoDB Atlas GridFS; skip re-encoding
           setStep('upload_file', 'done')
+        } else if (orderMeta?.pdfFile) {
+          // Fast binary validation: check %PDF- header in first 5 bytes (< 1ms) without blocking
+          try {
+            const headerSlice = await orderMeta.pdfFile.slice(0, 5).arrayBuffer()
+            const headerStr = String.fromCharCode(...new Uint8Array(headerSlice))
+            if (headerStr !== '%PDF-') {
+              throw new Error('Selected file is not a valid PDF document (missing %PDF- header)')
+            }
+          } catch (err) {
+            throw { step: 'upload_file', reason: err.message || 'Invalid PDF header' }
+          }
+          setStep('upload_file', 'active')
         } else {
           try {
             if (!cache.pdfBase64) {
@@ -127,6 +139,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
           amount:               orderMeta.amount,
           transactionId:        transactionId.trim(),
           screenshotBase64:     '',
+          pdfFile:              orderMeta.pdfFile,
           pdfBase64:            cache.pdfBase64,
         },
         {

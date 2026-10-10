@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import Busboy from 'busboy'
 import { connectToDatabase } from './_lib/mongodb.js'
 import {
   savePdfToGridFS,
@@ -16,6 +17,56 @@ import {
 } from './_lib/retention.js'
 
 const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
+
+/**
+ * Streams and parses multipart/form-data for binary PDF uploads.
+ * Preserves form fields (e.g. phone, copies, amount) without placing sensitive data in query parameters.
+ */
+export function parseMultipartOrder(req) {
+  return new Promise((resolve, reject) => {
+    const fields = {}
+    const chunks = []
+    let detectedFileName = null
+    let fileSize = 0
+
+    const bb = Busboy({
+      headers: req.headers,
+      limits: {
+        fileSize: 35 * 1024 * 1024, // 35 MB maximum PDF size
+        files: 1,
+      },
+    })
+
+    bb.on('field', (name, val) => {
+      fields[name] = val
+    })
+
+    bb.on('file', (name, fileStream, info) => {
+      detectedFileName = info?.filename || null
+      fileStream.on('data', (chunk) => {
+        chunks.push(chunk)
+        fileSize += chunk.length
+      })
+      fileStream.on('error', (err) => {
+        reject(err)
+      })
+    })
+
+    bb.on('error', (err) => {
+      reject(err)
+    })
+
+    bb.on('finish', () => {
+      const pdfBuffer = chunks.length > 0 ? Buffer.concat(chunks) : null
+      if (detectedFileName && !fields.fileName) {
+        fields.fileName = detectedFileName
+      }
+      resolve({ fields, pdfBuffer, fileSize })
+    })
+
+    req.pipe(bb)
+  })
+}
 
 export function savePdfToDiskCache(orderId, pdfInput) {
   if (!orderId || !pdfInput) return false
@@ -139,13 +190,18 @@ export function validateOrderPayload(data) {
     errors.push('Amount must be a non-negative number')
   }
 
-  // Strict PDF Validation: order MUST include either a valid Base64 PDF or Google Drive URL
+  // Strict PDF Validation: order MUST include either a valid binary PDF, Base64 PDF, or Google Drive URL
   const hasDriveUrl = Boolean(data.driveUrl && typeof data.driveUrl === 'string' && data.driveUrl.trim().startsWith('http'))
   const rawPdfBase64 = data.pdfBase64
   const hasBase64 = Boolean(rawPdfBase64 && typeof rawPdfBase64 === 'string' && rawPdfBase64.length >= 50)
+  const hasBuffer = Boolean(data.pdfBuffer && Buffer.isBuffer(data.pdfBuffer) && data.pdfBuffer.length >= 5)
 
-  if (!hasDriveUrl && !hasBase64) {
-    errors.push('Order must include a valid PDF file (Base64) or Google Drive URL')
+  if (!hasDriveUrl && !hasBase64 && !hasBuffer) {
+    errors.push('Order must include a valid PDF file (binary/Base64) or Google Drive URL')
+  } else if (hasBuffer) {
+    if (data.pdfBuffer.subarray(0, 4).toString('ascii') !== '%PDF') {
+      errors.push('Uploaded file is not a valid PDF document (missing %PDF- header)')
+    }
   } else if (hasBase64) {
     try {
       const sample = Buffer.from(rawPdfBase64.slice(0, 100), 'base64')
@@ -199,6 +255,20 @@ export async function writeToGoogleAppsScript(params) {
  * Serverless API Handler: /api/orders
  */
 export default async function handler(req, res) {
+  // If request is multipart/form-data, parse fields and binary PDF before processing action
+  const contentType = String(req.headers?.['content-type'] || '')
+  if (contentType.includes('multipart/form-data')) {
+    try {
+      const parsed = await parseMultipartOrder(req)
+      req.body = { ...(req.body || {}), ...parsed.fields }
+      if (parsed.pdfBuffer) {
+        req.body.pdfBuffer = parsed.pdfBuffer
+      }
+    } catch (parseErr) {
+      return res.status(400).json({ success: false, error: `Multipart parse error: ${parseErr.message}` })
+    }
+  }
+
   // CRITICAL FIREWALL: Disallow any Campus Ads requests through /api/orders
   const actionParam = (req.query?.action || req.body?.action || '').trim()
   if (actionParam && (actionParam.includes('Ad') || actionParam.includes('ad'))) {
@@ -231,10 +301,10 @@ export default async function handler(req, res) {
       const resolvedPaperSize = String(payload.paperSize || payload.pageSize || 'A4').trim().toUpperCase()
 
       const rawPdfBase64 = typeof payload.pdfBase64 === 'string' ? payload.pdfBase64.trim() : ''
-      let pdfBuffer = null
-      let hasValidPdf = false
+      let pdfBuffer = payload.pdfBuffer || null
+      let hasValidPdf = Boolean(pdfBuffer && pdfBuffer.length >= 5 && pdfBuffer.subarray(0, 4).toString('ascii') === '%PDF')
       const tDecodeStart = performance.now()
-      if (rawPdfBase64 && rawPdfBase64.length >= 50) {
+      if (!pdfBuffer && rawPdfBase64 && rawPdfBase64.length >= 50) {
         try {
           const buf = Buffer.from(rawPdfBase64, 'base64')
           if (buf.length >= 5 && buf.subarray(0, 4).toString('ascii') === '%PDF') {
@@ -277,9 +347,8 @@ export default async function handler(req, res) {
         hasGridFsPdf:         false,
         pdfStorage:           'none',
         pdfSize:              pdfBuffer ? pdfBuffer.length : 0,
-        // Store inline Base64 only for small files (< 2MB) for legacy compatibility.
-        // Large files store '' in the document to prevent BSON size limits and Atlas explorer freezing.
-        pdfBase64:            (hasValidPdf && pdfBuffer.length < 2 * 1024 * 1024) ? rawPdfBase64 : '',
+        // Store inline Base64 only if GridFS fails on small files (< 2MB)
+        pdfBase64:            '',
         paymentStatus:        String(payload.paymentStatus || 'pending').trim().toLowerCase(),
         printStatus:          'waiting_for_shopkeeper',
         createdAt:            nowIso,
@@ -469,8 +538,11 @@ export default async function handler(req, res) {
           diskCacheMs = Math.round(performance.now() - tDiskStart)
         }
 
-        const isLargePdf = Boolean(pdfBuffer && pdfBuffer.length >= 2 * 1024 * 1024)
-        const isInlineDurable = Boolean(!isLargePdf && orderDoc.pdfBase64 && orderDoc.pdfBase64.length > 50)
+        // PDFs >= 250KB are stored strictly in GridFS without inline Base64 bloat.
+        // Tiny PDFs (< 250KB) store inline Base64 if provided for dual-tier fallback without slowing down Atlas inserts.
+        const isLargePdf = Boolean(pdfBuffer && pdfBuffer.length >= 250 * 1024)
+        const isInlineDurable = Boolean(!isLargePdf && rawPdfBase64 && rawPdfBase64.length > 50)
+        orderDoc.pdfBase64 = isInlineDurable ? rawPdfBase64 : ''
 
         // DURABLE STORAGE POLICY:
         // 1. For PDFs >= 2MB: GridFS upload MUST succeed (or valid Drive URL).
@@ -797,7 +869,7 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const order = await db.collection('orders').findOne(
           { orderId },
-          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, printedAt: 1 } }
+          { projection: { driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, printedAt: 1 } }
         )
         if (!order) {
           // If order does not exist in authoritative MongoDB, purge any stale disk cache file
@@ -879,9 +951,10 @@ export default async function handler(req, res) {
           console.warn(`[GridFS retrieval notice] ${orderId}:`, gridErr.message)
         }
 
-        // TIER 3: Inline Base64 from MongoDB document
-        if (order.pdfBase64 && typeof order.pdfBase64 === 'string' && order.pdfBase64.length > 50) {
-          const pdfBuffer = Buffer.from(order.pdfBase64, 'base64')
+        // TIER 3: Inline Base64 from MongoDB document (legacy fallback)
+        const inlineDoc = await db.collection('orders').findOne({ orderId }, { projection: { pdfBase64: 1 } })
+        if (inlineDoc?.pdfBase64 && typeof inlineDoc.pdfBase64 === 'string' && inlineDoc.pdfBase64.length > 50) {
+          const pdfBuffer = Buffer.from(inlineDoc.pdfBase64, 'base64')
           savePdfToDiskCache(orderId, pdfBuffer)
           console.log(`[GET_PDF_MONGO_SERVED] Served ${orderId} from MongoDB Atlas inline Base64 (${pdfBuffer.length} bytes in ${Date.now() - tStart}ms)`)
           res.setHeader('Content-Type', 'application/pdf')

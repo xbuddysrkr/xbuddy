@@ -722,12 +722,16 @@ export async function reprintOrder(orderId, options = {}) {
   return { success: false, error: lastError }
 }
 
-export async function uploadOrderPayload(endpoint, payloadString, { onUploadProgress, timeout = 90000 } = {}) {
+export async function uploadOrderPayload(endpoint, payload, { onUploadProgress, timeout = 90000 } = {}) {
+  const isFormData = typeof FormData !== 'undefined' && payload instanceof FormData
+
   if (typeof XMLHttpRequest !== 'undefined') {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', endpoint, true)
-      xhr.setRequestHeader('Content-Type', 'application/json')
+      if (!isFormData) {
+        xhr.setRequestHeader('Content-Type', 'application/json')
+      }
       xhr.timeout = timeout
 
       if (xhr.upload && onUploadProgress) {
@@ -738,7 +742,8 @@ export async function uploadOrderPayload(endpoint, payloadString, { onUploadProg
           }
         }
         xhr.upload.onload = () => {
-          onUploadProgress({ percent: 100, loaded: payloadString.length, total: payloadString.length, serverProcessing: true })
+          const totalBytes = isFormData ? (payload.get('file')?.size || 1) : payload.length
+          onUploadProgress({ percent: 100, loaded: totalBytes, total: totalBytes, serverProcessing: true })
         }
       }
 
@@ -757,15 +762,15 @@ export async function uploadOrderPayload(endpoint, payloadString, { onUploadProg
       xhr.onerror = () => reject(new Error('Network connection error during order transmission'))
       xhr.ontimeout = () => reject(new Error(`Order transmission timed out after ${Math.round(timeout / 1000)}s`))
 
-      xhr.send(payloadString)
+      xhr.send(payload)
     })
   }
 
   // Fallback for Node.js test environments
   return fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: payloadString,
+    headers: isFormData ? {} : { 'Content-Type': 'application/json' },
+    body: payload,
     signal: AbortSignal.timeout(timeout),
   })
 }
@@ -782,7 +787,7 @@ export async function submitOrder(orderData, { onStep, onUploadProgress } = {}) 
     printSide:         isDuplex ? 'Double' : 'Single',
     duplex:            isDuplex,
     colorMode:         normalizedColor,
-    printType:         normalizedColor === 'color' ? 'Color' : 'B&W',
+    printType:            normalizedColor === 'color' ? 'Color' : 'B&W',
     pageSize:          resolvedPaperSize,
     paperSize:         resolvedPaperSize,
     orientation:       orderData.orientation       || 'portrait',
@@ -806,12 +811,13 @@ export async function submitOrder(orderData, { onStep, onUploadProgress } = {}) 
     throw { step: 'save_order', reason: 'Invalid order parameters' }
   }
 
-  // Pre-flight PDF validation: order must have a valid PDF (%PDF- header) or Drive URL
+  // Pre-flight PDF validation: order must have a valid PDF (%PDF- header), File, or Drive URL
   const hasDrive = Boolean(orderData.driveUrl && typeof orderData.driveUrl === 'string' && orderData.driveUrl.trim().startsWith('http'))
   const rawB64 = orderData.pdfBase64
   const hasB64 = Boolean(rawB64 && typeof rawB64 === 'string' && rawB64.length >= 50)
+  const hasFile = Boolean(orderData.pdfFile)
 
-  if (!hasDrive && !hasB64) {
+  if (!hasDrive && !hasB64 && !hasFile) {
     throw { step: 'upload_file', reason: 'Order must include a valid PDF file or Drive URL' }
   }
 
@@ -823,44 +829,79 @@ export async function submitOrder(orderData, { onStep, onUploadProgress } = {}) 
   }
 
   try {
-    const orderPayload = {
-      action: 'saveOrder',
-      orderId: clientOrderId,
-      name: orderData.name,
-      fileName: orderData.fileName,
-      totalPages: Number(orderData.totalPages) || 1,
-      copies: Number(printSettings.copies) || 1,
-      colorMode: normalizedColor,
-      printType: printSettings.printType,
-      printSide: printSettings.printSide,
-      duplex: isDuplex,
-      pageSize: resolvedPaperSize,
-      paperSize: resolvedPaperSize,
-      orientation: printSettings.orientation,
-      amount: Number(orderData.amount) || 0,
-      printingCost: Number(orderData.printingCost) || 0,
-      serviceFee: Number(orderData.serviceFee) || 0,
-      digitalProcessingFee: Number(orderData.digitalProcessingFee || orderData.serviceFee) || 0,
-      transactionId: orderData.transactionId,
-      pageRange: printSettings.pageRange,
-      pageRangeMode: printSettings.pageRangeMode,
-      customPages: printSettings.customPages,
-      printableCount: printSettings.printableCount,
-      selectedPages: printSettings.selectedPages,
-      selectedPageCount: printSettings.selectedPageCount,
-      printStatus: 'waiting_for_shopkeeper',
-      paymentStatus: 'pending',
-      pdfBase64: orderData.pdfBase64 || '',
+    let uploadPayload = null
+    const useBinaryMultipart = Boolean(hasFile && typeof FormData !== 'undefined')
+
+    if (useBinaryMultipart) {
+      const formData = new FormData()
+      formData.append('action', 'saveOrder')
+      formData.append('orderId', clientOrderId)
+      formData.append('name', orderData.name)
+      formData.append('fileName', orderData.fileName)
+      formData.append('totalPages', String(Number(orderData.totalPages) || 1))
+      formData.append('copies', String(Number(printSettings.copies) || 1))
+      formData.append('colorMode', normalizedColor)
+      formData.append('printType', printSettings.printType)
+      formData.append('printSide', printSettings.printSide)
+      formData.append('duplex', String(isDuplex))
+      formData.append('pageSize', resolvedPaperSize)
+      formData.append('paperSize', resolvedPaperSize)
+      formData.append('orientation', printSettings.orientation)
+      formData.append('amount', String(Number(orderData.amount) || 0))
+      formData.append('printingCost', String(Number(orderData.printingCost) || 0))
+      formData.append('serviceFee', String(Number(orderData.serviceFee) || 0))
+      formData.append('digitalProcessingFee', String(Number(orderData.digitalProcessingFee || orderData.serviceFee) || 0))
+      formData.append('transactionId', orderData.transactionId || '')
+      formData.append('pageRange', printSettings.pageRange)
+      formData.append('pageRangeMode', printSettings.pageRangeMode)
+      formData.append('customPages', printSettings.customPages || '')
+      formData.append('printableCount', String(printSettings.printableCount))
+      formData.append('selectedPages', JSON.stringify(printSettings.selectedPages || []))
+      formData.append('selectedPageCount', String(printSettings.selectedPageCount))
+      formData.append('printStatus', 'waiting_for_shopkeeper')
+      formData.append('paymentStatus', 'pending')
+      formData.append('file', orderData.pdfFile, orderData.fileName || `${clientOrderId}.pdf`)
+      uploadPayload = formData
+    } else {
+      const orderPayload = {
+        action: 'saveOrder',
+        orderId: clientOrderId,
+        name: orderData.name,
+        fileName: orderData.fileName,
+        totalPages: Number(orderData.totalPages) || 1,
+        copies: Number(printSettings.copies) || 1,
+        colorMode: normalizedColor,
+        printType: printSettings.printType,
+        printSide: printSettings.printSide,
+        duplex: isDuplex,
+        pageSize: resolvedPaperSize,
+        paperSize: resolvedPaperSize,
+        orientation: printSettings.orientation,
+        amount: Number(orderData.amount) || 0,
+        printingCost: Number(orderData.printingCost) || 0,
+        serviceFee: Number(orderData.serviceFee) || 0,
+        digitalProcessingFee: Number(orderData.digitalProcessingFee || orderData.serviceFee) || 0,
+        transactionId: orderData.transactionId,
+        pageRange: printSettings.pageRange,
+        pageRangeMode: printSettings.pageRangeMode,
+        customPages: printSettings.customPages,
+        printableCount: printSettings.printableCount,
+        selectedPages: printSettings.selectedPages,
+        selectedPageCount: printSettings.selectedPageCount,
+        printStatus: 'waiting_for_shopkeeper',
+        paymentStatus: 'pending',
+        pdfBase64: orderData.pdfBase64 || '',
+      }
+      uploadPayload = JSON.stringify(orderPayload)
     }
 
-    const payloadString = JSON.stringify(orderPayload)
     const endpoints = getCandidateOrdersEndpoints()
     let saved = false
     let isUncertainTimeout = false
 
     for (const endpoint of endpoints) {
       try {
-        const res = await uploadOrderPayload(endpoint, payloadString, {
+        const res = await uploadOrderPayload(endpoint, uploadPayload, {
           timeout: 90000,
           onUploadProgress: (progress) => {
             onUploadProgress?.(progress)
