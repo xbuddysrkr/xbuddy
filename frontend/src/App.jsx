@@ -289,6 +289,9 @@ export default function App() {
 
     if (target === 'home') {
       goToStep(STEP.HERO, { replace })
+      if (typeof window !== 'undefined' && window.location.hash) {
+        try { window.history.replaceState(window.history.state, '', '/') } catch {}
+      }
     } else if (target === 'my_orders') {
       goToStep(STEP.MY_ORDERS, { replace })
     } else if (target === 'admin') {
@@ -296,13 +299,15 @@ export default function App() {
     } else if (target === 'ads') {
       goToStep(STEP.ADS, { replace })
     } else if (target === 'about') {
-      goToStep(STEP.HERO, { replace })
+      goToStep(STEP.HERO, { replace, preserveScroll: true })
+      try { window.history.replaceState(window.history.state, '', '/#why-x-buddy') } catch {}
       setTimeout(() => {
         const el = document.getElementById('why-x-buddy')
         if (el) el.scrollIntoView({ behavior: 'smooth' })
       }, 150)
     } else if (target === 'help') {
-      goToStep(STEP.HERO, { replace })
+      goToStep(STEP.HERO, { replace, preserveScroll: true })
+      try { window.history.replaceState(window.history.state, '', '/#how-it-works') } catch {}
       setTimeout(() => {
         const el = document.getElementById('how-it-works')
         if (el) el.scrollIntoView({ behavior: 'smooth' })
