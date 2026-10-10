@@ -438,7 +438,7 @@ export default function App() {
                 <img
                   src="/xbuddy-logo-transparent.png"
                   alt="XBuddy"
-                  className="h-[26px] min-[360px]:h-7 min-[390px]:h-8 sm:h-10 md:h-10 w-auto object-contain shrink-0"
+                  className="w-[102px] min-[360px]:w-[114px] min-[390px]:w-[122px] sm:w-[142px] md:w-[160px] h-auto aspect-[1024/341] object-contain shrink-0"
                 />
               </button>
             </div>
@@ -515,7 +515,7 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className={step === STEP.RESUME ? '' : 'pt-16'}>
+      <main className={step === STEP.RESUME ? '' : 'pt-16 sm:pt-20'}>
         <AnimatePresence mode="wait">
           {step === STEP.HERO && (
             <motion.div key="hero" exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.3 }}>

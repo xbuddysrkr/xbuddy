@@ -1,6 +1,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { Zap, GraduationCap, ShieldCheck, Sun, CreditCard, Sparkles } from 'lucide-react'
+import { Zap, GraduationCap, ShieldCheck, CreditCard, Sparkles } from 'lucide-react'
 
 export default function TrustStats() {
   const stats = [
@@ -33,13 +33,6 @@ export default function TrustStats() {
       tag: null,
     },
     {
-      icon: Sun,
-      title: 'Zero Wait',
-      label: 'Campus Queues',
-      description: 'Order in advance and skip peak-hour Xerox shop lines',
-      tag: null,
-    },
-    {
       icon: CreditCard,
       title: 'Instant',
       label: 'Digital Payments',
@@ -50,7 +43,7 @@ export default function TrustStats() {
 
   return (
     <div className="w-full max-w-6xl mx-auto mt-16 px-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {stats.map((stat, i) => {
           const IconComponent = stat.icon
           return (
@@ -61,7 +54,7 @@ export default function TrustStats() {
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: i * 0.08 }}
               whileHover={{ y: -5 }}
-              className="relative p-5 rounded-2xl bg-white/80 backdrop-blur-md border border-orange-100/80 shadow-lg shadow-orange-500/5 hover:border-orange-300 hover:shadow-xl hover:shadow-orange-500/10 transition-all group flex flex-col justify-between"
+              className="relative p-5 rounded-2xl bg-white/80 backdrop-blur-md border border-orange-100/80 shadow-lg shadow-orange-500/5 hover:border-orange-300 hover:shadow-xl hover:shadow-orange-500/10 transition-all group flex flex-col justify-between last:col-span-2 md:last:col-span-1"
             >
               {stat.tag && (
                 <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-orange-100 text-[#F7931E] border border-orange-200 uppercase tracking-wider">
