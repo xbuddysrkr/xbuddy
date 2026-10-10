@@ -466,6 +466,10 @@ export default async function handler(req, res) {
 
         if (!isDurablyStored) {
           console.error(`[DURABILITY_GATE_FAILED] Order ${cleanId} PDF could not be persisted to durable storage. Ephemeral local cache alone does NOT qualify. Rejecting order.`)
+          const cachePath = path.join(PDF_CACHE_DIR, `${cleanId}.pdf`)
+          if (fs.existsSync(cachePath)) {
+            try { fs.unlinkSync(cachePath) } catch {}
+          }
           return res.status(500).json({
             success: false,
             orderId: cleanId,
@@ -501,6 +505,10 @@ export default async function handler(req, res) {
           })
         } catch (mErr) {
           console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
+          const cachePath = path.join(PDF_CACHE_DIR, `${cleanId}.pdf`)
+          if (fs.existsSync(cachePath)) {
+            try { fs.unlinkSync(cachePath) } catch {}
+          }
           // Rollback: Clean up orphaned GridFS file if GridFS upload had succeeded
           if (gridFsSaved && mongoDb) {
             try {
@@ -737,28 +745,9 @@ export default async function handler(req, res) {
       const tStart = Date.now()
       const cachePath = path.join(PDF_CACHE_DIR, `${orderId}.pdf`)
 
-      // FAST PATH 1: Serve directly from local disk cache (< 10ms response)
-      if (fs.existsSync(cachePath)) {
-        try {
-          const stat = fs.statSync(cachePath)
-          if (stat.size > 100) {
-            const buf = fs.readFileSync(cachePath)
-            if (buf.subarray(0, 4).toString('ascii') === '%PDF') {
-              console.log(`[GET_PDF_CACHE_HIT] Serving ${orderId}.pdf from disk cache (${buf.length} bytes in ${Date.now() - tStart}ms)`)
-              res.setHeader('Content-Type', 'application/pdf')
-              res.setHeader('Content-Length', buf.length)
-              res.setHeader('Content-Disposition', `inline; filename="${orderId}.pdf"`)
-              res.setHeader('Access-Control-Allow-Origin', '*')
-              res.setHeader('X-PDF-Source', 'disk-cache')
-              return res.status(200).send(buf)
-            }
-          }
-        } catch (cacheErr) {
-          console.warn(`[GET_PDF_CACHE_READ_ERR] ${orderId}: ${cacheErr.message}`)
-        }
-      }
-
-      // SLOW PATH 2: Query MongoDB Atlas with targeted projection
+      // Authoritative existence verification:
+      // An order must exist in MongoDB Atlas to be retrieved.
+      // A local disk cache alone must NEVER qualify or serve nonexistent/unauthorized orders.
       try {
         const { db } = await connectToDatabase()
         const order = await db.collection('orders').findOne(
@@ -766,10 +755,35 @@ export default async function handler(req, res) {
           { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1, hasGridFsPdf: 1 } }
         )
         if (!order) {
-          return res.status(404).json({ success: false, error: 'Order not found' })
+          // If order does not exist in authoritative MongoDB, purge any stale disk cache file
+          if (fs.existsSync(cachePath)) {
+            try { fs.unlinkSync(cachePath) } catch {}
+          }
+          return res.status(404).json({ success: false, error: 'Order not found in database', hasPdf: false })
         }
 
         const safeFileName = (order.fileName || `${orderId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_')
+
+        // FAST PATH 1: Serve directly from local disk cache (< 10ms response) if cached
+        if (fs.existsSync(cachePath)) {
+          try {
+            const stat = fs.statSync(cachePath)
+            if (stat.size > 100) {
+              const buf = fs.readFileSync(cachePath)
+              if (buf.subarray(0, 4).toString('ascii') === '%PDF') {
+                console.log(`[GET_PDF_CACHE_HIT] Serving ${orderId}.pdf from disk cache (${buf.length} bytes in ${Date.now() - tStart}ms)`)
+                res.setHeader('Content-Type', 'application/pdf')
+                res.setHeader('Content-Length', buf.length)
+                res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
+                res.setHeader('Access-Control-Allow-Origin', '*')
+                res.setHeader('X-PDF-Source', 'disk-cache')
+                return res.status(200).send(buf)
+              }
+            }
+          } catch (cacheErr) {
+            console.warn(`[GET_PDF_CACHE_READ_ERR] ${orderId}:`, cacheErr.message)
+          }
+        }
 
         // TIER 2: GridFS stream from MongoDB Atlas
         try {
