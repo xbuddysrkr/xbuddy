@@ -443,14 +443,17 @@ export default function App() {
         <nav className="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300 w-full max-w-[100vw] overflow-x-hidden">
           <div className="w-full max-w-7xl mx-auto px-2 min-[360px]:px-2.5 min-[390px]:px-3 sm:px-6 py-2 sm:py-3.5 flex items-center justify-between gap-1 sm:gap-4 overflow-x-hidden">
             <div className="flex items-center gap-1.5 min-[360px]:gap-2 sm:gap-3 shrink-0">
-              <button
+              <motion.button
                 type="button"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.92 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 18 }}
                 onClick={openDrawer}
-                className="w-7 h-7 min-[360px]:w-8 min-[360px]:h-8 sm:w-auto sm:h-auto p-1 min-[360px]:p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-xs min-[360px]:text-sm sm:text-base transition-all border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
+                className="w-7 h-7 min-[360px]:w-8 min-[360px]:h-8 sm:w-auto sm:h-auto p-1 min-[360px]:p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-xs min-[360px]:text-sm sm:text-base transition-colors border border-orange-200 shadow-xs flex items-center justify-center shrink-0 cursor-pointer"
                 aria-label="Open Navigation Menu"
               >
-                <Menu className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
+                <Menu className="w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-200" />
+              </motion.button>
               <button
                 onClick={handleReset}
                 className="flex items-center group text-left cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] shrink-0"
