@@ -7,4 +7,4 @@
  * - true:  Fully unlocked with two-way live preview, inline canvas editing,
  *          and direct PDF generation/printing.
  */
-export const ACADEMIC_TOOLKIT_ENABLED = false
+export const ACADEMIC_TOOLKIT_ENABLED = true

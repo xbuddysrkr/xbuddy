@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename)
 console.log('🧪 Starting Academic Toolkit Lock & Coming Soon Test Suite...\n')
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 1: Central Feature Flag is Defined & false by Default
+// Test 1: Central Feature Flag is Defined & Active
 // ─────────────────────────────────────────────────────────────────────────────
 {
   assert.equal(
@@ -28,15 +28,15 @@ console.log('🧪 Starting Academic Toolkit Lock & Coming Soon Test Suite...\n')
   )
   assert.equal(
     ACADEMIC_TOOLKIT_ENABLED,
-    false,
-    'ACADEMIC_TOOLKIT_ENABLED should be false in locked state'
+    true,
+    'ACADEMIC_TOOLKIT_ENABLED is active (unlocked)'
   )
   assert.equal(
     RE_EXPORTED_FLAG,
-    false,
-    'letterTemplates.js should re-export ACADEMIC_TOOLKIT_ENABLED as false'
+    true,
+    'letterTemplates.js should re-export ACADEMIC_TOOLKIT_ENABLED as true'
   )
-  console.log('✅ Test 1 Passed: Central feature flag ACADEMIC_TOOLKIT_ENABLED is false by default')
+  console.log('✅ Test 1 Passed: Central feature flag ACADEMIC_TOOLKIT_ENABLED is active and true')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,14 +68,14 @@ console.log('🧪 Starting Academic Toolkit Lock & Coming Soon Test Suite...\n')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 3: Document Generation & Downloads are Blocked While Locked
+// Test 3: Document Generation & Downloads are Blocked When Locked
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  // When locked and no bypass flag, calling generateDocument must throw
+  // When locked, calling generateDocument must throw
   DOC_TYPES.forEach(doc => {
     assert.throws(
       () => {
-        generateDocument({ type: doc.id, name: 'Test Student' })
+        generateDocument({ type: doc.id, name: 'Test Student' }, { simulateLock: true })
       },
       (err) => {
         assert.ok(
@@ -87,7 +87,7 @@ console.log('🧪 Starting Academic Toolkit Lock & Coming Soon Test Suite...\n')
       `generateDocument(${doc.id}) should throw when locked`
     )
   })
-  console.log('✅ Test 3 Passed: Document generation and export actions are blocked while locked')
+  console.log('✅ Test 3 Passed: Document generation and export actions are blocked when locked')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ console.log('🧪 Starting Academic Toolkit Lock & Coming Soon Test Suite...\n')
 // Test 6: Switching Flag to true Restores Full Functionality
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  // Test that generateDocument works completely when bypassLock is true (simulating flag = true)
+  // Test that generateDocument works completely without bypassLock when flag is true
   DOC_TYPES.forEach(doc => {
     const html = generateDocument({
       type: doc.id,
@@ -175,7 +175,7 @@ console.log('🧪 Starting Academic Toolkit Lock & Coming Soon Test Suite...\n')
       days: '3',
       weeks: '4',
       extra: 'Special permission',
-    }, { bypassLock: true })
+    })
 
     assert.ok(typeof html === 'string', `Generated output for ${doc.id} must be a string`)
     assert.ok(html.length > 100, `Generated HTML for ${doc.id} should have substantial content`)

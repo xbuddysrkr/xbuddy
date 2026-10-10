@@ -15,8 +15,8 @@ export const DOC_TYPES = [
 
 const today = () => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
 
-export function generateDocument({ type, name, receiver, reason, days, weeks, extra, department, rollNo, year, college }, { bypassLock = false } = {}) {
-  if (!ACADEMIC_TOOLKIT_ENABLED && !bypassLock) {
+export function generateDocument({ type, name, receiver, reason, days, weeks, extra, department, rollNo, year, college }, { bypassLock = false, simulateLock = false } = {}) {
+  if ((!ACADEMIC_TOOLKIT_ENABLED || simulateLock) && !bypassLock) {
     throw new Error('Academic Toolkit is currently locked (Coming Soon).')
   }
   const date  = today()
