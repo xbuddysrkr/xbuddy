@@ -22,12 +22,30 @@ export function isValidAdUrl(url) {
   )
 }
 
+export const NEXTGEN_FALLBACK_POSTER_URL = '/assets/campus-ads/nextgen-labs-poster.png'
+
+export const NEXTGEN_FALLBACK_AD = {
+  adId: 'FALLBACK_NEXTGEN_LABS',
+  clubName: 'NextGen Labs',
+  title: 'NextGen Labs',
+  description: 'Where Every Idea Begins — Innovate, build, and lead with NextGen Labs.',
+  mediaType: 'image',
+  mediaUrl: NEXTGEN_FALLBACK_POSTER_URL,
+  clickUrl: 'https://srkrec.edu.in',
+  buttonText: 'Learn More',
+  badgeText: 'CAMPUS PROMOTION',
+  placement: 'order-status',
+  status: 'approved',
+  priority: 999,
+  isFallback: true,
+}
+
 /**
  * Resolves a displayable media URL. If mediaUrl is missing but mediaFileId exists,
  * builds a direct Google Drive view URL.
  */
 export function resolveMediaUrl(ad) {
-  if (!ad) return '/assets/campus-ads/hackathon-2026.jpg'
+  if (!ad) return NEXTGEN_FALLBACK_POSTER_URL
   
   if (ad.mediaUrl && typeof ad.mediaUrl === 'string') {
     const trimmed = ad.mediaUrl.trim()
@@ -53,7 +71,7 @@ export function resolveMediaUrl(ad) {
     }
   }
 
-  return '/assets/campus-ads/hackathon-2026.jpg'
+  return NEXTGEN_FALLBACK_POSTER_URL
 }
 
 // Default approved campus ads catalog (guarantees zero-blank UI even if GAS is offline)

@@ -6,35 +6,32 @@ import {
   isValidAdUrl,
   recordAdImpression,
   recordAdClick,
+  NEXTGEN_FALLBACK_AD,
+  NEXTGEN_FALLBACK_POSTER_URL,
 } from '../utils/campusAds'
 import { fetchCampusAds } from '../utils/api'
+
+// Session cache so component remounts during active session do not flash fallback if a real ad is already active
+let cachedLiveAd = null
 
 /**
  * CampusPromotionAd
  * 
  * Elegant, native campus promotion card rendered on the final order waiting / status screen.
  * Displays approved student club promotions, hackathons, and campus updates.
- * 
- * Features:
- * - Fetches approved active promotions from Google Apps Script / Google Sheets backend
- * - Strictly validates approval status (status === "approved") and active date range
- * - Respects priority ordering (priority 1 appears before priority 2)
- * - Supports responsive Image (JPG, PNG, WEBP) and Video (MP4, WebM) media
- * - Autoplays video muted, loops continuously, plays inline on mobile with no native controls
- * - Provides a clean custom Mute / Unmute toggle button
- * - Isolated from order status polling & payment flow (errors will NEVER break printing)
- * - Safe external link navigation (target="_blank" rel="noopener noreferrer")
- * - Completely hides (returns null) when no approved active advertisement exists
+ * Features immediate NextGen Labs poster fallback while async API fetch is in-flight.
  */
 export default function CampusPromotionAd({ placement = 'order-status', customAd = null }) {
   const [ad, setAd] = useState(() => {
     if (customAd) return customAd
-    // Initial sync load from verified catalog
-    return getActiveCampusAd(placement)
+    if (cachedLiveAd) return cachedLiveAd
+    // Immediately show NextGen Labs poster at t=0 while API request is pending or when no ad exists
+    return NEXTGEN_FALLBACK_AD
   })
 
   const videoRef = useRef(null)
   const [isMuted, setIsMuted] = useState(true)
+  const requestIdRef = useRef(0)
 
   // Synchronize when customAd changes (live preview form updates)
   useEffect(() => {
@@ -46,23 +43,32 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
   // Fetch live ads from Google Apps Script / Google Sheets backend
   useEffect(() => {
     let isMounted = true
+    const currentReqId = ++requestIdRef.current
 
     async function loadLiveAds() {
       if (customAd) return
       try {
         const liveAds = await fetchCampusAds(placement)
-        if (!isMounted) return
+        if (!isMounted || currentReqId !== requestIdRef.current) return
 
         if (Array.isArray(liveAds) && liveAds.length > 0) {
           const topActiveAd = getActiveCampusAd(placement, liveAds)
           if (topActiveAd) {
+            cachedLiveAd = topActiveAd
             setAd(topActiveAd)
+            return
           }
         }
+
+        // If API returns no active ads or empty list, retain NextGen Labs poster fallback
+        setAd((prev) => (prev?.isFallback ? prev : NEXTGEN_FALLBACK_AD))
       } catch (err) {
-        // Non-blocking: retain existing verified ad or fall back cleanly
         if (import.meta.env.DEV) {
           console.warn('[Campus Ads] Backend fetch notice:', err?.message || err)
+        }
+        // If API fails or times out, ensure NextGen Labs poster remains visible
+        if (isMounted && currentReqId === requestIdRef.current) {
+          setAd((prev) => (prev && !prev.isFallback ? prev : NEXTGEN_FALLBACK_AD))
         }
       }
     }
@@ -76,12 +82,12 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
 
   const activeAd = customAd || ad
 
-  // Record impression once when ad is rendered
+  // Record impression once when real ad is rendered (skip fallback)
   useEffect(() => {
-    if (!customAd && activeAd?.adId) {
+    if (!customAd && activeAd?.adId && !activeAd?.isFallback) {
       recordAdImpression(activeAd.adId, placement)
     }
-  }, [customAd, activeAd?.adId, placement])
+  }, [customAd, activeAd?.adId, placement, activeAd?.isFallback])
 
   const resolvedMedia = resolveMediaUrl(activeAd)
   const hasValidLink = isValidAdUrl(activeAd?.clickUrl)
@@ -143,12 +149,20 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
   // If no active approved ad is available, render nothing (no empty card or broken layout)
   if (!activeAd) return null
 
+  const isFallback = Boolean(
+    activeAd?.isFallback ||
+    activeAd?.adId === 'FALLBACK_NEXTGEN_LABS' ||
+    resolvedMedia?.includes('nextgen-labs-poster')
+  )
+
   const handleActionClick = (e) => {
     if (!hasValidLink) {
       e.preventDefault()
       return
     }
-    recordAdClick(ad.adId, placement)
+    if (!isFallback && activeAd?.adId) {
+      recordAdClick(activeAd.adId, placement)
+    }
   }
 
   return (
@@ -177,7 +191,14 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
 
       {/* Media: Image or Video */}
       {resolvedMedia && (
-        <div className="mb-3.5 rounded-2xl overflow-hidden bg-slate-900/5 border border-orange-100/80 flex items-center justify-center relative">
+        <div
+          data-testid="campus-promotion-media-container"
+          className={`mb-3.5 rounded-2xl overflow-hidden border flex items-center justify-center relative ${
+            isFallback
+              ? 'bg-white border-orange-100/90 shadow-2xs p-3 sm:p-4'
+              : 'bg-slate-900/5 border-orange-100/80'
+          }`}
+        >
           {activeAd.mediaType === 'video' ? (
             <>
               <video
@@ -227,12 +248,20 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
           ) : (
             <img
               src={resolvedMedia}
-              alt={activeAd.title || 'Campus Promotion'}
+              alt={activeAd.title || (isFallback ? 'NextGen Labs' : 'Campus Promotion')}
+              data-testid={isFallback ? 'campus-promotion-fallback-poster' : 'campus-promotion-ad-image'}
               loading="lazy"
-              className="w-full max-h-52 sm:max-h-60 object-cover sm:object-contain rounded-2xl transition-transform hover:scale-[1.01] duration-300"
+              className={
+                isFallback
+                  ? 'w-full h-auto max-h-[300px] sm:max-h-[340px] object-contain rounded-xl mx-auto select-none transition-transform hover:scale-[1.01] duration-300'
+                  : 'w-full max-h-52 sm:max-h-60 object-cover sm:object-contain rounded-2xl transition-transform hover:scale-[1.01] duration-300'
+              }
               onError={(e) => {
-                // If media fails to load, gracefully hide the media container
-                e.currentTarget.style.display = 'none'
+                // If media fails to load, gracefully fallback to NextGen Labs poster
+                if (e.currentTarget.src !== NEXTGEN_FALLBACK_POSTER_URL) {
+                  e.currentTarget.src = NEXTGEN_FALLBACK_POSTER_URL
+                  e.currentTarget.className = 'w-full h-auto max-h-[300px] sm:max-h-[340px] object-contain rounded-xl mx-auto'
+                }
               }}
             />
           )}
