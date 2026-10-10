@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { CircleDot, Palette, FileText, Copy, Check, Settings, ChevronDown, ArrowUpDown, ArrowLeftRight } from 'lucide-react'
 import FileTypeIcon from './FileTypeIcon'
 import { parsePageRange } from '../utils/pageRangeParser'
-import { calcPriceBreakdown } from '../utils/pricing'
 
 function OptionButton({ active, onClick, children }) {
   return (
@@ -44,22 +43,10 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
   }
 
   // Check if custom page range is valid
-  const customParse = parsePageRange(customPages, fileInfo.totalPages)
+  const customParse = parsePageRange(customPages, fileInfo?.totalPages || 1)
 
-  // Has non-default advanced options selected
-  const hasCustomAdvanced = pageSize !== 'A4' || orientation !== 'portrait' || margins !== 'normal' || (pageRange === 'custom' && customPages.trim().length > 0)
-
-  // Calculate live breakdown for custom range preview
-  const customBreakdown = customParse.valid && customPages.trim().length > 0
-    ? calcPriceBreakdown({
-        totalPages: fileInfo.totalPages,
-        colorMode,
-        isDoubleSide: sideMode === 'double',
-        copies,
-        pageRange: 'custom',
-        selectedPages: customParse.selectedPages,
-      })
-    : null
+  // Has non-default advanced options selected inside More Options
+  const hasCustomAdvanced = pageSize !== 'A4' || orientation !== 'portrait' || margins !== 'normal' || (isImage && imageFit !== 'fit')
 
   return (
     <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl mx-auto px-4 py-4">
@@ -148,6 +135,84 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
           </div>
         </SettingCard>
 
+        {/* Page Range (Optional) */}
+        {(Number(fileInfo?.totalPages) || 1) >= 1 && (
+          <SettingCard title="Page Range (Optional)">
+            <div className="flex gap-2">
+              <OptionButton
+                active={pageRange !== 'custom'}
+                onClick={() => {
+                  onChange(prev => ({
+                    ...prev,
+                    pageRange: 'all',
+                    pageRangeMode: 'all',
+                  }))
+                }}
+              >
+                All Pages
+              </OptionButton>
+              <OptionButton
+                active={pageRange === 'custom'}
+                onClick={() => {
+                  onChange(prev => ({
+                    ...prev,
+                    pageRange: 'custom',
+                    pageRangeMode: 'custom',
+                  }))
+                }}
+              >
+                Custom Range
+              </OptionButton>
+            </div>
+
+            <AnimatePresence>
+              {pageRange === 'custom' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeInOut' }}
+                  className="space-y-2 pt-3 overflow-hidden"
+                >
+                  <input
+                    type="text"
+                    value={customPages}
+                    onChange={e => set('customPages', e.target.value)}
+                    placeholder="e.g. 1-3, 5, 8-10"
+                    className={`w-full bg-[#FFF8F2] border rounded-xl px-4 py-2.5 text-sm text-[#222222] focus:outline-none transition-colors ${
+                      customPages.trim() && !customParse.valid
+                        ? 'border-rose-400 focus:border-rose-500'
+                        : 'border-orange-200 focus:border-[#F78C25]'
+                    }`}
+                  />
+                  {customPages.trim().length === 0 && (
+                    <p className="text-amber-600 text-xs font-medium">
+                      Enter page numbers or ranges (e.g. 1-3, 5, 8-10). Total pages: {fileInfo?.totalPages || 1}.
+                    </p>
+                  )}
+                  {customPages.trim().length > 0 && !customParse.valid && (
+                    <p className="text-rose-500 text-xs font-medium">{customParse.error}</p>
+                  )}
+                  {customPages.trim().length > 0 && customParse.valid && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
+                      <span className="font-semibold flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Selected: <strong>{customParse.selectedPages.length}</strong> {customParse.selectedPages.length === 1 ? 'page' : 'pages'} (of {fileInfo?.totalPages || 1})</span>
+                      </span>
+                      <span className="font-mono text-emerald-700 text-[11px] font-bold">
+                        [{customParse.pageRangeString}]
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-gray-400 text-xs">
+                    Enter page numbers or ranges separated by commas (e.g. 1-3, 5, 8-10)
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </SettingCard>
+        )}
+
         {/* Toggle Button for More Options */}
         <button
           type="button"
@@ -224,66 +289,6 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                     <OptionButton active={imageFit === 'fill'}    onClick={() => set('imageFit', 'fill')}>Crop to Fill</OptionButton>
                     <OptionButton active={imageFit === 'stretch'} onClick={() => set('imageFit', 'stretch')}>Stretch</OptionButton>
                   </div>
-                </SettingCard>
-              )}
-
-              {/* Page Range */}
-              {(Number(fileInfo?.totalPages) || 1) >= 1 && (
-                <SettingCard title="Page Range">
-                  <div className="flex gap-2 mb-3">
-                    <OptionButton active={pageRange === 'all'}    onClick={() => set('pageRange', 'all')}>All Pages</OptionButton>
-                    <OptionButton active={pageRange === 'custom'} onClick={() => set('pageRange', 'custom')}>Custom Range</OptionButton>
-                  </div>
-                  {pageRange === 'custom' && (
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={customPages}
-                        onChange={e => set('customPages', e.target.value)}
-                        placeholder="e.g. 1-3, 5, 7-9"
-                        className={`w-full bg-[#FFF8F2] border rounded-xl px-4 py-2.5 text-sm text-[#222222] focus:outline-none transition-colors ${
-                          customPages.trim() && !customParse.valid
-                            ? 'border-rose-400 focus:border-rose-500'
-                            : 'border-orange-200 focus:border-[#F78C25]'
-                        }`}
-                      />
-                      {customPages.trim().length === 0 && (
-                        <p className="text-amber-600 text-xs font-medium">Enter a valid page number or range.</p>
-                      )}
-                      {customPages.trim().length > 0 && !customParse.valid && (
-                        <p className="text-rose-500 text-xs font-medium">{customParse.error}</p>
-                      )}
-                      {customPages.trim().length > 0 && customParse.valid && customBreakdown && (
-                        <div className="p-3.5 bg-orange-50/80 border border-orange-200 rounded-xl text-xs space-y-1.5 text-gray-700 mt-2">
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Selected Pages:</span>
-                            <span className="font-semibold text-gray-800">{customParse.selectedPages.length}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Copies:</span>
-                            <span className="font-semibold text-gray-800">× {copies}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Printable Pages:</span>
-                            <span className="font-semibold text-gray-800">{customParse.selectedPages.length} × {copies} = {customParse.selectedPages.length * copies}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Printing Cost:</span>
-                            <span className="font-semibold text-gray-800">₹{customBreakdown.printingCost}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Digital Processing Fee:</span>
-                            <span className="font-semibold text-gray-800">+₹{customBreakdown.digitalProcessingFee}</span>
-                          </div>
-                          <div className="flex justify-between border-t border-orange-200 pt-2 mt-1">
-                            <span className="font-medium text-gray-800 font-bold">Total:</span>
-                            <span className="font-bold text-[#F78C25] text-sm">₹{customBreakdown.totalAmount}</span>
-                          </div>
-                        </div>
-                      )}
-                      <p className="text-gray-400 text-xs mt-1">Enter page numbers or ranges separated by commas (e.g. 1-5, 8, 10-12)</p>
-                    </div>
-                  )}
                 </SettingCard>
               )}
             </motion.div>

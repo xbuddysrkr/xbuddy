@@ -740,7 +740,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
     orientation:       orderData.orientation       || 'portrait',
     pageRange:         orderData.pageRange         || 'all',
     pageRangeMode:     orderData.pageRangeMode     || (orderData.pageRange === 'all' ? 'all' : 'custom'),
-    customPages:       orderData.customPages       || '',
+    customPages:       (orderData.pageRange === 'all' || orderData.pageRangeMode === 'all') ? '' : (orderData.customPages || ''),
     printableCount:    orderData.printableCount    || (orderData.selectedPages ? orderData.selectedPages.length : 1),
     selectedPages:     orderData.selectedPages     || [],
     selectedPageCount: orderData.selectedPageCount || (orderData.selectedPages ? orderData.selectedPages.length : 1),

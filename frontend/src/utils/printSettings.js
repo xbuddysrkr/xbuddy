@@ -92,7 +92,7 @@ export function createNormalizedPrintSettings(raw = {}, totalPages = 1) {
     printType: colorMode === 'color' ? 'Color' : 'B&W', // legacy compatibility
     pageRangeMode,               // 'all' | 'custom'
     pageRange,                   // 'all' or e.g. "1-3,5"
-    customPages: customPagesInput,
+    customPages: pageRangeMode === 'custom' ? customPagesInput : '',
     selectedPages,               // [1, 2, 3]
     selectedPageCount,           // 3
     copies,                      // integer >= 1

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { parsePageRange, formatPagesToRange, resolveAllPages } from '../src/utils/pageRangeParser.js'
 import { calcPriceBreakdown } from '../src/utils/pricing.js'
+import { createNormalizedPrintSettings } from '../src/utils/printSettings.js'
 
 console.log('🧪 Starting Page Range & Custom Page Range Selection Test Suite...\n')
 
@@ -154,4 +155,73 @@ console.log('🧪 Starting Page Range & Custom Page Range Selection Test Suite..
   console.log('✅ Test 13 Passed: Pricing for All 9 pages => printingCost: ₹18, fee: ₹2, total: ₹20')
 }
 
-console.log('\n🎉 ALL 13 TEST CASES PASSED PERFECTLY!\n')
+// Test 14: Complex range 1-3, 5, 8-10 on 10-page document
+{
+  const res = parsePageRange('1-3, 5, 8-10', 10)
+  assert.equal(res.valid, true)
+  assert.deepEqual(res.selectedPages, [1, 2, 3, 5, 8, 9, 10])
+  assert.equal(res.selectedPageCount, 7)
+  assert.equal(res.pageRangeString, '1-3,5,8-10')
+  console.log('✅ Test 14 Passed: 10-page PDF + "1-3, 5, 8-10" => [1,2,3,5,8,9,10] (count: 7)')
+}
+
+// Test 15: createNormalizedPrintSettings default All Pages contract
+{
+  const normalized = createNormalizedPrintSettings({
+    pageRange: 'all',
+    pageRangeMode: 'all',
+    customPages: '',
+  }, 10)
+  assert.equal(normalized.pageRange, 'all')
+  assert.equal(normalized.pageRangeMode, 'all')
+  assert.equal(normalized.customPages, '')
+  assert.equal(normalized.selectedPages.length, 10)
+  assert.deepEqual(normalized.selectedPages, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  console.log('✅ Test 15 Passed: Default All Pages normalizes to full page set with empty customPages')
+}
+
+// Test 16: createNormalizedPrintSettings with valid Custom Range
+{
+  const normalized = createNormalizedPrintSettings({
+    pageRange: 'custom',
+    pageRangeMode: 'custom',
+    customPages: '1-3, 5, 8-10',
+  }, 10)
+  assert.equal(normalized.pageRange, '1-3,5,8-10')
+  assert.equal(normalized.pageRangeMode, 'custom')
+  assert.equal(normalized.customPages, '1-3, 5, 8-10')
+  assert.equal(normalized.selectedPages.length, 7)
+  assert.deepEqual(normalized.selectedPages, [1, 2, 3, 5, 8, 9, 10])
+  console.log('✅ Test 16 Passed: Custom Range correctly normalizes and preserves page range string')
+}
+
+// Test 17: Switching back to All Pages strips stale customPages so print job prints all pages
+{
+  const normalized = createNormalizedPrintSettings({
+    pageRange: 'all',
+    pageRangeMode: 'all',
+    customPages: '1-3, 5, 8-10', // stale customPages from previous custom selection
+  }, 10)
+  assert.equal(normalized.pageRange, 'all')
+  assert.equal(normalized.pageRangeMode, 'all')
+  assert.equal(normalized.customPages, '') // MUST be empty string
+  assert.equal(normalized.selectedPages.length, 10)
+  assert.deepEqual(normalized.selectedPages, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  console.log('✅ Test 17 Passed: Switching back to All Pages completely strips stale customPages')
+}
+
+// Test 18: Invalid ranges correctly reject and report error
+{
+  const res = parsePageRange('1-15', 10)
+  assert.equal(res.valid, false)
+  assert.ok(res.error.includes('exceeds'))
+  assert.deepEqual(res.selectedPages, [])
+
+  const resZero = parsePageRange('0, 2', 10)
+  assert.equal(resZero.valid, false)
+  assert.deepEqual(resZero.selectedPages, [])
+  console.log('✅ Test 18 Passed: Out of bounds and zero-page ranges safely rejected')
+}
+
+console.log('\n🎉 ALL 18 TEST CASES PASSED PERFECTLY!\n')
+
