@@ -277,6 +277,15 @@ export default async function handler(req, res) {
           })
         }
         effectivePayStatus = String(activeReprintAttempt.paymentStatus || 'pending').trim().toLowerCase()
+        if (!['paid', 'completed'].includes(effectivePayStatus)) {
+          return res.status(402).json({
+            success: false,
+            error: `Payment authorization required: reprint ${cleanId} payment status is "${effectivePayStatus}". Shopkeeper verification required before release.`,
+            paymentStatus: effectivePayStatus,
+            paymentBlocked: true,
+            orderId: cleanId,
+          })
+        }
       }
 
       // Reject failed, rejected, or cancelled payments unconditionally
@@ -315,9 +324,7 @@ export default async function handler(req, res) {
                 $elemMatch: {
                   attemptId: existing.activeReprintAttemptId,
                   printAuthorized: true,
-                  ...(requirePaymentVerification
-                    ? { paymentStatus: { $in: ['paid', 'completed'] } }
-                    : { paymentStatus: { $nin: ['failed', 'rejected', 'cancelled'] } }),
+                  paymentStatus: { $in: ['paid', 'completed'] },
                 },
               },
             }

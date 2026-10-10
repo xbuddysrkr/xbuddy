@@ -28,6 +28,7 @@ import {
   getOrderStatus,
   updateOrderStatus,
   updatePaymentStatus,
+  verifyReprintPayment,
   boothLogin,
   validateAndRelease,
   fetchPendingOrders,
@@ -393,6 +394,43 @@ function ReleasePrintStation({ onLock }) {
       })
     } finally {
       setVerifyingPayment(false)
+    }
+  }
+
+  // Shopkeeper Reprint Payment Review & Verification Action
+  const [verifyingReprintAttemptId, setVerifyingReprintAttemptId] = useState(null)
+
+  async function handleVerifyReprintPayment(orderIdToVerify, attemptId, status) {
+    const target = selectedOrder
+    const id = (orderIdToVerify || target?.orderId || target?.id || '').trim().toUpperCase()
+    if (!id || !attemptId || !status) return
+
+    setVerifyingReprintAttemptId(attemptId)
+    try {
+      const res = await verifyReprintPayment({ orderId: id, attemptId, paymentStatus: status })
+      if (res && res.success) {
+        setResult({
+          success: true,
+          message: status === 'paid'
+            ? `Reprint payment for attempt ${attemptId} verified! Document queued for printing.`
+            : `Reprint payment for attempt ${attemptId} marked as ${status}.`,
+        })
+        // Refresh canonical order state and pending queue
+        await handleLookupOrder(id)
+        refreshQueue()
+      } else {
+        setResult({
+          success: false,
+          error: res?.error || `Failed to update reprint payment to ${status}`,
+        })
+      }
+    } catch (err) {
+      setResult({
+        success: false,
+        error: err.message || 'Reprint payment update failed',
+      })
+    } finally {
+      setVerifyingReprintAttemptId(null)
     }
   }
 
@@ -917,6 +955,128 @@ function ReleasePrintStation({ onLock }) {
                     </div>
                   )}
 
+                  {/* Reprint Payment Requests Review Card */}
+                  {Array.isArray(selectedOrder.reprintAttempts) && selectedOrder.reprintAttempts.length > 0 && (
+                    <div className="bg-gradient-to-br from-amber-50/80 to-orange-50/50 p-4 rounded-2xl border-2 border-amber-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <RotateCcw className="w-4 h-4 text-amber-700" />
+                          <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                            Reprint Payment Requests ({selectedOrder.reprintAttempts.length})
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                          Manual UPI Verification
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        {selectedOrder.reprintAttempts.map((att, idx) => {
+                          const isPending = att.paymentStatus === 'pending'
+                          const isPaid = att.paymentStatus === 'paid'
+                          const isVerifying = verifyingReprintAttemptId === att.attemptId
+
+                          return (
+                            <div
+                              key={att.attemptId || idx}
+                              className={`p-3 rounded-xl border text-xs transition-all ${
+                                isPending
+                                  ? 'bg-white border-amber-300 shadow-xs'
+                                  : isPaid
+                                  ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                                  : 'bg-slate-50 border-slate-200 text-slate-500'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-bold text-slate-800 text-sm">
+                                      ₹{att.amount}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500">
+                                      ({att.copies || 1} {att.copies > 1 ? 'copies' : 'copy'})
+                                    </span>
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                        isPending
+                                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                          : isPaid
+                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                          : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                      }`}
+                                    >
+                                      {isPending
+                                        ? 'Pending Verification'
+                                        : isPaid
+                                        ? 'Verified & Paid'
+                                        : 'Rejected'}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-[11px] text-slate-600 space-y-0.5">
+                                    <p>
+                                      <strong>Submitted UTR:</strong>{' '}
+                                      {att.transactionId ? (
+                                        <span className="font-mono font-bold text-slate-900 bg-amber-100/70 px-1.5 py-0.5 rounded border border-amber-200">
+                                          {att.transactionId}
+                                        </span>
+                                      ) : (
+                                        <span className="italic text-slate-400">Awaiting Student UTR</span>
+                                      )}
+                                    </p>
+                                    {att.phone && (
+                                      <p>
+                                        <strong>Phone:</strong> <span className="font-mono">{att.phone}</span>
+                                      </p>
+                                    )}
+                                    {att.submittedAt && (
+                                      <p className="text-[10px] text-slate-400">
+                                        Submitted:{' '}
+                                        {new Date(att.submittedAt).toLocaleTimeString([], {
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                          second: '2-digit',
+                                        })}
+                                      </p>
+                                    )}
+                                    {isPaid && (
+                                      <p className="text-[10px] text-emerald-700 font-semibold">
+                                        ✓ Print Authorized ({att.printOutcome || 'dispatched'})
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {isPending && att.transactionId && (
+                                  <div className="flex flex-col gap-1.5 shrink-0">
+                                    <button
+                                      onClick={() => handleVerifyReprintPayment(selectedOrder.orderId, att.attemptId, 'paid')}
+                                      disabled={isVerifying}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-[11px] rounded-lg shadow-xs transition-all flex items-center gap-1 justify-center disabled:opacity-50"
+                                      title="Verify received UPI payment and authorize 1 reprint"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>{isVerifying ? 'Verifying...' : 'Verify & Print'}</span>
+                                    </button>
+                                    <button
+                                      onClick={() => handleVerifyReprintPayment(selectedOrder.orderId, att.attemptId, 'rejected')}
+                                      disabled={isVerifying}
+                                      className="px-2 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-300 active:scale-95 font-semibold text-[10px] rounded-lg transition-all flex items-center gap-1 justify-center disabled:opacity-50"
+                                      title="Reject payment reference"
+                                    >
+                                      <X className="w-3 h-3" />
+                                      <span>Reject</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Active Print Session Card OR Primary Action Buttons */}
                   {activePrintSession && (activePrintSession.orderId === (selectedOrder.orderId || selectedOrder.id)) ? (
                     <motion.div
@@ -1176,13 +1336,23 @@ function ReleasePrintStation({ onLock }) {
                             <span className="font-mono font-black text-lg text-slate-900">
                               {id}
                             </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              activePrintSession?.orderId === id
-                                ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}>
-                              {activePrintSession?.orderId === id ? '🖨️ Printing...' : (ord.printStatus || 'Waiting')}
-                            </span>
+                            {Array.isArray(ord.reprintAttempts) && ord.reprintAttempts.some(a => a.paymentStatus === 'pending') ? (
+                              <span className="bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded-full text-[10px] animate-pulse">
+                                🔄 Reprint Verify
+                              </span>
+                            ) : ord.reprintPending ? (
+                              <span className="bg-blue-100 text-blue-900 border border-blue-300 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                                🖨️ Reprint Queued
+                              </span>
+                            ) : (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                activePrintSession?.orderId === id
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                                {activePrintSession?.orderId === id ? '🖨️ Printing...' : (ord.printStatus || 'Waiting')}
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-slate-600 font-medium truncate max-w-xs mt-1">
                             {ord.fileName || 'Document.pdf'}

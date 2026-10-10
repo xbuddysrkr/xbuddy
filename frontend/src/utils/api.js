@@ -993,7 +993,9 @@ export async function fetchPendingOrders() {
           if (data?.success && Array.isArray(data.orders)) {
             const pending = data.orders.filter(o => {
               const s = String(o.printStatus || '').toLowerCase()
-              return s === 'waiting_for_shopkeeper' || s === 'queued' || s === 'pending' || s === 'waiting' || s === 'failed'
+              const hasPendingReprint = Array.isArray(o.reprintAttempts) && o.reprintAttempts.some(a => a.paymentStatus === 'pending')
+              const isReprintPending = Boolean(o.reprintPending)
+              return s === 'waiting_for_shopkeeper' || s === 'queued' || s === 'pending' || s === 'waiting' || s === 'failed' || hasPendingReprint || isReprintPending
             }).map(o => ({
               ...o,
               verifiedInMongo: true,

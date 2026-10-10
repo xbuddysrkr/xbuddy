@@ -716,8 +716,11 @@ async function runRegressionSuite() {
     assert.strictEqual(docAfterOrigReuse.printedAt, originalPrintTime, 'Original printedAt must NEVER change')
     assert.strictEqual(docAfterOrigReuse.pdfExpiresAt, originalDeadline, 'Original pdfExpiresAt must NEVER reset')
 
-    // 13.4 Strict Payment Verification Policy Guard: Pending payment does NOT queue print
-    process.env.REQUIRE_PAYMENT_VERIFICATION = 'true'
+    // 13.4 Strict Manual Verification Invariant:
+    // Every submitted reprint payment MUST remain pending until explicit shopkeeper verification.
+    // Client-supplied paymentStatus: 'paid' must NOT bypass verification.
+    // Automated verification policy must NOT mark it paid even if REQUIRE_PAYMENT_VERIFICATION is unset.
+    delete process.env.REQUIRE_PAYMENT_VERIFICATION
     const newTx1 = 'UTR_NEW_REPRINT_222'
     const { req: req13StrictSubmit, res: res13StrictSubmit } = createMockReqRes({
       body: {
@@ -726,15 +729,18 @@ async function runRegressionSuite() {
         attemptId: attemptId1,
         transactionId: newTx1,
         phone: '9876543210',
+        paymentStatus: 'paid', // Attempt to bypass verification via client payload
       }
     })
     await ordersHandler(req13StrictSubmit, res13StrictSubmit)
     assert.strictEqual(res13StrictSubmit.statusCode, 200)
-    assert.strictEqual(res13StrictSubmit.bodyData.paymentStatus, 'pending', 'Under strict verification, payment is initially pending')
+    assert.strictEqual(res13StrictSubmit.bodyData.paymentStatus, 'pending', 'Submitted reprint payment MUST remain pending regardless of client payload or env')
+    assert.strictEqual(res13StrictSubmit.bodyData.printAuthorized, false, 'Submitted reprint payment MUST NOT authorize print')
+    assert.strictEqual(res13StrictSubmit.bodyData.reprintPending, false, 'reprintPending MUST remain false')
 
     const docAfterStrictSubmit = await ordersCol.findOne({ orderId: id13Order })
-    assert.strictEqual(docAfterStrictSubmit.printStatus, 'Printed', 'Print status must NOT change to waiting when verification is required')
-    assert.strictEqual(docAfterStrictSubmit.reprintPending, undefined, 'Reprint must NOT be queued while payment is pending')
+    assert.strictEqual(docAfterStrictSubmit.printStatus, 'Printed', 'Print status must remain Printed')
+    assert.ok(!docAfterStrictSubmit.reprintPending, 'Reprint must NOT be queued while payment is pending')
 
     // Print agent claim must be rejected when payment is pending
     const { req: req13AgentClaimPending, res: res13AgentClaimPending } = createMockReqRes({
@@ -798,6 +804,8 @@ async function runRegressionSuite() {
     })
     await ordersHandler(req13Submit2, res13Submit2)
     assert.strictEqual(res13Submit2.statusCode, 200)
+    assert.strictEqual(res13Submit2.bodyData.paymentStatus, 'pending', 'Unique submitted UTR must remain pending before explicit verification')
+    assert.strictEqual(res13Submit2.bodyData.printAuthorized, false)
 
     // Shopkeeper verifies attempt 2:
     const { req: req13Verify2, res: res13Verify2 } = createMockReqRes({

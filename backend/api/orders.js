@@ -1459,6 +1459,30 @@ export default async function handler(req, res) {
           })
         }
 
+        // Global Cross-Order Duplicate Guard: Reject UTR if already used anywhere in database
+        const globalDuplicate = await orders.findOne(
+          {
+            $or: [
+              { transactionId: { $regex: new RegExp(`^${cleanTxId}$`, 'i') }, orderId: { $ne: orderId } },
+              {
+                reprintAttempts: {
+                  $elemMatch: {
+                    transactionId: { $regex: new RegExp(`^${cleanTxId}$`, 'i') },
+                    attemptId: { $ne: attemptId },
+                  },
+                },
+              },
+            ],
+          },
+          { projection: { orderId: 1 } }
+        )
+        if (globalDuplicate) {
+          return res.status(400).json({
+            success: false,
+            error: `This transaction reference has already been used for order ${globalDuplicate.orderId}. Every reprint requires a new, unique transaction reference.`,
+          })
+        }
+
         const currentAttempt = priorAttempts.find(a => a.attemptId === attemptId)
         if (!currentAttempt) {
           return res.status(404).json({
@@ -1475,92 +1499,40 @@ export default async function handler(req, res) {
           })
         }
 
-        // 5. Payment Policy Evaluation:
-        const requirePayVerification = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
-
-        if (requirePayVerification) {
-          // Strict manual shopkeeper verification required
-          await orders.updateOne(
-            { orderId, 'reprintAttempts.attemptId': attemptId },
-            {
-              $set: {
-                'reprintAttempts.$.paymentStatus': 'pending',
-                'reprintAttempts.$.transactionId': cleanTxId,
-                'reprintAttempts.$.phone': phone,
-                'reprintAttempts.$.submittedAt': nowIso,
-                updatedAt: nowIso,
-              },
-            }
-          )
-          return res.status(200).json({
-            success: true,
-            orderId,
-            attemptId,
-            paymentStatus: 'pending',
-            message: 'Reprint payment submitted. Awaiting shopkeeper verification before print dispatch.',
-          })
-        }
-
-        // Automated Verification Policy:
-        // Atomically authorize exactly ONE print job
-        const atomicFilter = {
-          orderId,
-          printStatus: 'Printed',
-          pdfDeletedAt: { $exists: false },
-          reprintPending: { $ne: true },
-          'reprintAttempts.attemptId': attemptId,
-        }
-
-        const updateDoc = {
-          $set: {
-            printStatus: 'waiting_for_shopkeeper',
-            reprintPending: true,
-            activeReprintAttemptId: attemptId,
-            lastReprintRequestedAt: nowIso,
-            'reprintAttempts.$.paymentStatus': 'paid',
-            'reprintAttempts.$.transactionId': cleanTxId,
-            'reprintAttempts.$.phone': phone,
-            'reprintAttempts.$.submittedAt': nowIso,
-            'reprintAttempts.$.verifiedAt': nowIso,
-            'reprintAttempts.$.printAuthorized': true,
-            'reprintAttempts.$.printDispatched': true,
-            'reprintAttempts.$.printOutcome': 'dispatched',
-            updatedAt: nowIso,
-          },
-          $push: {
-            auditLog: {
-              action: 'reprint_payment_verified_and_queued',
-              attemptId,
-              transactionId: cleanTxId,
-              amount: currentAttempt.amount,
-              verifiedAt: nowIso,
+        // 5. Manual UPI Verification Requirement:
+        // Every submitted reprint payment MUST remain pending until shopkeeper explicitly verifies it.
+        // A submitted UTR alone is NOT proof that payment was received; client-supplied paymentStatus is strictly ignored.
+        await orders.updateOne(
+          { orderId, 'reprintAttempts.attemptId': attemptId },
+          {
+            $set: {
+              'reprintAttempts.$.paymentStatus': 'pending',
+              'reprintAttempts.$.transactionId': cleanTxId,
+              'reprintAttempts.$.phone': phone,
+              'reprintAttempts.$.submittedAt': nowIso,
+              updatedAt: nowIso,
             },
-          },
-        }
-
-        const updateResult = await orders.findOneAndUpdate(
-          atomicFilter,
-          updateDoc,
-          { returnDocument: 'after', projection: { pdfBase64: 0 } }
+            $push: {
+              auditLog: {
+                action: 'reprint_payment_submitted',
+                attemptId,
+                transactionId: cleanTxId,
+                amount: currentAttempt.amount,
+                submittedAt: nowIso,
+              },
+            },
+          }
         )
-
-        if (!updateResult) {
-          return res.status(409).json({
-            success: false,
-            conflict: true,
-            error: 'Reprint request conflict: order is already reprinting or no longer eligible.',
-          })
-        }
-
-        console.log(`[REPRINT_PAYMENT_VERIFIED] Order ${orderId} attempt ${attemptId} paid and queued for printing`)
 
         return res.status(200).json({
           success: true,
           orderId,
           attemptId,
-          paymentStatus: 'paid',
-          printStatus: 'waiting_for_shopkeeper',
-          message: 'Reprint payment verified. Document queued for printing.',
+          paymentStatus: 'pending',
+          printStatus: existing.printStatus || 'Printed',
+          reprintPending: false,
+          printAuthorized: false,
+          message: 'Reprint payment submitted. Awaiting shopkeeper verification before print dispatch.',
           pdfExpiresAt: effectiveExpiresAt,
           printedAt: existing.printedAt,
         })
@@ -1623,6 +1595,41 @@ export default async function handler(req, res) {
             })
           }
 
+          // Durable PDF availability guard
+          let hasDurablePdf = Boolean(existing.hasPdf !== false && !existing.pdfDeletedAt && existing.pdfStorage !== 'none')
+          if (hasDurablePdf) {
+            if (existing.hasGridFsPdf || existing.pdfStorage === 'gridfs') {
+              hasDurablePdf = await hasPdfInGridFS(db, orderId)
+            } else if (existing.pdfStorage === 'inline' || existing.driveUrl) {
+              hasDurablePdf = true
+            } else {
+              hasDurablePdf = await hasPdfInGridFS(db, orderId)
+            }
+          }
+          if (!hasDurablePdf) {
+            return res.status(410).json({
+              success: false,
+              expired: true,
+              error: 'Original PDF is no longer available in durable storage.',
+            })
+          }
+
+          // Cannot verify if student hasn't submitted a valid transaction reference
+          if (!attempt.transactionId || String(attempt.transactionId).trim().length < 6) {
+            return res.status(400).json({
+              success: false,
+              error: 'Cannot verify reprint payment: student has not submitted a valid transaction reference (UTR) for this reprint attempt.',
+            })
+          }
+
+          if (attempt.paymentStatus === 'paid' && attempt.printDispatched) {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: 'This reprint attempt has already been verified and queued for printing.',
+            })
+          }
+
           // Atomically authorize and dispatch reprint
           const updateResult = await orders.findOneAndUpdate(
             {
@@ -1649,6 +1656,8 @@ export default async function handler(req, res) {
                 auditLog: {
                   action: 'reprint_payment_shopkeeper_verified',
                   attemptId,
+                  transactionId: attempt.transactionId,
+                  amount: attempt.amount,
                   at: nowIso,
                 },
               },

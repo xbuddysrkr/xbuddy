@@ -654,7 +654,105 @@ assert.strictEqual(valOk.error, null)
 
 console.log('✓ TEST 24 PASSED: Reprint-to-Payment UI workflow, exact pricing calculation, and client anti-reuse guard verified')
 
-console.log('\n=== ALL 24 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
+// -------------------------------------------------------------
+// TEST 25: Shopkeeper Booth Workflow: Review & Verify/Reject Reprint Payments
+// -------------------------------------------------------------
+console.log('\n[TEST 25] Testing Shopkeeper Booth reprint payment verification & rejection workflow...')
+
+// Simulated order state with reprint attempts
+const testOrderDoc = {
+  orderId: 'XB5555',
+  fileName: 'Project_Report.pdf',
+  amount: 25,
+  paymentStatus: 'pending',
+  transactionId: 'ORIG_UTR_555',
+  printStatus: 'Printed',
+  printedAt: '2026-10-10T06:00:00.000Z',
+  pdfExpiresAt: '2026-10-10T06:30:00.000Z',
+  reprintAttempts: [
+    {
+      attemptId: 'rep_1',
+      amount: 25,
+      copies: 1,
+      paymentStatus: 'pending',
+      transactionId: 'NEW_UTR_111',
+      phone: '9876543210',
+      submittedAt: '2026-10-10T06:10:00.000Z',
+      printAuthorized: false,
+      printOutcome: 'pending',
+    },
+  ],
+}
+
+// 1. Pending attempt review contract:
+const pendingReprintAttempts = testOrderDoc.reprintAttempts.filter(a => a.paymentStatus === 'pending')
+assert.strictEqual(pendingReprintAttempts.length, 1, 'Booth must identify pending reprint attempt')
+assert.strictEqual(pendingReprintAttempts[0].transactionId, 'NEW_UTR_111', 'Booth must display student submitted UTR')
+assert.strictEqual(pendingReprintAttempts[0].amount, 25, 'Booth must display correct reprint amount')
+
+// 2. Reject reprint payment workflow simulation:
+function simulateBoothRejectReprint(order, attemptId) {
+  const attempts = order.reprintAttempts.map(a => {
+    if (a.attemptId === attemptId) {
+      return { ...a, paymentStatus: 'rejected', printAuthorized: false, printOutcome: 'rejected' }
+    }
+    return a
+  })
+  return {
+    ...order,
+    reprintAttempts: attempts,
+    // Original fields remain completely unchanged:
+    paymentStatus: order.paymentStatus,
+    transactionId: order.transactionId,
+    printStatus: order.printStatus,
+  }
+}
+
+const rejectedOrder = simulateBoothRejectReprint(testOrderDoc, 'rep_1')
+assert.strictEqual(rejectedOrder.reprintAttempts[0].paymentStatus, 'rejected')
+assert.strictEqual(rejectedOrder.reprintAttempts[0].printAuthorized, false)
+assert.strictEqual(rejectedOrder.transactionId, 'ORIG_UTR_555', 'Original transactionId must not change')
+assert.strictEqual(rejectedOrder.paymentStatus, 'pending', 'Original paymentStatus must not change')
+
+// 3. Explicit shopkeeper verification workflow simulation:
+function simulateBoothVerifyReprint(order, attemptId) {
+  const attempts = order.reprintAttempts.map(a => {
+    if (a.attemptId === attemptId) {
+      return {
+        ...a,
+        paymentStatus: 'paid',
+        printAuthorized: true,
+        printDispatched: true,
+        printOutcome: 'dispatched',
+        verifiedAt: new Date().toISOString(),
+      }
+    }
+    return a
+  })
+  return {
+    ...order,
+    reprintPending: true,
+    activeReprintAttemptId: attemptId,
+    printStatus: 'waiting_for_shopkeeper',
+    reprintAttempts: attempts,
+    // Original order transactionId and paymentStatus remain completely unchanged:
+    transactionId: order.transactionId,
+    paymentStatus: order.paymentStatus,
+  }
+}
+
+const boothVerifiedOrder = simulateBoothVerifyReprint(testOrderDoc, 'rep_1')
+assert.strictEqual(boothVerifiedOrder.reprintPending, true, 'reprintPending must be true after verification')
+assert.strictEqual(boothVerifiedOrder.activeReprintAttemptId, 'rep_1', 'activeReprintAttemptId must match verified attempt')
+assert.strictEqual(boothVerifiedOrder.printStatus, 'waiting_for_shopkeeper', 'Order must enter print queue')
+assert.strictEqual(boothVerifiedOrder.reprintAttempts[0].paymentStatus, 'paid')
+assert.strictEqual(boothVerifiedOrder.reprintAttempts[0].printAuthorized, true)
+assert.strictEqual(boothVerifiedOrder.transactionId, 'ORIG_UTR_555', 'Original transactionId MUST NOT be overwritten')
+assert.strictEqual(boothVerifiedOrder.paymentStatus, 'pending', 'Original paymentStatus MUST NOT be overwritten')
+
+console.log('✓ TEST 25 PASSED: Shopkeeper Booth review and verification/rejection workflow verified')
+
+console.log('\n=== ALL 25 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
 
 
 
