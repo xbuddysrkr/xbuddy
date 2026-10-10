@@ -10,6 +10,7 @@ import {
 } from './_lib/gridfs.js'
 import {
   calculateExpiryTimestamp,
+  calculateOrderPrice,
   isOrderReprintEligible,
   cleanupExpiredPdfs,
 } from './_lib/retention.js'
@@ -733,7 +734,7 @@ export default async function handler(req, res) {
           if (isExpired) {
             hasPdf = false
           }
-          const reprintCheck = isOrderReprintEligible(order)
+          const reprintCheck = isOrderReprintEligible(order, new Date().toISOString(), { allowPending: true })
           const cleanOrder = {
             ...order,
             pdfExpiresAt: derivedExpiry,
@@ -1228,6 +1229,526 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, orderId, paymentStatus, mongoUpdated, sheetWriteMode })
+    }
+
+    // ── 5.1 INITIATE REPRINT (CALCULATE PRICE, GENERATE ATTEMPT & VALIDATE) ──
+    if (action === 'initiateReprint') {
+      const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
+      if (!orderId) {
+        return res.status(400).json({ success: false, error: 'orderId is required' })
+      }
+
+      const nowIso = new Date().toISOString()
+      const nowMs = Date.now()
+
+      try {
+        const { db } = await connectToDatabase()
+        const orders = db.collection('orders')
+
+        const existing = await orders.findOne({ orderId }, { projection: { pdfBase64: 0 } })
+        if (!existing) {
+          return res.status(404).json({ success: false, error: `Order ${orderId} not found in authoritative database` })
+        }
+
+        // Student order ownership verification (if transactionId or client identifier is provided)
+        const incomingTxId = String(req.body?.transactionId || req.query?.transactionId || '').trim()
+        if (incomingTxId && existing.transactionId && incomingTxId !== String(existing.transactionId).trim()) {
+          return res.status(403).json({ success: false, error: 'Order authorization mismatch' })
+        }
+
+        // Check if order was successfully printed
+        if (existing.printStatus !== 'Printed') {
+          if (existing.reprintPending || existing.printStatus === 'Printing' || existing.printStatus === 'waiting_for_shopkeeper') {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: 'Reprint request already in progress for this order.',
+              printStatus: existing.printStatus,
+            })
+          }
+          return res.status(400).json({
+            success: false,
+            error: `Order ${orderId} cannot be reprinted: current print status is "${existing.printStatus}". Only successfully printed orders are eligible.`,
+            printStatus: existing.printStatus,
+          })
+        }
+
+        // Retention Expiry Guard (Server Authoritative)
+        const effectiveExpiresAt = existing.pdfExpiresAt || (existing.printedAt ? calculateExpiryTimestamp(existing.printedAt) : null)
+        if (!effectiveExpiresAt) {
+          return res.status(400).json({
+            success: false,
+            error: 'No retention window recorded for this order.',
+          })
+        }
+
+        const expiryMs = new Date(effectiveExpiresAt).getTime()
+        if (expiryMs <= nowMs || existing.pdfDeletedAt) {
+          return res.status(410).json({
+            success: false,
+            expired: true,
+            error: 'Reprint window expired; document permanently deleted.',
+            pdfExpiresAt: effectiveExpiresAt,
+          })
+        }
+
+        // Durable PDF availability check
+        let hasDurablePdf = Boolean(existing.hasPdf !== false && !existing.pdfDeletedAt && existing.pdfStorage !== 'none')
+        if (hasDurablePdf) {
+          if (existing.hasGridFsPdf || existing.pdfStorage === 'gridfs') {
+            hasDurablePdf = await hasPdfInGridFS(db, orderId)
+          } else if (existing.pdfStorage === 'inline' || existing.driveUrl) {
+            hasDurablePdf = true
+          } else {
+            hasDurablePdf = await hasPdfInGridFS(db, orderId)
+            if (!hasDurablePdf) {
+              const checkDoc = await orders.findOne({ orderId }, { projection: { pdfBase64: 1 } })
+              hasDurablePdf = Boolean(checkDoc?.pdfBase64 && checkDoc.pdfBase64.length > 50)
+            }
+          }
+        }
+        if (!hasDurablePdf) {
+          return res.status(410).json({
+            success: false,
+            expired: true,
+            error: 'Original PDF is no longer available in durable storage.',
+          })
+        }
+
+        // Calculate authoritative price using existing pricing logic and print settings
+        const price = calculateOrderPrice(existing)
+
+        // Unique reprint attempt ID
+        const attemptId = `RP_${orderId}_${nowMs}_${Math.random().toString(36).substring(2, 7).toUpperCase()}`
+
+        const attempt = {
+          attemptId,
+          orderId,
+          amount: price.totalAmount,
+          printingCost: price.printingCost,
+          serviceFee: price.serviceFee,
+          ratePerPage: price.ratePerPage,
+          copies: price.copies,
+          effectivePages: price.effectivePages,
+          paymentStatus: 'pending',
+          transactionId: '',
+          phone: '',
+          createdAt: nowIso,
+          submittedAt: null,
+          verifiedAt: null,
+          printAuthorized: false,
+          printDispatched: false,
+          printOutcome: 'pending',
+        }
+
+        await orders.updateOne(
+          { orderId },
+          {
+            $push: { reprintAttempts: attempt },
+            $set: { updatedAt: nowIso },
+          }
+        )
+
+        return res.status(200).json({
+          success: true,
+          orderId,
+          attemptId,
+          amount: price.totalAmount,
+          printingCost: price.printingCost,
+          serviceFee: price.serviceFee,
+          ratePerPage: price.ratePerPage,
+          copies: price.copies,
+          effectiveExpiresAt,
+          remainingMs: Math.max(0, expiryMs - nowMs),
+          serverTime: nowIso,
+        })
+      } catch (err) {
+        console.error(`[INITIATE_REPRINT_ERR] Order ${orderId}:`, err.message)
+        return res.status(500).json({ success: false, error: err.message })
+      }
+    }
+
+    // ── 5.2 SUBMIT REPRINT PAYMENT (RECORD NEW UTR & AUTHORIZE PRINT) ────────
+    if (action === 'submitReprintPayment') {
+      const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
+      const attemptId = String(req.body?.attemptId || req.query?.attemptId || '').trim()
+      const rawTxId = String(req.body?.transactionId || req.query?.transactionId || '').trim()
+      const phone = String(req.body?.phone || req.query?.phone || '').trim()
+
+      if (!orderId || !attemptId || !rawTxId) {
+        return res.status(400).json({
+          success: false,
+          error: 'orderId, attemptId, and transactionId are required for reprint payment',
+        })
+      }
+
+      const cleanTxId = rawTxId.replace(/\s+/g, '')
+      if (cleanTxId.length < 6) {
+        return res.status(400).json({
+          success: false,
+          error: 'Transaction reference (UTR) must be at least 6 alphanumeric characters.',
+        })
+      }
+
+      const nowIso = new Date().toISOString()
+      const nowMs = Date.now()
+
+      try {
+        const { db } = await connectToDatabase()
+        const orders = db.collection('orders')
+
+        const existing = await orders.findOne({ orderId }, { projection: { pdfBase64: 0 } })
+        if (!existing) {
+          return res.status(404).json({ success: false, error: `Order ${orderId} not found` })
+        }
+
+        // 1. Retention Expiry Guard (Server Authoritative)
+        const effectiveExpiresAt = existing.pdfExpiresAt || (existing.printedAt ? calculateExpiryTimestamp(existing.printedAt) : null)
+        if (!effectiveExpiresAt) {
+          return res.status(400).json({ success: false, error: 'No retention window recorded for this order.' })
+        }
+        const expiryMs = new Date(effectiveExpiresAt).getTime()
+        if (expiryMs <= nowMs || existing.pdfDeletedAt) {
+          return res.status(410).json({
+            success: false,
+            expired: true,
+            error: 'Reprint window expired; document permanently deleted.',
+            pdfExpiresAt: effectiveExpiresAt,
+          })
+        }
+
+        // 2. Durable PDF availability guard
+        let hasDurablePdf = Boolean(existing.hasPdf !== false && !existing.pdfDeletedAt && existing.pdfStorage !== 'none')
+        if (hasDurablePdf) {
+          if (existing.hasGridFsPdf || existing.pdfStorage === 'gridfs') {
+            hasDurablePdf = await hasPdfInGridFS(db, orderId)
+          } else if (existing.pdfStorage === 'inline' || existing.driveUrl) {
+            hasDurablePdf = true
+          } else {
+            hasDurablePdf = await hasPdfInGridFS(db, orderId)
+          }
+        }
+        if (!hasDurablePdf) {
+          return res.status(410).json({
+            success: false,
+            expired: true,
+            error: 'Original PDF is no longer available in durable storage.',
+          })
+        }
+
+        // 3. Strict Anti-Reuse Guard: Reusing original order's transaction ID is forbidden
+        const origTxId = String(existing.transactionId || '').trim()
+        if (origTxId && cleanTxId.toUpperCase() === origTxId.toUpperCase()) {
+          return res.status(400).json({
+            success: false,
+            error: 'Cannot reuse the original order transaction ID. Every reprint requires a new payment and transaction reference.',
+          })
+        }
+
+        // 4. Duplicate Reference Guard: Reusing transaction reference from another reprint attempt is forbidden
+        const priorAttempts = Array.isArray(existing.reprintAttempts) ? existing.reprintAttempts : []
+        const duplicateAttempt = priorAttempts.find(
+          a => a.transactionId &&
+               a.attemptId !== attemptId &&
+               String(a.transactionId).trim().toUpperCase() === cleanTxId.toUpperCase()
+        )
+        if (duplicateAttempt) {
+          return res.status(400).json({
+            success: false,
+            error: 'This transaction ID has already been used for another reprint attempt.',
+          })
+        }
+
+        const currentAttempt = priorAttempts.find(a => a.attemptId === attemptId)
+        if (!currentAttempt) {
+          return res.status(404).json({
+            success: false,
+            error: `Reprint attempt ${attemptId} not found on order ${orderId}`,
+          })
+        }
+
+        if (currentAttempt.paymentStatus === 'paid' && currentAttempt.printDispatched) {
+          return res.status(409).json({
+            success: false,
+            conflict: true,
+            error: 'This reprint attempt has already been verified and queued for printing.',
+          })
+        }
+
+        // 5. Payment Policy Evaluation:
+        const requirePayVerification = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
+
+        if (requirePayVerification) {
+          // Strict manual shopkeeper verification required
+          await orders.updateOne(
+            { orderId, 'reprintAttempts.attemptId': attemptId },
+            {
+              $set: {
+                'reprintAttempts.$.paymentStatus': 'pending',
+                'reprintAttempts.$.transactionId': cleanTxId,
+                'reprintAttempts.$.phone': phone,
+                'reprintAttempts.$.submittedAt': nowIso,
+                updatedAt: nowIso,
+              },
+            }
+          )
+          return res.status(200).json({
+            success: true,
+            orderId,
+            attemptId,
+            paymentStatus: 'pending',
+            message: 'Reprint payment submitted. Awaiting shopkeeper verification before print dispatch.',
+          })
+        }
+
+        // Automated Verification Policy:
+        // Atomically authorize exactly ONE print job
+        const atomicFilter = {
+          orderId,
+          printStatus: 'Printed',
+          pdfDeletedAt: { $exists: false },
+          reprintPending: { $ne: true },
+          'reprintAttempts.attemptId': attemptId,
+        }
+
+        const updateDoc = {
+          $set: {
+            printStatus: 'waiting_for_shopkeeper',
+            reprintPending: true,
+            activeReprintAttemptId: attemptId,
+            lastReprintRequestedAt: nowIso,
+            'reprintAttempts.$.paymentStatus': 'paid',
+            'reprintAttempts.$.transactionId': cleanTxId,
+            'reprintAttempts.$.phone': phone,
+            'reprintAttempts.$.submittedAt': nowIso,
+            'reprintAttempts.$.verifiedAt': nowIso,
+            'reprintAttempts.$.printAuthorized': true,
+            'reprintAttempts.$.printDispatched': true,
+            'reprintAttempts.$.printOutcome': 'dispatched',
+            updatedAt: nowIso,
+          },
+          $push: {
+            auditLog: {
+              action: 'reprint_payment_verified_and_queued',
+              attemptId,
+              transactionId: cleanTxId,
+              amount: currentAttempt.amount,
+              verifiedAt: nowIso,
+            },
+          },
+        }
+
+        const updateResult = await orders.findOneAndUpdate(
+          atomicFilter,
+          updateDoc,
+          { returnDocument: 'after', projection: { pdfBase64: 0 } }
+        )
+
+        if (!updateResult) {
+          return res.status(409).json({
+            success: false,
+            conflict: true,
+            error: 'Reprint request conflict: order is already reprinting or no longer eligible.',
+          })
+        }
+
+        console.log(`[REPRINT_PAYMENT_VERIFIED] Order ${orderId} attempt ${attemptId} paid and queued for printing`)
+
+        return res.status(200).json({
+          success: true,
+          orderId,
+          attemptId,
+          paymentStatus: 'paid',
+          printStatus: 'waiting_for_shopkeeper',
+          message: 'Reprint payment verified. Document queued for printing.',
+          pdfExpiresAt: effectiveExpiresAt,
+          printedAt: existing.printedAt,
+        })
+      } catch (payErr) {
+        console.error(`[REPRINT_PAYMENT_ERR] Order ${orderId}:`, payErr.message)
+        return res.status(500).json({ success: false, error: payErr.message })
+      }
+    }
+
+    // ── 5.3 VERIFY REPRINT PAYMENT (SHOPKEEPER VERIFICATION / REJECTION) ────
+    if (action === 'verifyReprintPayment') {
+      const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
+      const attemptId = String(req.body?.attemptId || req.query?.attemptId || '').trim()
+      const newPaymentStatus = String(req.body?.paymentStatus || req.query?.paymentStatus || '').trim().toLowerCase()
+
+      if (!orderId || !attemptId || !newPaymentStatus) {
+        return res.status(400).json({
+          success: false,
+          error: 'orderId, attemptId, and paymentStatus are required',
+        })
+      }
+
+      const nowIso = new Date().toISOString()
+      const nowMs = Date.now()
+
+      try {
+        const { db } = await connectToDatabase()
+        const orders = db.collection('orders')
+
+        const existing = await orders.findOne({ orderId }, { projection: { pdfBase64: 0 } })
+        if (!existing) {
+          return res.status(404).json({ success: false, error: `Order ${orderId} not found` })
+        }
+
+        const attempts = Array.isArray(existing.reprintAttempts) ? existing.reprintAttempts : []
+        const attempt = attempts.find(a => a.attemptId === attemptId)
+        if (!attempt) {
+          return res.status(404).json({ success: false, error: `Attempt ${attemptId} not found` })
+        }
+
+        if (newPaymentStatus === 'paid') {
+          // Retention Expiry Guard
+          const effectiveExpiresAt = existing.pdfExpiresAt || (existing.printedAt ? calculateExpiryTimestamp(existing.printedAt) : null)
+          if (!effectiveExpiresAt || new Date(effectiveExpiresAt).getTime() <= nowMs || existing.pdfDeletedAt) {
+            await orders.updateOne(
+              { orderId, 'reprintAttempts.attemptId': attemptId },
+              {
+                $set: {
+                  'reprintAttempts.$.paymentStatus': 'paid',
+                  'reprintAttempts.$.printAuthorized': false,
+                  'reprintAttempts.$.printOutcome': 'expired',
+                  updatedAt: nowIso,
+                },
+              }
+            )
+            return res.status(410).json({
+              success: false,
+              expired: true,
+              error: 'Reprint window expired; document permanently deleted. Print cannot be queued.',
+            })
+          }
+
+          // Atomically authorize and dispatch reprint
+          const updateResult = await orders.findOneAndUpdate(
+            {
+              orderId,
+              printStatus: 'Printed',
+              pdfDeletedAt: { $exists: false },
+              reprintPending: { $ne: true },
+              'reprintAttempts.attemptId': attemptId,
+            },
+            {
+              $set: {
+                printStatus: 'waiting_for_shopkeeper',
+                reprintPending: true,
+                activeReprintAttemptId: attemptId,
+                lastReprintRequestedAt: nowIso,
+                'reprintAttempts.$.paymentStatus': 'paid',
+                'reprintAttempts.$.verifiedAt': nowIso,
+                'reprintAttempts.$.printAuthorized': true,
+                'reprintAttempts.$.printDispatched': true,
+                'reprintAttempts.$.printOutcome': 'dispatched',
+                updatedAt: nowIso,
+              },
+              $push: {
+                auditLog: {
+                  action: 'reprint_payment_shopkeeper_verified',
+                  attemptId,
+                  at: nowIso,
+                },
+              },
+            },
+            { returnDocument: 'after', projection: { pdfBase64: 0 } }
+          )
+
+          if (!updateResult) {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: 'Reprint request conflict: order is already reprinting or no longer eligible.',
+            })
+          }
+
+          return res.status(200).json({
+            success: true,
+            orderId,
+            attemptId,
+            paymentStatus: 'paid',
+            printStatus: 'waiting_for_shopkeeper',
+            message: 'Reprint payment verified. Document queued for printing.',
+          })
+        }
+
+        // Rejection / Cancellation:
+        if (['rejected', 'failed', 'cancelled'].includes(newPaymentStatus)) {
+          await orders.updateOne(
+            { orderId, 'reprintAttempts.attemptId': attemptId },
+            {
+              $set: {
+                'reprintAttempts.$.paymentStatus': newPaymentStatus,
+                'reprintAttempts.$.printAuthorized': false,
+                'reprintAttempts.$.printOutcome': newPaymentStatus,
+                'reprintAttempts.$.rejectedAt': nowIso,
+                updatedAt: nowIso,
+              },
+              $push: {
+                auditLog: {
+                  action: `reprint_payment_${newPaymentStatus}`,
+                  attemptId,
+                  at: nowIso,
+                },
+              },
+            }
+          )
+
+          return res.status(200).json({
+            success: true,
+            orderId,
+            attemptId,
+            paymentStatus: newPaymentStatus,
+            message: `Reprint payment marked as ${newPaymentStatus}. Document was not queued for printing.`,
+          })
+        }
+
+        return res.status(400).json({
+          success: false,
+          error: `Unrecognized paymentStatus: ${newPaymentStatus}`,
+        })
+      } catch (vErr) {
+        console.error(`[VERIFY_REPRINT_PAYMENT_ERR] Order ${orderId}:`, vErr.message)
+        return res.status(500).json({ success: false, error: vErr.message })
+      }
+    }
+
+    // ── 5.4 CANCEL REPRINT PAYMENT ──────────────────────────────────────────
+    if (action === 'cancelReprintPayment') {
+      const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
+      const attemptId = String(req.body?.attemptId || req.query?.attemptId || '').trim()
+
+      if (!orderId || !attemptId) {
+        return res.status(400).json({ success: false, error: 'orderId and attemptId are required' })
+      }
+
+      const nowIso = new Date().toISOString()
+      try {
+        const { db } = await connectToDatabase()
+        await db.collection('orders').updateOne(
+          { orderId, 'reprintAttempts.attemptId': attemptId },
+          {
+            $set: {
+              'reprintAttempts.$.paymentStatus': 'cancelled',
+              'reprintAttempts.$.printAuthorized': false,
+              'reprintAttempts.$.printOutcome': 'cancelled',
+              'reprintAttempts.$.cancelledAt': nowIso,
+              updatedAt: nowIso,
+            },
+          }
+        )
+        return res.status(200).json({
+          success: true,
+          orderId,
+          attemptId,
+          paymentStatus: 'cancelled',
+          message: 'Reprint payment cancelled. Document was not queued for printing.',
+        })
+      } catch (cErr) {
+        return res.status(500).json({ success: false, error: cErr.message })
+      }
     }
 
     // ── 5.5 REPRINT ORDER (CANONICAL API + 30-MIN RETENTION ENFORCEMENT) ─────

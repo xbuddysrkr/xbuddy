@@ -637,8 +637,255 @@ async function runRegressionSuite() {
 
     console.log('✓ TEST 12 PASSED: Legacy orders lacking pdfExpiresAt accurately derive deadline, purge upon expiry, and protect payment status\n')
 
+    // ── TEST 13: XBuddy Reprint-to-Payment End-to-End Regression Suite ───────
+    console.log('[TEST 13] Testing XBuddy Reprint-to-Payment flow end-to-end...')
+    const id13Order = `XB98${Math.floor(10000 + Math.random() * 90000)}`
+    const id13Expired = `XB99${Math.floor(10000 + Math.random() * 90000)}`
+    testIdsToCleanup.push(id13Order, id13Expired)
+
+    process.env.AGENT_SECRET_KEY = 'test-agent-secret'
+    const agentHeaders = { 'x-agent-key': 'test-agent-secret' }
+
+    // Setup an initial printed order with genuine print settings:
+    // 6 pages total, B&W (₹2/page), copies: 1, duplex: false => printingCost: ₹12, serviceFee (slab 6-10): ₹2 => Total: ₹14
+    const originalPrintTime = new Date(Date.now() - 5 * 60 * 1000).toISOString() // 5 mins ago
+    const originalDeadline = new Date(new Date(originalPrintTime).getTime() + 30 * 60 * 1000).toISOString()
+    const originalTx = 'TXN_ORIG_STUDENT_111'
+
+    await savePdfToGridFS(db, id13Order, SAMPLE_PDF)
+    const diskCache13 = path.join(PDF_CACHE_DIR, `${id13Order}.pdf`)
+    fs.writeFileSync(diskCache13, SAMPLE_PDF)
+
+    await ordersCol.insertOne({
+      orderId: id13Order,
+      name: '9876543210',
+      fileName: `${id13Order}.pdf`,
+      totalPages: 6,
+      printableCount: 6,
+      copies: 1,
+      colorMode: 'bw',
+      printType: 'B&W',
+      printSide: 'Single',
+      duplex: false,
+      pageSize: 'A4',
+      orientation: 'portrait',
+      amount: 14,
+      printingCost: 12,
+      serviceFee: 2,
+      transactionId: originalTx,
+      paymentStatus: 'pending', // Starts as pending to prove original remains intact!
+      printStatus: 'Printed',
+      printedAt: originalPrintTime,
+      pdfExpiresAt: originalDeadline,
+      hasPdf: true,
+      hasGridFsPdf: true,
+      pdfStorage: 'gridfs',
+      reprintCount: 0,
+    })
+
+    // 13.1 Reprint click initiates payment flow and calculates exact pricing
+    const { req: req13Init, res: res13Init } = createMockReqRes({
+      body: { action: 'initiateReprint', orderId: id13Order }
+    })
+    await ordersHandler(req13Init, res13Init)
+    assert.strictEqual(res13Init.statusCode, 200, 'Initiate reprint must succeed for eligible printed order')
+    assert.ok(res13Init.bodyData.attemptId, 'Must return unique attemptId')
+    assert.strictEqual(res13Init.bodyData.amount, 14, 'Price must be exact according to existing pricing slabs (₹14)')
+    assert.strictEqual(res13Init.bodyData.printingCost, 12)
+    assert.strictEqual(res13Init.bodyData.serviceFee, 2)
+    const attemptId1 = res13Init.bodyData.attemptId
+
+    // 13.2 Anti-Reuse Guard: Reusing original order UTR must be strictly blocked (HTTP 400)
+    const { req: req13ReuseOrig, res: res13ReuseOrig } = createMockReqRes({
+      body: {
+        action: 'submitReprintPayment',
+        orderId: id13Order,
+        attemptId: attemptId1,
+        transactionId: originalTx, // Reusing original transaction ID!
+        phone: '9876543210',
+      }
+    })
+    await ordersHandler(req13ReuseOrig, res13ReuseOrig)
+    assert.strictEqual(res13ReuseOrig.statusCode, 400, 'Reusing original transaction ID must return HTTP 400 Bad Request')
+    assert.ok(res13ReuseOrig.bodyData.error.includes('Cannot reuse the original order transaction ID'))
+
+    // 13.3 Data Integrity: Original records remain completely intact
+    const docAfterOrigReuse = await ordersCol.findOne({ orderId: id13Order })
+    assert.strictEqual(docAfterOrigReuse.transactionId, originalTx, 'Original transactionId must NEVER be overwritten')
+    assert.strictEqual(docAfterOrigReuse.paymentStatus, 'pending', 'Original paymentStatus must remain pending')
+    assert.strictEqual(docAfterOrigReuse.printedAt, originalPrintTime, 'Original printedAt must NEVER change')
+    assert.strictEqual(docAfterOrigReuse.pdfExpiresAt, originalDeadline, 'Original pdfExpiresAt must NEVER reset')
+
+    // 13.4 Strict Payment Verification Policy Guard: Pending payment does NOT queue print
+    process.env.REQUIRE_PAYMENT_VERIFICATION = 'true'
+    const newTx1 = 'UTR_NEW_REPRINT_222'
+    const { req: req13StrictSubmit, res: res13StrictSubmit } = createMockReqRes({
+      body: {
+        action: 'submitReprintPayment',
+        orderId: id13Order,
+        attemptId: attemptId1,
+        transactionId: newTx1,
+        phone: '9876543210',
+      }
+    })
+    await ordersHandler(req13StrictSubmit, res13StrictSubmit)
+    assert.strictEqual(res13StrictSubmit.statusCode, 200)
+    assert.strictEqual(res13StrictSubmit.bodyData.paymentStatus, 'pending', 'Under strict verification, payment is initially pending')
+
+    const docAfterStrictSubmit = await ordersCol.findOne({ orderId: id13Order })
+    assert.strictEqual(docAfterStrictSubmit.printStatus, 'Printed', 'Print status must NOT change to waiting when verification is required')
+    assert.strictEqual(docAfterStrictSubmit.reprintPending, undefined, 'Reprint must NOT be queued while payment is pending')
+
+    // Print agent claim must be rejected when payment is pending
+    const { req: req13AgentClaimPending, res: res13AgentClaimPending } = createMockReqRes({
+      method: 'POST',
+      query: { action: 'claim', orderId: id13Order },
+      headers: agentHeaders,
+    })
+    await agentOrdersHandler(req13AgentClaimPending, res13AgentClaimPending)
+    // Returns 402 Payment Required or 409 because printStatus is not waiting
+    assert.ok(res13AgentClaimPending.statusCode === 402 || res13AgentClaimPending.statusCode === 409)
+
+    // 13.5 Rejection Guard: Rejected reprint payment does NOT queue print
+    const { req: req13Reject, res: res13Reject } = createMockReqRes({
+      body: {
+        action: 'verifyReprintPayment',
+        orderId: id13Order,
+        attemptId: attemptId1,
+        paymentStatus: 'rejected',
+      }
+    })
+    await ordersHandler(req13Reject, res13Reject)
+    assert.strictEqual(res13Reject.statusCode, 200)
+    assert.strictEqual(res13Reject.bodyData.paymentStatus, 'rejected')
+
+    const docAfterReject = await ordersCol.findOne({ orderId: id13Order })
+    assert.strictEqual(docAfterReject.printStatus, 'Printed', 'Order printStatus must remain Printed after rejection')
+    const attempt1Doc = docAfterReject.reprintAttempts.find(a => a.attemptId === attemptId1)
+    assert.strictEqual(attempt1Doc.paymentStatus, 'rejected')
+    assert.strictEqual(attempt1Doc.printAuthorized, false)
+
+    // 13.6 Duplicate UTR Guard: Reusing newTx1 on a second attempt is rejected
+    const { req: req13Init2, res: res13Init2 } = createMockReqRes({
+      body: { action: 'initiateReprint', orderId: id13Order }
+    })
+    await ordersHandler(req13Init2, res13Init2)
+    const attemptId2 = res13Init2.bodyData.attemptId
+
+    const { req: req13DupUtr, res: res13DupUtr } = createMockReqRes({
+      body: {
+        action: 'submitReprintPayment',
+        orderId: id13Order,
+        attemptId: attemptId2,
+        transactionId: newTx1, // Same as attempt 1!
+        phone: '9876543210',
+      }
+    })
+    await ordersHandler(req13DupUtr, res13DupUtr)
+    assert.strictEqual(res13DupUtr.statusCode, 400, 'Reusing a UTR from another reprint attempt must return HTTP 400')
+    assert.ok(res13DupUtr.bodyData.error.includes('already been used for another reprint attempt'))
+
+    // 13.7 Verified Payment Authorizes Exactly One Print:
+    const newTx2 = 'UTR_NEW_REPRINT_333'
+    const { req: req13Submit2, res: res13Submit2 } = createMockReqRes({
+      body: {
+        action: 'submitReprintPayment',
+        orderId: id13Order,
+        attemptId: attemptId2,
+        transactionId: newTx2,
+        phone: '9876543210',
+      }
+    })
+    await ordersHandler(req13Submit2, res13Submit2)
+    assert.strictEqual(res13Submit2.statusCode, 200)
+
+    // Shopkeeper verifies attempt 2:
+    const { req: req13Verify2, res: res13Verify2 } = createMockReqRes({
+      body: {
+        action: 'verifyReprintPayment',
+        orderId: id13Order,
+        attemptId: attemptId2,
+        paymentStatus: 'paid',
+      }
+    })
+    await ordersHandler(req13Verify2, res13Verify2)
+    assert.strictEqual(res13Verify2.statusCode, 200)
+    assert.strictEqual(res13Verify2.bodyData.printStatus, 'waiting_for_shopkeeper')
+
+    const docAfterVerify = await ordersCol.findOne({ orderId: id13Order })
+    assert.strictEqual(docAfterVerify.printStatus, 'waiting_for_shopkeeper', 'Order must be queued for printing')
+    assert.strictEqual(docAfterVerify.reprintPending, true)
+    assert.strictEqual(docAfterVerify.activeReprintAttemptId, attemptId2)
+
+    // 13.8 Duplicate Print Authorization Guard:
+    // Repeated verification or submission while reprinting must be blocked with HTTP 409
+    const { req: req13DupVerify, res: res13DupVerify } = createMockReqRes({
+      body: {
+        action: 'verifyReprintPayment',
+        orderId: id13Order,
+        attemptId: attemptId2,
+        paymentStatus: 'paid',
+      }
+    })
+    await ordersHandler(req13DupVerify, res13DupVerify)
+    assert.strictEqual(res13DupVerify.statusCode, 409, 'Duplicate verification while reprinting must return HTTP 409')
+
+    // 13.9 Print Agent claims the authorized reprint order:
+    delete process.env.REQUIRE_PAYMENT_VERIFICATION
+    const { req: req13AgentClaim, res: res13AgentClaim } = createMockReqRes({
+      method: 'POST',
+      query: { action: 'claim', orderId: id13Order },
+      headers: agentHeaders,
+    })
+    await agentOrdersHandler(req13AgentClaim, res13AgentClaim)
+    assert.strictEqual(res13AgentClaim.statusCode, 200, 'Print Agent must successfully claim verified reprint')
+    assert.strictEqual(res13AgentClaim.bodyData.order.printStatus, 'Printing')
+
+    // 13.10 Print Agent finishes printing and reports status Printed:
+    const { req: req13AgentPrinted, res: res13AgentPrinted } = createMockReqRes({
+      method: 'POST',
+      query: { action: 'updateStatus', orderId: id13Order, status: 'Printed' },
+      body: { status: 'Printed' },
+      headers: agentHeaders,
+    })
+    await agentOrdersHandler(req13AgentPrinted, res13AgentPrinted)
+    assert.strictEqual(res13AgentPrinted.statusCode, 200)
+
+    // 13.11 Expiry deadline MUST NOT reset after reprint:
+    const docAfterReprint = await ordersCol.findOne({ orderId: id13Order })
+    assert.strictEqual(docAfterReprint.printStatus, 'Printed')
+    assert.strictEqual(docAfterReprint.reprintPending, false)
+    assert.strictEqual(docAfterReprint.reprintCount, 1, 'reprintCount must be incremented by exactly 1')
+    assert.strictEqual(docAfterReprint.printedAt, originalPrintTime, 'Original printedAt MUST NOT be overwritten')
+    assert.strictEqual(docAfterReprint.pdfExpiresAt, originalDeadline, 'Original pdfExpiresAt MUST NOT reset')
+
+    const attempt2Doc = docAfterReprint.reprintAttempts.find(a => a.attemptId === attemptId2)
+    assert.strictEqual(attempt2Doc.printOutcome, 'printed', 'Attempt outcome must be recorded as printed')
+    assert.strictEqual(attempt2Doc.paymentStatus, 'paid')
+
+    // 13.12 Expired orders cannot be reprinted:
+    const expiredPrintTime = new Date(Date.now() - 45 * 60 * 1000).toISOString() // 45 mins ago
+    const expiredDeadline = new Date(new Date(expiredPrintTime).getTime() + 30 * 60 * 1000).toISOString()
+    await ordersCol.insertOne({
+      orderId: id13Expired,
+      printStatus: 'Printed',
+      printedAt: expiredPrintTime,
+      pdfExpiresAt: expiredDeadline,
+      hasPdf: false,
+      pdfDeletedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      paymentStatus: 'paid',
+    })
+
+    const { req: req13ExpiredInit, res: res13ExpiredInit } = createMockReqRes({
+      body: { action: 'initiateReprint', orderId: id13Expired }
+    })
+    await ordersHandler(req13ExpiredInit, res13ExpiredInit)
+    assert.strictEqual(res13ExpiredInit.statusCode, 410, 'Initiate reprint on expired document must return HTTP 410')
+
+    console.log('✓ TEST 13 PASSED: Full Reprint-to-Payment flow end-to-end verified with anti-reuse, strict authorization, single-print dispatch, and immutable expiry\n')
+
     console.log('================================================================')
-    console.log('  ALL 12 RETENTION & REPRINT REGRESSION TESTS PASSED!           ')
+    console.log('  ALL 13 RETENTION & REPRINT REGRESSION TESTS PASSED!           ')
     console.log('================================================================\n')
   } finally {
     // Clean up test documents

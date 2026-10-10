@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AlertTriangle, Check } from 'lucide-react'
 import { fileToBase64 } from '../utils/fileToBase64'
-import { submitOrder } from '../utils/api'
+import { submitOrder, submitReprintPayment } from '../utils/api'
 import { saveOrder } from '../utils/orderStore'
 import OrderProgress from './OrderProgress'
 
@@ -49,27 +49,51 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
       // ── Step: upload_file (encode PDF file) ──────────────────────────────
       if (!retryFromStep || retryFromStep === 'upload_file') {
         setStep('upload_file', 'active')
-        try {
-          if (!cache.pdfBase64) {
-            const b64 = await fileToBase64(orderMeta.pdfFile)
-            if (!b64 || b64.length < 50 || (!b64.startsWith('JVBERi0') && !b64.slice(0, 10).includes('JVBE'))) {
-              throw new Error('Selected file is not a valid PDF document (missing %PDF- header)')
+        if (orderMeta?.isReprint) {
+          // Document PDF is already stored durably in MongoDB Atlas GridFS; skip re-encoding
+          setStep('upload_file', 'done')
+        } else {
+          try {
+            if (!cache.pdfBase64) {
+              const b64 = await fileToBase64(orderMeta.pdfFile)
+              if (!b64 || b64.length < 50 || (!b64.startsWith('JVBERi0') && !b64.slice(0, 10).includes('JVBE'))) {
+                throw new Error('Selected file is not a valid PDF document (missing %PDF- header)')
+              }
+              cache.pdfBase64 = b64
             }
-            cache.pdfBase64 = b64
+          } catch (err) {
+            throw { step: 'upload_file', reason: err.message || 'Failed to read file' }
           }
-        } catch (err) {
-          throw { step: 'upload_file', reason: err.message || 'Failed to read file' }
+          setStep('upload_file', 'done')
         }
-        setStep('upload_file', 'done')
+      }
+
+      // ── Step: save_order (authoritative MongoDB persistence) ──────────────
+      setStep('save_order', 'active')
+
+      if (orderMeta?.isReprint) {
+        const res = await submitReprintPayment({
+          orderId:       orderMeta.orderId,
+          attemptId:     orderMeta.attemptId,
+          transactionId: transactionId.trim(),
+          phone:         phone.trim(),
+        })
+
+        if (!res?.success) {
+          throw { step: 'save_order', reason: res?.error || 'Reprint payment processing failed' }
+        }
+
+        setStep('save_order', 'done')
+        setStep('confirmed', 'done')
+        setResult({ orderId: orderMeta.orderId, message: res.message || 'Reprint payment confirmed. Document queued for printing.' })
+        onSuccess(orderMeta.orderId, res)
+        return
       }
 
       // Generate or reuse deterministic client orderId for idempotency
       if (!cache.orderId) {
         cache.orderId = 'XB' + String(Math.floor(1000 + Math.random() * 9000))
       }
-
-      // ── Step: save_order (authoritative MongoDB persistence) ──────────────
-      setStep('save_order', 'active')
 
       const res = await submitOrder(
         {
@@ -157,6 +181,13 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
     e.preventDefault()
     if (!phone.trim())         return setFieldError('Please enter your phone number.')
     if (!transactionId.trim()) return setFieldError('Please enter the Transaction ID.')
+    if (transactionId.trim().length < 6) return setFieldError('Transaction ID must be at least 6 characters.')
+    if (orderMeta?.isReprint) {
+      const origTx = String(orderMeta.originalTransactionId || '').trim().toUpperCase()
+      if (origTx && transactionId.trim().toUpperCase() === origTx) {
+        return setFieldError('Cannot reuse the original order transaction ID. Every reprint requires a new payment and transaction reference.')
+      }
+    }
     setStepStatuses(PENDING_STATUSES)
     runSubmit(null)
   }
@@ -188,7 +219,9 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 border-t border-orange-100 pt-4">
-      <h4 className="text-[#222222] font-semibold mb-4 text-sm">Confirm Your Payment</h4>
+      <h4 className="text-[#222222] font-semibold mb-4 text-sm">
+        {orderMeta?.isReprint ? 'Confirm Reprint Payment' : 'Confirm Your Payment'}
+      </h4>
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
@@ -247,7 +280,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
             className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-sm rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5"
           >
             <Check className="w-4 h-4" />
-            <span>Confirm &amp; Submit Order</span>
+            <span>{orderMeta?.isReprint ? 'Confirm & Pay for Reprint' : 'Confirm & Submit Order'}</span>
           </motion.button>
         )}
       </form>

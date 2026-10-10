@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getMyOrders, saveOrder, updateOrder } from '../utils/orderStore'
-import { getOrderStatus, reprintOrder } from '../utils/api'
+import { getOrderStatus, initiateReprint, reprintOrder } from '../utils/api'
+import PaymentModal from './PaymentModal'
 import {
   Bell,
   Copy,
@@ -70,6 +71,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
   const [serverOffset, setServerOffset] = useState(0)
   const [reprintingId, setReprintingId] = useState(null)
   const [reprintMessage, setReprintMessage] = useState(null)
+  const [reprintPaymentMeta, setReprintPaymentMeta] = useState(null)
   const [tick, setTick] = useState(0)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [shopModalOrder, setShopModalOrder] = useState(null)
@@ -163,27 +165,29 @@ export default function MyOrdersPage({ onStartPrinting }) {
     setReprintingId(orderId)
     setReprintMessage(null)
     try {
-      const res = await reprintOrder(orderId)
-      if (res?.success) {
-        setReprintMessage({
+      const ord = (liveOrderData && liveOrderData[orderId]) || orders.find(o => o.orderId === orderId) || {}
+      const res = await initiateReprint(orderId)
+      if (res?.success && res.attemptId) {
+        setReprintPaymentMeta({
+          ...ord,
           orderId,
-          type: 'success',
-          text: 'Reprint requested successfully! Document is queued at the Xerox shop.',
+          attemptId: res.attemptId,
+          isReprint: true,
+          originalTransactionId: ord.transactionId || '',
+          amount: res.amount,
+          printingCost: res.printingCost,
+          serviceFee: res.serviceFee,
+          ratePerPage: res.ratePerPage,
+          copies: res.copies,
+          effectivePages: res.effectivePages,
+          effectiveExpiresAt: res.effectiveExpiresAt,
+          fileName: ord.fileName || `${orderId}.pdf`,
         })
-        setLiveStatuses(prev => ({ ...prev, [orderId]: 'waiting_for_shopkeeper' }))
-        setLiveOrderData(prev => ({
-          ...prev,
-          [orderId]: {
-            ...(prev[orderId] || {}),
-            printStatus: 'waiting_for_shopkeeper',
-            reprintPending: true,
-          },
-        }))
       } else {
         setReprintMessage({
           orderId,
           type: 'error',
-          text: res?.error || 'Reprint request could not be processed.',
+          text: res?.error || 'Reprint request could not be initiated.',
         })
       }
     } catch (err) {
@@ -195,6 +199,30 @@ export default function MyOrdersPage({ onStartPrinting }) {
     } finally {
       setReprintingId(null)
     }
+  }
+
+  function handleReprintSuccess(orderId, payResult) {
+    setReprintPaymentMeta(null)
+    const isPending = payResult?.paymentStatus === 'pending'
+    setReprintMessage({
+      orderId,
+      type: 'success',
+      text: isPending
+        ? 'Reprint payment submitted! Awaiting shopkeeper verification before print dispatch.'
+        : 'Reprint payment verified! Document is queued at the Xerox shop.',
+    })
+    setLiveStatuses(prev => ({
+      ...prev,
+      [orderId]: isPending ? 'payment submitted' : 'waiting_for_shopkeeper',
+    }))
+    setLiveOrderData(prev => ({
+      ...prev,
+      [orderId]: {
+        ...(prev[orderId] || {}),
+        printStatus: isPending ? (prev[orderId]?.printStatus || 'Printed') : 'waiting_for_shopkeeper',
+        reprintPending: !isPending,
+      },
+    }))
   }
 
   async function handleCloudSearch(targetId) {
@@ -887,6 +915,16 @@ export default function MyOrdersPage({ onStartPrinting }) {
               </div>
             </motion.div>
           </div>
+        )}
+
+        {/* Reprint-to-Payment Flow Modal */}
+        {reprintPaymentMeta && (
+          <PaymentModal
+            total={reprintPaymentMeta.amount}
+            orderMeta={reprintPaymentMeta}
+            onSuccess={(id, result) => handleReprintSuccess(id, result)}
+            onClose={() => setReprintPaymentMeta(null)}
+          />
         )}
       </AnimatePresence>
     </div>

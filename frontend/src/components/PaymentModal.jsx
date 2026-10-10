@@ -102,8 +102,8 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const activePayeeName = selectedApp?.id === 'gpay' ? GPAY_PAYEE_NAME : PAYEE_NAME
 
   // Build standard UPI URI for QR code and generic fallback (exact matching merchant VPA, 2-decimals amount, and refId)
-  const note = `XBuddy Print ${orderMeta?.fileName ? orderMeta.fileName.slice(0, 15) : 'Order'}`
-  const refId = orderMeta?.orderId || orderMeta?.fileId || ''
+  const note = orderMeta?.isReprint ? `XBuddy Reprint ${orderMeta.orderId}` : `XBuddy Print ${orderMeta?.fileName ? orderMeta.fileName.slice(0, 15) : 'Order'}`
+  const refId = orderMeta?.attemptId || orderMeta?.orderId || orderMeta?.fileId || ''
   const upiQuery = buildUpiQuery({ upiId: activeUpiId, payeeName: activePayeeName, amount: total, note, refId })
   const genericUpiUri = `upi://pay?${upiQuery}`
   const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(genericUpiUri)}&size=220x220&margin=4`
@@ -201,10 +201,10 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-xl font-bold text-[#222222]">
-                {step === 'FORM' ? 'Confirm Payment' : 'Scan & Pay'}
+                {orderMeta?.isReprint ? (step === 'FORM' ? 'Confirm Reprint Payment' : 'Pay for Reprint') : (step === 'FORM' ? 'Confirm Payment' : 'Scan & Pay')}
               </h3>
               <p className="text-gray-400 text-xs">
-                {step === 'FORM' ? 'Enter transaction details' : 'Pay via UPI and confirm your order'}
+                {orderMeta?.isReprint ? 'New payment required for reprint · 30-min window' : (step === 'FORM' ? 'Enter transaction details' : 'Pay via UPI and confirm your order')}
               </p>
             </div>
             <button
@@ -215,6 +215,13 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {orderMeta?.isReprint && (
+            <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between shadow-2xs">
+              <span className="font-semibold">Reprinting Order: <strong className="font-mono text-amber-950 font-bold">{orderMeta.orderId}</strong></span>
+              <span className="text-amber-700 font-medium text-[11px] bg-amber-100/80 px-2 py-0.5 rounded-md">Separate Payment</span>
+            </div>
+          )}
 
           {/* Amount breakdown badge */}
           <div className="bg-orange-50/80 border border-orange-200 rounded-2xl p-3.5 mb-4 text-xs">

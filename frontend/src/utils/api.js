@@ -543,6 +543,151 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
   return { success: false, error: 'Failed to update payment status in authoritative MongoDB' }
 }
 
+export async function initiateReprint(orderId, options = {}) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId) return { success: false, error: 'orderId is required' }
+
+  const candidateEndpoints = getCandidateOrdersEndpoints()
+  let lastError = 'Failed to initiate reprint'
+
+  for (const endpoint of candidateEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'initiateReprint',
+          orderId: cleanId,
+          ...options,
+        }),
+        signal: AbortSignal.timeout(12000),
+      })
+      const text = await res.text()
+      if (isHtmlResponse(text, res.headers.get('content-type'))) continue
+      try {
+        const data = JSON.parse(text)
+        if (data) return data
+      } catch {}
+    } catch (err) {
+      console.warn(`[initiateReprint] Notice on ${endpoint}:`, err.message)
+      lastError = err.message
+    }
+  }
+
+  return { success: false, error: lastError }
+}
+
+export async function submitReprintPayment({ orderId, attemptId, transactionId, phone }) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId || !attemptId || !transactionId) {
+    return { success: false, error: 'orderId, attemptId, and transactionId are required' }
+  }
+
+  const candidateEndpoints = getCandidateOrdersEndpoints()
+  let lastError = 'Failed to submit reprint payment'
+
+  for (const endpoint of candidateEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submitReprintPayment',
+          orderId: cleanId,
+          attemptId,
+          transactionId,
+          phone,
+        }),
+        signal: AbortSignal.timeout(15000),
+      })
+      const text = await res.text()
+      if (isHtmlResponse(text, res.headers.get('content-type'))) continue
+      try {
+        const data = JSON.parse(text)
+        if (data) return data
+      } catch {}
+    } catch (err) {
+      console.warn(`[submitReprintPayment] Notice on ${endpoint}:`, err.message)
+      lastError = err.message
+    }
+  }
+
+  return { success: false, error: lastError }
+}
+
+export async function verifyReprintPayment({ orderId, attemptId, paymentStatus }) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId || !attemptId || !paymentStatus) {
+    return { success: false, error: 'orderId, attemptId, and paymentStatus are required' }
+  }
+
+  const candidateEndpoints = getCandidateOrdersEndpoints()
+  let lastError = 'Failed to verify reprint payment'
+
+  for (const endpoint of candidateEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verifyReprintPayment',
+          orderId: cleanId,
+          attemptId,
+          paymentStatus,
+        }),
+        signal: AbortSignal.timeout(12000),
+      })
+      const text = await res.text()
+      if (isHtmlResponse(text, res.headers.get('content-type'))) continue
+      try {
+        const data = JSON.parse(text)
+        if (data) return data
+      } catch {}
+    } catch (err) {
+      console.warn(`[verifyReprintPayment] Notice on ${endpoint}:`, err.message)
+      lastError = err.message
+    }
+  }
+
+  return { success: false, error: lastError }
+}
+
+export async function cancelReprintPayment({ orderId, attemptId }) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId || !attemptId) {
+    return { success: false, error: 'orderId and attemptId are required' }
+  }
+
+  const candidateEndpoints = getCandidateOrdersEndpoints()
+  let lastError = 'Failed to cancel reprint payment'
+
+  for (const endpoint of candidateEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cancelReprintPayment',
+          orderId: cleanId,
+          attemptId,
+        }),
+        signal: AbortSignal.timeout(12000),
+      })
+      const text = await res.text()
+      if (isHtmlResponse(text, res.headers.get('content-type'))) continue
+      try {
+        const data = JSON.parse(text)
+        if (data) return data
+      } catch {}
+    } catch (err) {
+      console.warn(`[cancelReprintPayment] Notice on ${endpoint}:`, err.message)
+      lastError = err.message
+    }
+  }
+
+  return { success: false, error: lastError }
+}
+
 export async function reprintOrder(orderId, options = {}) {
   const cleanId = String(orderId || '').trim().toUpperCase()
   if (!cleanId) return { success: false, error: 'orderId is required' }

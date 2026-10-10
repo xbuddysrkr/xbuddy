@@ -250,14 +250,42 @@ export default async function handler(req, res) {
         })
       }
 
-      // 2. Reject failed, rejected, or cancelled payments unconditionally
+      // 2. Determine effective payment status and authorization (handling reprints separately)
       const normPayStatus = String(existing.paymentStatus || 'pending').trim().toLowerCase()
-      if (['failed', 'rejected', 'cancelled'].includes(normPayStatus)) {
-        console.warn(`[AGENT_CLAIM_PAYMENT_BLOCKED] Order ${cleanId} claim rejected: paymentStatus is "${existing.paymentStatus}"`)
+      const isReprintOrder = Boolean(existing.reprintPending && existing.activeReprintAttemptId)
+      let effectivePayStatus = normPayStatus
+      let activeReprintAttempt = null
+
+      if (isReprintOrder) {
+        activeReprintAttempt = (existing.reprintAttempts || []).find(a => a.attemptId === existing.activeReprintAttemptId)
+        if (!activeReprintAttempt) {
+          console.warn(`[AGENT_CLAIM_REPRINT_ERR] Order ${cleanId} active reprint attempt ${existing.activeReprintAttemptId} not found`)
+          return res.status(403).json({
+            success: false,
+            error: `Order ${cleanId} reprint claim rejected: active reprint attempt ${existing.activeReprintAttemptId} not found`,
+            paymentBlocked: true,
+            orderId: cleanId,
+          })
+        }
+        if (!activeReprintAttempt.printAuthorized) {
+          console.warn(`[AGENT_CLAIM_REPRINT_UNAUTHORIZED] Order ${cleanId} reprint attempt ${existing.activeReprintAttemptId} not authorized`)
+          return res.status(403).json({
+            success: false,
+            error: `Order ${cleanId} reprint claim rejected: reprint payment has not authorized printing`,
+            paymentBlocked: true,
+            orderId: cleanId,
+          })
+        }
+        effectivePayStatus = String(activeReprintAttempt.paymentStatus || 'pending').trim().toLowerCase()
+      }
+
+      // Reject failed, rejected, or cancelled payments unconditionally
+      if (['failed', 'rejected', 'cancelled'].includes(effectivePayStatus)) {
+        console.warn(`[AGENT_CLAIM_PAYMENT_BLOCKED] Order ${cleanId} claim rejected: payment status is "${effectivePayStatus}"`)
         return res.status(403).json({
           success: false,
-          error: `Order ${cleanId} cannot be claimed or printed: payment status is "${existing.paymentStatus}". Release strictly prohibited.`,
-          paymentStatus: existing.paymentStatus,
+          error: `Order ${cleanId} cannot be claimed or printed: payment status is "${effectivePayStatus}". Release strictly prohibited.`,
+          paymentStatus: effectivePayStatus,
           paymentBlocked: true,
           orderId: cleanId,
         })
@@ -265,12 +293,12 @@ export default async function handler(req, res) {
 
       // 3. Check if strict payment verification is required
       const requirePaymentVerification = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
-      if (requirePaymentVerification && !['paid', 'completed'].includes(normPayStatus)) {
-        console.warn(`[AGENT_CLAIM_PAYMENT_REQUIRED] Order ${cleanId} claim rejected: payment verification required (current: "${existing.paymentStatus}")`)
+      if (requirePaymentVerification && !['paid', 'completed'].includes(effectivePayStatus)) {
+        console.warn(`[AGENT_CLAIM_PAYMENT_REQUIRED] Order ${cleanId} claim rejected: payment verification required (current: "${effectivePayStatus}")`)
         return res.status(402).json({
           success: false,
-          error: `Payment authorization required: order ${cleanId} payment status is "${existing.paymentStatus}". Verify payment before release.`,
-          paymentStatus: existing.paymentStatus,
+          error: `Payment authorization required: ${isReprintOrder ? 'reprint' : 'order'} ${cleanId} payment status is "${effectivePayStatus}". Verify payment before release.`,
+          paymentStatus: effectivePayStatus,
           paymentBlocked: true,
           orderId: cleanId,
         })
@@ -281,9 +309,23 @@ export default async function handler(req, res) {
         orderId: cleanId,
         printStatus: { $in: PENDING_PRINT_STATUSES },
         pdfDeletedAt: { $exists: false },
-        paymentStatus: requirePaymentVerification
-          ? { $in: ['paid', 'completed'] }
-          : { $nin: ['failed', 'rejected', 'cancelled'] },
+        ...(isReprintOrder
+          ? {
+              reprintAttempts: {
+                $elemMatch: {
+                  attemptId: existing.activeReprintAttemptId,
+                  printAuthorized: true,
+                  ...(requirePaymentVerification
+                    ? { paymentStatus: { $in: ['paid', 'completed'] } }
+                    : { paymentStatus: { $nin: ['failed', 'rejected', 'cancelled'] } }),
+                },
+              },
+            }
+          : {
+              paymentStatus: requirePaymentVerification
+                ? { $in: ['paid', 'completed'] }
+                : { $nin: ['failed', 'rejected', 'cancelled'] },
+            }),
       }
 
       const claimResult = await ordersCollection.findOneAndUpdate(
@@ -364,10 +406,15 @@ export default async function handler(req, res) {
           // Requirement 3: Reprint finished successfully
           updateDoc.reprintPending = false
           updateDoc.lastReprintAt = nowIso
+          if (existing.activeReprintAttemptId) {
+            updateDoc['reprintAttempts.$[elem].printOutcome'] = 'printed'
+            updateDoc['reprintAttempts.$[elem].printedAt'] = nowIso
+          }
           mongoUpdates.$inc = { reprintCount: 1 }
           mongoUpdates.$push = {
             auditLog: {
               action: 'reprint_completed',
+              attemptId: existing.activeReprintAttemptId || null,
               printedAt: nowIso,
             },
           }
@@ -381,10 +428,15 @@ export default async function handler(req, res) {
         }
         if (existing.reprintPending) {
           updateDoc.reprintPending = false
+          if (existing.activeReprintAttemptId) {
+            updateDoc['reprintAttempts.$[elem].printOutcome'] = 'failed'
+            updateDoc['reprintAttempts.$[elem].failedAt'] = nowIso
+          }
           // A failed reprint must not be counted as a successful reprint
           mongoUpdates.$push = {
             auditLog: {
               action: 'reprint_failed',
+              attemptId: existing.activeReprintAttemptId || null,
               failedAt: nowIso,
               errorMessage: req.body?.errorMessage || 'Print failed',
             },
@@ -392,9 +444,14 @@ export default async function handler(req, res) {
         }
       }
 
+      const updateOptions = existing.activeReprintAttemptId
+        ? { arrayFilters: [{ 'elem.attemptId': existing.activeReprintAttemptId }] }
+        : {}
+
       await ordersCollection.updateOne(
         { orderId: cleanId },
-        mongoUpdates
+        mongoUpdates,
+        updateOptions
       )
 
       console.log(`[AGENT_STATUS_UPDATE] Order ${cleanId} -> MongoDB printStatus "${newStatus}"`)

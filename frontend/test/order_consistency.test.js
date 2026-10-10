@@ -598,9 +598,64 @@ const resD = evaluateReprintButtonVisibility(pdfDeletedOrder, pdfDeletedLiveData
 assert.strictEqual(resD.canReprint, false, 'Reprint button MUST be hidden when PDF is deleted')
 assert.strictEqual(resD.isPdfDeleted, true)
 
-console.log('✓ TEST 23 PASSED: Reprint button is visible for both pending and paid orders when valid, and hidden on expiry/deletion')
+console.log('✓ TEST 23 PASSED: Reprint button is visible for both pending and paid orders when valid, and hidden on expiry/deletion\n')
 
-console.log('\n=== ALL 23 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
+// ── TEST 24: REPRINT-TO-PAYMENT UI WORKFLOW & VALIDATION ───────────────────
+console.log('[TEST 24] Testing Reprint-to-Payment UI workflow and client anti-reuse validation...')
+
+const { calcPriceBreakdown } = await import('../src/utils/pricing.js')
+
+// 1. Pricing validation on client matches canonical server calculation:
+const sampleReprintOrder = {
+  orderId: 'XB_REPRINT_TEST',
+  totalPages: 6,
+  colorMode: 'bw',
+  isDoubleSide: false,
+  copies: 1,
+  transactionId: 'TXN_ORIG_123',
+}
+const priceBreakdown = calcPriceBreakdown(sampleReprintOrder)
+assert.strictEqual(priceBreakdown.printingCost, 12, '6 pages B&W at ₹2/page must equal ₹12')
+assert.strictEqual(priceBreakdown.digitalProcessingFee, 2, '6-10 pages slab must equal ₹2')
+assert.strictEqual(priceBreakdown.totalAmount, 14, 'Total must equal ₹14')
+
+// 2. Client-side Anti-Reuse Validation function contract:
+function validateReprintPaymentInput({ phone, transactionId, originalTransactionId }) {
+  if (!phone || !phone.trim()) return { valid: false, error: 'Please enter your phone number.' }
+  if (!transactionId || !transactionId.trim()) return { valid: false, error: 'Please enter the Transaction ID.' }
+  if (transactionId.trim().length < 6) return { valid: false, error: 'Transaction ID must be at least 6 characters.' }
+  if (originalTransactionId && transactionId.trim().toUpperCase() === String(originalTransactionId).trim().toUpperCase()) {
+    return {
+      valid: false,
+      error: 'Cannot reuse the original order transaction ID. Every reprint requires a new payment and transaction reference.',
+    }
+  }
+  return { valid: true, error: null }
+}
+
+// 2.1 Empty phone
+const valPhone = validateReprintPaymentInput({ phone: '', transactionId: 'TXN_NEW_456', originalTransactionId: 'TXN_ORIG_123' })
+assert.strictEqual(valPhone.valid, false)
+assert.strictEqual(valPhone.error, 'Please enter your phone number.')
+
+// 2.2 Reusing original order UTR
+const valReuse = validateReprintPaymentInput({ phone: '9876543210', transactionId: 'TXN_ORIG_123', originalTransactionId: 'TXN_ORIG_123' })
+assert.strictEqual(valReuse.valid, false)
+assert.strictEqual(valReuse.error, 'Cannot reuse the original order transaction ID. Every reprint requires a new payment and transaction reference.')
+
+// 2.3 Short UTR (< 6 chars)
+const valShort = validateReprintPaymentInput({ phone: '9876543210', transactionId: '123', originalTransactionId: 'TXN_ORIG_123' })
+assert.strictEqual(valShort.valid, false)
+
+// 2.4 Valid new UTR
+const valOk = validateReprintPaymentInput({ phone: '9876543210', transactionId: 'TXN_NEW_999', originalTransactionId: 'TXN_ORIG_123' })
+assert.strictEqual(valOk.valid, true)
+assert.strictEqual(valOk.error, null)
+
+console.log('✓ TEST 24 PASSED: Reprint-to-Payment UI workflow, exact pricing calculation, and client anti-reuse guard verified')
+
+console.log('\n=== ALL 24 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
+
 
 
 

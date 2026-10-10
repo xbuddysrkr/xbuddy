@@ -16,6 +16,42 @@ export function calculateExpiryTimestamp(printedAtIso) {
 }
 
 /**
+ * Calculates exact order / reprint pricing according to XBuddy pricing slabs.
+ */
+export function calculateOrderPrice(order) {
+  const isColor = order.colorMode === 'color' || order.printType === 'Color'
+  const rate = isColor ? 5 : 2
+  const copies = Math.max(1, Number(order.copies) || 1)
+  const isDuplex = Boolean(order.duplex === true || order.printSide === 'Double')
+  const printablePages = Number(order.printableCount || order.selectedPageCount || order.totalPages || 1)
+  const effectivePages = isDuplex ? Math.ceil(printablePages / 2) : printablePages
+  const totalBillablePages = effectivePages * copies
+  const printingCost = totalBillablePages * rate
+
+  let serviceFee = 0
+  if (totalBillablePages >= 1 && totalBillablePages <= 5) serviceFee = 1
+  else if (totalBillablePages >= 6 && totalBillablePages <= 10) serviceFee = 2
+  else if (totalBillablePages >= 11 && totalBillablePages <= 20) serviceFee = 3
+  else if (totalBillablePages >= 21 && totalBillablePages <= 30) serviceFee = 4
+  else if (totalBillablePages >= 31 && totalBillablePages <= 50) serviceFee = 5
+  else if (totalBillablePages >= 51 && totalBillablePages <= 80) serviceFee = 7
+  else if (totalBillablePages >= 81 && totalBillablePages <= 100) serviceFee = 10
+
+  const totalAmount = printingCost + serviceFee
+  return {
+    printingCost,
+    serviceFee,
+    digitalProcessingFee: serviceFee,
+    totalAmount,
+    totalBillablePages,
+    effectivePages,
+    printablePages,
+    ratePerPage: rate,
+    copies,
+  }
+}
+
+/**
  * Evaluates whether an order is eligible for reprint.
  * Authoritative server-side evaluation:
  * - printStatus === 'Printed'
@@ -86,7 +122,8 @@ export function isOrderReprintEligible(order, serverTimeIso = new Date().toISOSt
   }
 
   const requirePay = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
-  if (requirePay && !['paid', 'completed'].includes(normPay)) {
+  // When allowPending is true (default for reprint-to-payment flow), pending orders can begin the reprint payment flow
+  if (requirePay && !options?.allowPending && !['paid', 'completed'].includes(normPay)) {
     return {
       eligible: false,
       paymentBlocked: true,
