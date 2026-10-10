@@ -32,11 +32,43 @@ function StepIcon({ status }) {
 }
 
 // stepStatuses: { [stepId]: 'pending' | 'active' | 'done' | 'error' }
-export default function OrderProgress({ stepStatuses, failedStep, errorReason, result, onRetry, onCancel }) {
-  const doneCount = STEPS.filter(s => stepStatuses[s.id] === 'done').length
-  const progress  = Math.round((doneCount / STEPS.length) * 100)
+export default function OrderProgress({
+  stepStatuses,
+  failedStep,
+  errorReason,
+  result,
+  submissionPhase = 'idle',
+  uploadProgress = { percent: 0, loaded: 0, total: 0 },
+  onRetry,
+  onCancel,
+}) {
   const hasFailed = !!failedStep
   const isSuccess = !!result
+
+  // Truthful progress state evaluation (never shows fake static 33%)
+  let displayPercent = null
+  let isIndeterminate = false
+  let headerLabel = 'Processing Order…'
+
+  if (isSuccess) {
+    displayPercent = 100
+    headerLabel = 'Order Confirmed!'
+  } else if (hasFailed) {
+    displayPercent = null
+    headerLabel = 'Order Failed'
+  } else if (submissionPhase === 'reconciling') {
+    isIndeterminate = true
+    headerLabel = 'Still saving; checking order status…'
+  } else if (submissionPhase === 'saving' || (stepStatuses.save_order === 'active' && !hasFailed)) {
+    // Honest indeterminate indicator during backend MongoDB Atlas & GridFS persistence
+    isIndeterminate = true
+    headerLabel = 'Securing in Cloud Database…'
+  } else if (submissionPhase === 'uploading' || (stepStatuses.upload_file === 'active' && uploadProgress?.percent > 0)) {
+    displayPercent = Math.min(99, Math.max(0, uploadProgress?.percent || 0))
+    headerLabel = `Uploading Document (${displayPercent}%)…`
+  } else if (submissionPhase === 'preparing' || stepStatuses.upload_file === 'active') {
+    headerLabel = 'Preparing Document…'
+  }
 
   return (
     <motion.div
@@ -45,12 +77,35 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
       className="mt-4 bg-[#FFFDF9] border border-orange-200 rounded-2xl shadow-md overflow-hidden"
     >
       {/* Progress bar */}
-      <div className="h-1 bg-orange-100">
-        <motion.div
-          className={`h-full ${hasFailed ? 'bg-red-400' : 'bg-[#F7931E]'}`}
-          animate={{ width: `${progress}%` }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
-        />
+      <div className="h-1.5 bg-orange-100 overflow-hidden relative">
+        {hasFailed ? (
+          <div className="h-full bg-red-400 w-full" />
+        ) : isSuccess ? (
+          <motion.div
+            className="h-full bg-emerald-500"
+            initial={{ width: 0 }}
+            animate={{ width: '100%' }}
+            transition={{ duration: 0.3 }}
+          />
+        ) : isIndeterminate ? (
+          <motion.div
+            className="h-full bg-gradient-to-r from-amber-400 via-[#F7931E] to-amber-400 w-full"
+            animate={{
+              x: ['-100%', '100%'],
+            }}
+            transition={{
+              repeat: Infinity,
+              duration: 1.4,
+              ease: 'easeInOut',
+            }}
+          />
+        ) : (
+          <motion.div
+            className="h-full bg-[#F7931E]"
+            animate={{ width: `${displayPercent || 5}%` }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+          />
+        )}
       </div>
 
       <div className="p-4 space-y-3">
@@ -67,14 +122,32 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
                 <XCircle className="w-4 h-4 text-red-500 shrink-0" />
                 <span>Order Failed</span>
               </>
+            ) : isIndeterminate ? (
+              <>
+                <div className="w-4 h-4 border-2 border-[#F7931E] border-t-transparent rounded-full animate-spin shrink-0" />
+                <span>{headerLabel}</span>
+              </>
             ) : (
               <>
                 <Clock className="w-4 h-4 text-[#F7931E] animate-pulse shrink-0" />
-                <span>Processing Order…</span>
+                <span>{headerLabel}</span>
               </>
             )}
           </div>
-          <span className="text-xs text-gray-400 font-mono">{progress}%</span>
+          {isSuccess ? (
+            <span className="text-xs text-emerald-600 font-mono font-bold">100%</span>
+          ) : hasFailed ? (
+            <span className="text-xs text-red-500 font-mono font-semibold">Failed</span>
+          ) : isIndeterminate ? (
+            <span className="text-xs text-amber-600 font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+              Saving…
+            </span>
+          ) : displayPercent !== null ? (
+            <span className="text-xs text-[#F7931E] font-mono font-bold">{displayPercent}%</span>
+          ) : (
+            <span className="text-xs text-gray-400 font-mono">Preparing…</span>
+          )}
         </div>
 
         {/* XBuddy Perfect Stack — Automatic Waiting Mini-Game while actively processing */}
@@ -89,6 +162,24 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
           {STEPS.map((step) => {
             const status = stepStatuses[step.id] ?? 'pending'
             const isFailed = step.id === failedStep
+
+            let dynamicDesc = step.desc
+            if (step.id === 'upload_file') {
+              if (submissionPhase === 'uploading' && uploadProgress?.percent > 0) {
+                dynamicDesc = `Uploading document bytes (${uploadProgress.percent}%)...`
+              } else if (status === 'done') {
+                dynamicDesc = 'Document uploaded successfully'
+              }
+            } else if (step.id === 'save_order') {
+              if (submissionPhase === 'reconciling') {
+                dynamicDesc = 'Still saving; checking order status...'
+              } else if (status === 'active') {
+                dynamicDesc = 'Securing order in cloud database...'
+              } else if (status === 'done') {
+                dynamicDesc = 'Secured in MongoDB Atlas'
+              }
+            }
+
             return (
               <motion.div
                 key={step.id}
@@ -109,7 +200,7 @@ export default function OrderProgress({ stepStatuses, failedStep, errorReason, r
                     <p className="text-xs text-red-500 mt-0.5 truncate">{errorReason}</p>
                   )}
                   {status === 'active' && (
-                    <p className="text-xs text-gray-400 mt-0.5">{step.desc}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{dynamicDesc}</p>
                   )}
                 </div>
               </motion.div>

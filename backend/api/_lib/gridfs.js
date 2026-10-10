@@ -32,11 +32,9 @@ export async function savePdfToGridFS(db, orderId, pdfBuffer, metadata = {}) {
   const filename = `${cleanId}.pdf`
   const bucket = getGridFSBucket(db)
 
-  // Clean up any existing file versions for this order
+  // Clean up any existing file versions for this order using indexed filename
   try {
-    const existingFiles = await bucket.find({
-      $or: [{ filename }, { 'metadata.orderId': cleanId }]
-    }).toArray()
+    const existingFiles = await bucket.find({ filename }).toArray()
     for (const file of existingFiles) {
       try {
         await bucket.delete(file._id)
@@ -47,6 +45,8 @@ export async function savePdfToGridFS(db, orderId, pdfBuffer, metadata = {}) {
   } catch (findErr) {
     console.warn(`[GridFS lookup notice] ${cleanId}:`, findErr.message)
   }
+
+  const tUploadStart = performance.now()
 
   // Upload new file stream
   return new Promise((resolve, reject) => {
@@ -67,10 +67,12 @@ export async function savePdfToGridFS(db, orderId, pdfBuffer, metadata = {}) {
     })
 
     uploadStream.on('finish', () => {
+      const durationMs = Math.round(performance.now() - tUploadStart)
       resolve({
         fileId: uploadStream.id,
         filename,
         size: pdfBuffer.length,
+        durationMs,
       })
     })
 

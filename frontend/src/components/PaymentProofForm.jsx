@@ -16,11 +16,13 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
   const [fieldError,    setFieldError]    = useState('')
 
   // Progress state
-  const [processing,    setProcessing]    = useState(false)
-  const [stepStatuses,  setStepStatuses]  = useState(PENDING_STATUSES)
-  const [failedStep,    setFailedStep]    = useState(null)   // step id
-  const [errorReason,   setErrorReason]   = useState('')
-  const [result,        setResult]        = useState(null)   // { orderId, message }
+  const [processing,      setProcessing]      = useState(false)
+  const [submissionPhase, setSubmissionPhase] = useState('idle') // 'idle' | 'preparing' | 'uploading' | 'saving' | 'reconciling' | 'confirmed' | 'failed'
+  const [uploadProgress,  setUploadProgress]  = useState({ percent: 0, loaded: 0, total: 0 })
+  const [stepStatuses,    setStepStatuses]    = useState(PENDING_STATUSES)
+  const [failedStep,      setFailedStep]      = useState(null)   // step id
+  const [errorReason,     setErrorReason]     = useState('')
+  const [result,          setResult]          = useState(null)   // { orderId, message }
 
   // Cached base64 values and orderId so retry can skip re-encoding and reuse order ID idempotently
   const cachedRef = useRef({ pdfBase64: null, orderId: null })
@@ -42,6 +44,8 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
     setProcessing(true)
     setFailedStep(null)
     setErrorReason('')
+    setSubmissionPhase('preparing')
+    setUploadProgress({ percent: 0, loaded: 0, total: 0 })
 
     const cache = cachedRef.current
 
@@ -64,14 +68,15 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
           } catch (err) {
             throw { step: 'upload_file', reason: err.message || 'Failed to read file' }
           }
-          setStep('upload_file', 'done')
+          setStep('upload_file', 'active')
         }
       }
 
-      // ── Step: save_order (authoritative MongoDB persistence) ──────────────
-      setStep('save_order', 'active')
+      setSubmissionPhase('uploading')
 
       if (orderMeta?.isReprint) {
+        setStep('save_order', 'active')
+        setSubmissionPhase('saving')
         const res = await submitReprintPayment({
           orderId:       orderMeta.orderId,
           attemptId:     orderMeta.attemptId,
@@ -85,6 +90,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
 
         setStep('save_order', 'done')
         setStep('confirmed', 'done')
+        setSubmissionPhase('confirmed')
         setResult({ orderId: orderMeta.orderId, message: res.message || 'Reprint payment confirmed. Document queued for printing.' })
         onSuccess(orderMeta.orderId, res)
         return
@@ -126,14 +132,31 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
         {
           onStep: (stepId) => {
             if (stepId === 'save_order') {
+              setSubmissionPhase('saving')
               setStep('upload_file', 'done')
               setStep('save_order', 'active')
+            } else if (stepId === 'reconciling') {
+              setSubmissionPhase('reconciling')
+              setStep('upload_file', 'done')
+              setStep('save_order', 'active')
+            }
+          },
+          onUploadProgress: (progress) => {
+            setUploadProgress(progress)
+            if (progress.serverProcessing || progress.percent >= 100) {
+              setSubmissionPhase('saving')
+              setStep('upload_file', 'done')
+              setStep('save_order', 'active')
+            } else {
+              setSubmissionPhase('uploading')
+              setStep('upload_file', 'active')
             }
           },
         }
       )
 
       // Verified saved to MongoDB Atlas: mark save_order and confirmed done
+      setSubmissionPhase('confirmed')
       setStep('save_order', 'done')
       setStep('confirmed', 'done')
       setResult({ orderId: res.orderId, message: res.message })
@@ -167,6 +190,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
       onSuccess(res.orderId)
 
     } catch (err) {
+      setSubmissionPhase('failed')
       const stepId = err?.step || 'save_order'
       const reason = err?.reason || err?.message || 'Unknown Error'
       setStep(stepId, 'error')
@@ -205,6 +229,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
     })
     setFailedStep(null)
     setErrorReason('')
+    setSubmissionPhase('idle')
     runSubmit(failedStep)
   }
 
@@ -213,6 +238,8 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
     setStepStatuses(PENDING_STATUSES)
     setFailedStep(null)
     setErrorReason('')
+    setSubmissionPhase('idle')
+    setUploadProgress({ percent: 0, loaded: 0, total: 0 })
   }
 
   const showProgress = processing || failedStep || result
@@ -265,6 +292,8 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
               failedStep={failedStep}
               errorReason={errorReason}
               result={result}
+              submissionPhase={submissionPhase}
+              uploadProgress={uploadProgress}
               onRetry={handleRetry}
               onCancel={handleCancel}
             />

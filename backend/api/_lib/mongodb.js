@@ -50,6 +50,7 @@ export async function connectToDatabase() {
           orders.createIndex({ createdAt: -1 }),
           orders.createIndex({ printStatus: 1, createdAt: -1 }),
           orders.createIndex({ paymentStatus: 1 }),
+          db.collection('order_pdfs.files').createIndex({ 'metadata.orderId': 1 }).catch(() => {}),
         ])
         indexesCreated = true
         console.log('[MongoDB] Connected to database "' + dbName + '" and verified indexes on collection "orders"')

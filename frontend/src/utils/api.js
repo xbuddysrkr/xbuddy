@@ -722,7 +722,55 @@ export async function reprintOrder(orderId, options = {}) {
   return { success: false, error: lastError }
 }
 
-export async function submitOrder(orderData, { onStep } = {}) {
+export async function uploadOrderPayload(endpoint, payloadString, { onUploadProgress, timeout = 90000 } = {}) {
+  if (typeof XMLHttpRequest !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', endpoint, true)
+      xhr.setRequestHeader('Content-Type', 'application/json')
+      xhr.timeout = timeout
+
+      if (xhr.upload && onUploadProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const percent = Math.min(100, Math.max(0, Math.round((e.loaded / e.total) * 100)))
+            onUploadProgress({ percent, loaded: e.loaded, total: e.total, serverProcessing: false })
+          }
+        }
+        xhr.upload.onload = () => {
+          onUploadProgress({ percent: 100, loaded: payloadString.length, total: payloadString.length, serverProcessing: true })
+        }
+      }
+
+      xhr.onload = () => {
+        resolve({
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          headers: {
+            get: (name) => xhr.getResponseHeader(name),
+          },
+          text: async () => xhr.responseText,
+          json: async () => JSON.parse(xhr.responseText),
+        })
+      }
+
+      xhr.onerror = () => reject(new Error('Network connection error during order transmission'))
+      xhr.ontimeout = () => reject(new Error(`Order transmission timed out after ${Math.round(timeout / 1000)}s`))
+
+      xhr.send(payloadString)
+    })
+  }
+
+  // Fallback for Node.js test environments
+  return fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payloadString,
+    signal: AbortSignal.timeout(timeout),
+  })
+}
+
+export async function submitOrder(orderData, { onStep, onUploadProgress } = {}) {
   const clientOrderId = orderData.orderId || ('XB' + String(Math.floor(1000 + Math.random() * 9000)))
 
   const normalizedColor = (orderData.colorMode === 'color' || orderData.printType === 'Color') ? 'color' : 'bw'
@@ -749,7 +797,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
   }
 
   // ── Step 1: Create authoritative order in MongoDB Atlas ──────────────────
-  onStep?.('save_order')
+  onStep?.('upload_file')
   let orderResult = null
   let orderId = clientOrderId
 
@@ -805,15 +853,21 @@ export async function submitOrder(orderData, { onStep } = {}) {
       pdfBase64: orderData.pdfBase64 || '',
     }
 
+    const payloadString = JSON.stringify(orderPayload)
     const endpoints = getCandidateOrdersEndpoints()
     let saved = false
+    let isUncertainTimeout = false
+
     for (const endpoint of endpoints) {
       try {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderPayload),
-          signal: AbortSignal.timeout(90000),
+        const res = await uploadOrderPayload(endpoint, payloadString, {
+          timeout: 90000,
+          onUploadProgress: (progress) => {
+            onUploadProgress?.(progress)
+            if (progress.serverProcessing) {
+              onStep?.('save_order')
+            }
+          },
         })
 
         if (res.ok) {
@@ -838,6 +892,34 @@ export async function submitOrder(orderData, { onStep } = {}) {
         }
       } catch (endpointErr) {
         console.warn(`[submitOrder] Attempt on ${endpoint} failed:`, endpointErr.message)
+        if (endpointErr.message.includes('timed out') || endpointErr.message.includes('connection error')) {
+          isUncertainTimeout = true
+        }
+      }
+    }
+
+    // ── Safe Reconciliation for Slow or Uncertain Requests ──
+    if (!saved && (isUncertainTimeout || !orderResult)) {
+      console.warn(`[submitOrder] Request status uncertain for order ${clientOrderId}. Checking canonical Orders API...`)
+      onStep?.('reconciling')
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const statusCheck = await getOrderStatus(clientOrderId)
+        if (statusCheck?.verifiedInMongo || (statusCheck?.success && statusCheck?.orderId)) {
+          console.log(`[submitOrder] Successfully reconciled order ${clientOrderId} on attempt ${attempt}!`)
+          saved = true
+          orderResult = {
+            success: true,
+            orderId: clientOrderId,
+            mongoSaved: true,
+            reconciled: true,
+            message: 'Order verified and securely saved in database.',
+          }
+          break
+        }
+        if (statusCheck?.notFound) {
+          break
+        }
       }
     }
   } catch (apiErr) {
@@ -855,7 +937,7 @@ export async function submitOrder(orderData, { onStep } = {}) {
 
   // Order is successfully placed and secured in MongoDB Atlas.
   // The Print Agent retrieves the PDF on-demand from the cloud backend at release time.
-  return { success: true, orderId, message: null }
+  return { success: true, orderId, message: orderResult?.message || null }
 }
 
 /**

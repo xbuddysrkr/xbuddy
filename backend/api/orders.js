@@ -214,6 +214,7 @@ export default async function handler(req, res) {
   try {
     // ── 1. SAVE ORDER (DUAL-WRITE + IDEMPOTENCY + RECOVERY) ──────────────────
     if (action === 'saveOrder') {
+      const tServerStart = performance.now()
       const payload = req.body || req.query || {}
       const validation = validateOrderPayload(payload)
       if (!validation.isValid) {
@@ -232,6 +233,7 @@ export default async function handler(req, res) {
       const rawPdfBase64 = typeof payload.pdfBase64 === 'string' ? payload.pdfBase64.trim() : ''
       let pdfBuffer = null
       let hasValidPdf = false
+      const tDecodeStart = performance.now()
       if (rawPdfBase64 && rawPdfBase64.length >= 50) {
         try {
           const buf = Buffer.from(rawPdfBase64, 'base64')
@@ -241,6 +243,8 @@ export default async function handler(req, res) {
           }
         } catch {}
       }
+      const tDecodeMs = Math.round(performance.now() - tDecodeStart)
+      const tValidationMs = Math.round(performance.now() - tServerStart)
 
       const hasDriveUrl = Boolean(payload.driveUrl && typeof payload.driveUrl === 'string' && payload.driveUrl.trim().startsWith('http'))
 
@@ -442,20 +446,27 @@ export default async function handler(req, res) {
         // DURABLE PERSISTENCE: Save PDF buffer to GridFS and Disk Cache before inserting orderDoc
         let gridFsSaved = false
         let cacheSaved = false
+        let gridFsMs = 0
+        let diskCacheMs = 0
 
         if (pdfBuffer && mongoDb) {
+          const tGridStart = performance.now()
           try {
-            await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
+            const gridRes = await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
             gridFsSaved = true
-            console.log(`[GRIDFS] Order ${cleanId} PDF successfully stored in MongoDB Atlas GridFS (${pdfBuffer.length} bytes)`)
+            gridFsMs = gridRes?.durationMs || Math.round(performance.now() - tGridStart)
+            console.log(`[GRIDFS] Order ${cleanId} PDF successfully stored in MongoDB Atlas GridFS (${pdfBuffer.length} bytes in ${gridFsMs}ms)`)
           } catch (gridErr) {
+            gridFsMs = Math.round(performance.now() - tGridStart)
             console.error(`[GRIDFS_ERROR] Failed to save PDF to GridFS for ${cleanId}:`, gridErr.message)
           }
         }
 
         // Ephemeral local cache write for read acceleration
         if (pdfBuffer) {
+          const tDiskStart = performance.now()
           cacheSaved = savePdfToDiskCache(cleanId, pdfBuffer)
+          diskCacheMs = Math.round(performance.now() - tDiskStart)
         }
 
         const isLargePdf = Boolean(pdfBuffer && pdfBuffer.length >= 2 * 1024 * 1024)
@@ -496,8 +507,22 @@ export default async function handler(req, res) {
           orderDoc.mongoSaved = true
           orderDoc.sheetsSaved = false
           orderDoc.syncStatus = 'mongo_only'
+          const tInsertStart = performance.now()
           await ordersCollection.insertOne(orderDoc)
-          console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} successfully saved to MongoDB Atlas (hasPdf=${orderDoc.hasPdf}, storage=${orderDoc.pdfStorage})`)
+          const mongoInsertMs = Math.round(performance.now() - tInsertStart)
+          const serverTotalMs = Math.round(performance.now() - tServerStart)
+
+          const timings = {
+            validationMs: tValidationMs,
+            decodeMs: tDecodeMs,
+            gridFsMs,
+            diskCacheMs,
+            mongoInsertMs,
+            serverTotalMs,
+            pdfSizeBytes: pdfBuffer ? pdfBuffer.length : 0,
+          }
+          console.log(`[ORDER_SAVE_TIMINGS] Order ${cleanId}: pdfSize=${timings.pdfSizeBytes}B, val=${timings.validationMs}ms, dec=${timings.decodeMs}ms, gridfs=${timings.gridFsMs}ms, cache=${timings.diskCacheMs}ms, mongo=${timings.mongoInsertMs}ms, totalServer=${timings.serverTotalMs}ms`)
+
           return res.status(200).json({
             success: true,
             orderId: cleanId,
@@ -508,6 +533,7 @@ export default async function handler(req, res) {
             sheetsSaved: false,
             syncStatus: 'mongo_only',
             message: 'Order saved in MongoDB Atlas (authoritative; Google Sheet writes disabled)',
+            timings,
           })
         } catch (mErr) {
           console.error(`[MongoDB Insert Failed] Order ${cleanId}: ${mErr.message}`)
