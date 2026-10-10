@@ -1,3 +1,6 @@
+import { ACADEMIC_TOOLKIT_ENABLED } from './academicToolkitConfig.js'
+export { ACADEMIC_TOOLKIT_ENABLED }
+
 export const DOC_TYPES = [
   { id: 'leave',       label: 'Leave Letter',          desc: 'Request leave from college'         },
   { id: 'bonafide',    label: 'Bonafide Request',       desc: 'Certificate for official purposes'  },
@@ -12,7 +15,10 @@ export const DOC_TYPES = [
 
 const today = () => new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
 
-export function generateDocument({ type, name, receiver, reason, days, weeks, extra, department, rollNo, year, college }) {
+export function generateDocument({ type, name, receiver, reason, days, weeks, extra, department, rollNo, year, college }, { bypassLock = false } = {}) {
+  if (!ACADEMIC_TOOLKIT_ENABLED && !bypassLock) {
+    throw new Error('Academic Toolkit is currently locked (Coming Soon).')
+  }
   const date  = today()
   const to    = receiver   || 'The HOD'
   const dept  = department || '[Department]'

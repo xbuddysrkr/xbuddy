@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Zap, Check, FileEdit, Eye } from 'lucide-react'
+import { Zap, Check, FileEdit, Eye, Lock, X } from 'lucide-react'
 import { DOC_TYPES } from '../utils/letterTemplates'
+import { ACADEMIC_TOOLKIT_ENABLED } from '../utils/academicToolkitConfig'
 
 // ── SVG Icons (no emojis) ─────────────────────────────────────────────────────
 const ICONS = {
@@ -808,6 +809,10 @@ function DocModal({ docType, onClose, onPrint }) {
 
   // Download PDF — exports the exact document layout on the canvas at true A4 scale
   async function handleDownload() {
+    if (!ACADEMIC_TOOLKIT_ENABLED) {
+      showToast('Academic Toolkit is currently locked (Coming Soon)')
+      return
+    }
     setExporting(true)
     try {
       const pdf = await exportToPdf(canvasRef.current, docType.id, { fontSize })
@@ -823,6 +828,10 @@ function DocModal({ docType, onClose, onPrint }) {
 
   // Print with XBuddy — sends the exact A4 document to print
   async function handlePrint() {
+    if (!ACADEMIC_TOOLKIT_ENABLED) {
+      showToast('Academic Toolkit is currently locked (Coming Soon)')
+      return
+    }
     setExporting(true)
     try {
       const pdf = await exportToPdf(canvasRef.current, docType.id, { fontSize })
@@ -842,6 +851,51 @@ function DocModal({ docType, onClose, onPrint }) {
     window.addEventListener('keydown', fn)
     return () => window.removeEventListener('keydown', fn)
   }, [onClose])
+
+  if (!ACADEMIC_TOOLKIT_ENABLED) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={onClose}
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          className="w-full max-w-md bg-white border border-orange-200 rounded-2xl p-6 shadow-2xl text-center relative"
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-slate-500 cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <div className="w-12 h-12 rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25] mx-auto mb-4">
+            <Lock className="w-6 h-6" />
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full bg-orange-100 text-[#F78C25] text-xs font-bold uppercase tracking-wider border border-orange-200 inline-block mb-3">
+            Coming Soon
+          </span>
+          <h3 className="text-lg font-extrabold text-slate-900 mb-2">
+            {docType?.label || 'Academic Toolkit'} is Locked
+          </h3>
+          <p className="text-slate-600 text-sm leading-relaxed mb-6 font-medium">
+            Academic Toolkit is coming soon. We're preparing the templates and editing tools for you.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] text-white text-xs font-bold shadow-md shadow-orange-500/20 hover:shadow-lg transition-all cursor-pointer"
+          >
+            Back to Toolkit
+          </button>
+        </div>
+      </motion.div>
+    )
+  }
 
   return (
     <motion.div
@@ -948,6 +1002,21 @@ function DocModal({ docType, onClose, onPrint }) {
 // ── Main Section ──────────────────────────────────────────────────────────────
 export default function AcademicToolkit({ onPrint }) {
   const [active, setActive] = useState(null)
+  const [lockedNotice, setLockedNotice] = useState('')
+
+  useEffect(() => {
+    if (!lockedNotice) return
+    const t = setTimeout(() => setLockedNotice(''), 3500)
+    return () => clearTimeout(t)
+  }, [lockedNotice])
+
+  const handleCardClick = (doc) => {
+    if (!ACADEMIC_TOOLKIT_ENABLED) {
+      setActive(doc)
+      return
+    }
+    setActive(doc)
+  }
 
   return (
     <section id="academic-toolkit" className="max-w-6xl mx-auto px-4 py-24">
@@ -958,10 +1027,22 @@ export default function AcademicToolkit({ onPrint }) {
         viewport={{ once: true }}
         className="mb-14"
       >
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-orange-300 bg-orange-50 text-[#F78C25] text-xs font-bold mb-5">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-          Academic Toolkit
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-orange-300 bg-orange-50 text-[#F78C25] text-xs font-bold">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
+            Academic Toolkit
+          </div>
+          {!ACADEMIC_TOOLKIT_ENABLED && (
+            <div
+              data-testid="academic-toolkit-coming-soon-badge"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-xs font-extrabold shadow-xs"
+            >
+              <Lock className="w-3 h-3 text-amber-600" />
+              Coming Soon
+            </div>
+          )}
         </div>
+
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
             <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 leading-tight">
@@ -987,36 +1068,99 @@ export default function AcademicToolkit({ onPrint }) {
             </div>
           </div>
         </div>
+
+        {/* Locked Coming Soon Message Card */}
+        {!ACADEMIC_TOOLKIT_ENABLED && (
+          <div
+            data-testid="academic-toolkit-locked-notice"
+            className="mt-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-orange-50 via-amber-50/70 to-orange-50 border border-orange-200 shadow-xs flex items-start sm:items-center gap-3.5"
+          >
+            <div className="w-10 h-10 rounded-xl bg-orange-100 border border-orange-200 flex items-center justify-center text-[#F78C25] flex-shrink-0 mt-0.5 sm:mt-0">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-slate-900 font-bold text-sm sm:text-base">
+                Your academic documents, ready when you need them.
+              </p>
+              <p className="text-slate-600 text-xs sm:text-sm font-medium mt-0.5">
+                Academic Toolkit is coming soon. We're preparing the templates and editing tools for you.
+              </p>
+            </div>
+            <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide bg-white text-[#F78C25] border border-orange-200 shadow-2xs">
+              Under Preparation
+            </span>
+          </div>
+        )}
       </motion.div>
 
       {/* Cards grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3" data-testid="academic-toolkit-grid">
         {DOC_TYPES.map((doc, i) => (
           <motion.button
             key={doc.id}
+            data-testid={`toolkit-card-${doc.id}`}
+            data-locked={!ACADEMIC_TOOLKIT_ENABLED}
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.04 }}
-            whileHover={{ y: -2 }}
-            onClick={() => setActive(doc)}
-            className="group text-left p-5 rounded-2xl bg-white border border-orange-100 hover:border-[#F78C25] hover:shadow-md transition-all duration-200 cursor-pointer"
+            whileHover={ACADEMIC_TOOLKIT_ENABLED ? { y: -2 } : {}}
+            onClick={() => handleCardClick(doc)}
+            className={`group text-left p-5 rounded-2xl bg-white border transition-all duration-200 cursor-pointer ${
+              !ACADEMIC_TOOLKIT_ENABLED
+                ? 'border-orange-100 hover:border-amber-300 hover:shadow-sm'
+                : 'border-orange-100 hover:border-[#F78C25] hover:shadow-md'
+            }`}
           >
             <div className="flex items-start justify-between mb-4">
               <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25] group-hover:bg-[#F78C25] group-hover:text-white transition-colors">
                 {ICONS[doc.id]}
               </div>
-              <div className="w-6 h-6 rounded-full bg-orange-50 group-hover:bg-orange-100 flex items-center justify-center transition-all">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#F78C25] transition-colors">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
-                </svg>
+              <div className="flex items-center gap-1.5">
+                {!ACADEMIC_TOOLKIT_ENABLED && (
+                  <span
+                    data-testid={`card-locked-badge-${doc.id}`}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                  >
+                    <Lock className="w-2.5 h-2.5 text-amber-600" />
+                    Coming Soon
+                  </span>
+                )}
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                  !ACADEMIC_TOOLKIT_ENABLED
+                    ? 'bg-slate-100 text-slate-400'
+                    : 'bg-orange-50 group-hover:bg-orange-100 text-gray-400 group-hover:text-[#F78C25]'
+                }`}>
+                  {!ACADEMIC_TOOLKIT_ENABLED ? (
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 transition-colors">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+                    </svg>
+                  )}
+                </div>
               </div>
             </div>
             <p className="text-slate-900 font-extrabold text-base mb-1">{doc.label}</p>
             <p className="text-slate-600 text-xs sm:text-sm font-semibold leading-relaxed">{doc.desc}</p>
             <div className="mt-4 pt-4 border-t border-orange-100 flex items-center justify-between">
               <span className="text-slate-400 text-xs">Two-way live preview</span>
-              <span className="text-[#F78C25] text-xs font-bold opacity-75 group-hover:opacity-100 transition-opacity">Open Document →</span>
+              {!ACADEMIC_TOOLKIT_ENABLED ? (
+                <span
+                  data-testid={`open-doc-locked-${doc.id}`}
+                  className="inline-flex items-center gap-1.5 text-slate-400 text-xs font-semibold"
+                >
+                  <Lock className="w-3 h-3 text-slate-400" />
+                  Locked
+                </span>
+              ) : (
+                <span
+                  data-testid={`open-doc-action-${doc.id}`}
+                  className="text-[#F78C25] text-xs font-bold opacity-75 group-hover:opacity-100 transition-opacity"
+                >
+                  Open Document →
+                </span>
+              )}
             </div>
           </motion.button>
         ))}

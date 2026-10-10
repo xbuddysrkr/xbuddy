@@ -114,7 +114,11 @@ export default function App() {
                             window.location.pathname.startsWith('/xbuddyads') ||
                             window.location.hash === '#xbuddyads' ||
                             window.location.pathname.startsWith('/ads') ||
-                            window.location.hash === '#ads'
+                            window.location.hash === '#ads' ||
+                            window.location.pathname.startsWith('/academic-toolkit') ||
+                            window.location.pathname.startsWith('/toolkit') ||
+                            window.location.pathname.startsWith('/template') ||
+                            window.location.hash === '#academic-toolkit'
       if (isDirectRoute) return false
       if (window.sessionStorage.getItem('xbuddy_intro_seen')) return false
       return true
@@ -156,6 +160,18 @@ export default function App() {
           orderId: null,
         }, '', window.location.href)
       } catch {}
+    }
+
+    if (
+      currentPath.startsWith('/academic-toolkit') ||
+      currentPath.startsWith('/toolkit') ||
+      currentPath.startsWith('/template') ||
+      currentHash === '#academic-toolkit'
+    ) {
+      setTimeout(() => {
+        const el = document.getElementById('academic-toolkit')
+        if (el) el.scrollIntoView({ behavior: 'smooth' })
+      }, 200)
     }
   }, [])
 
