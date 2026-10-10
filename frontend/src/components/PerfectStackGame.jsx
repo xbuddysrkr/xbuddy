@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Layers, RotateCcw, Sparkles } from 'lucide-react'
+import { RotateCcw, Sparkles } from 'lucide-react'
 import {
   ARENA_WIDTH,
-  ARENA_HEIGHT,
   SHEET_HEIGHT,
-  INITIAL_SHEET_WIDTH,
   calculateDrop,
   calculateNextSpeed,
   createInitialGameState,
@@ -16,10 +14,10 @@ import {
 export default function PerfectStackGame() {
   const [gameState, setGameState] = useState(createInitialGameState)
   const [bestScore, setBestScore] = useState(() => getStoredBestScore())
-  const [feedback, setFeedback] = useState(null) // { text, id }
+  const [feedback, setFeedback] = useState(null)
   const [fallingScraps, setFallingScraps] = useState([])
 
-  // Mutable refs for high-frequency 60fps animation without triggering React re-renders every frame
+  // Mutable refs for 60fps animation without triggering React re-renders every frame
   const movingXRef = useRef(0)
   const directionRef = useRef(1)
   const speedRef = useRef(gameState.speed)
@@ -40,14 +38,14 @@ export default function PerfectStackGame() {
     stackRef.current = gameState.stack
   }, [gameState.speed, gameState.movingWidth, gameState.status, gameState.stack])
 
-  // Core Animation Loop (runs via requestAnimationFrame, updating DOM transform directly)
+  // Animation Loop (60 FPS direct CSS transform)
   const animate = useCallback((time) => {
     if (statusRef.current !== 'playing') return
 
     if (lastTimeRef.current == null) {
       lastTimeRef.current = time
     }
-    const dt = Math.min((time - lastTimeRef.current) / 1000, 0.1) // clamp delta to 100ms
+    const dt = Math.min((time - lastTimeRef.current) / 1000, 0.1)
     lastTimeRef.current = time
 
     // Motion reduction check
@@ -68,7 +66,6 @@ export default function PerfectStackGame() {
 
     movingXRef.current = nextX
 
-    // Directly update DOM transform on moving sheet ref for silky-smooth 60 FPS
     if (movingSheetElRef.current) {
       movingSheetElRef.current.style.transform = `translate3d(${nextX}px, 0, 0)`
     }
@@ -76,14 +73,13 @@ export default function PerfectStackGame() {
     animFrameIdRef.current = requestAnimationFrame(animate)
   }, [])
 
-  // Start animation immediately on mount or restart
+  // Start animation immediately on mount
   useEffect(() => {
     lastTimeRef.current = null
     if (gameState.status === 'playing') {
       animFrameIdRef.current = requestAnimationFrame(animate)
     }
 
-    // Visibility listener: pause when tab is backgrounded
     const handleVisibilityChange = () => {
       if (document.hidden) {
         if (animFrameIdRef.current) {
@@ -111,7 +107,7 @@ export default function PerfectStackGame() {
     }
   }, [animate, gameState.status])
 
-  // Handle Sheet Drop Action
+  // Handle Sheet Drop Action (tap/click anywhere)
   const handleDrop = useCallback(() => {
     if (statusRef.current !== 'playing') return
 
@@ -148,21 +144,18 @@ export default function PerfectStackGame() {
       const nextScore = gameState.score + result.points
       const nextSpeed = calculateNextSpeed(speedRef.current)
 
-      // Update feedback badge
+      // Feedback celebratory pop
       setFeedback({ text: result.message, isPerfect: result.isPerfect, id: Date.now() })
       if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current)
       feedbackTimeoutRef.current = setTimeout(() => setFeedback(null), 1200)
 
-      // Update best score
       if (nextScore > bestScore) {
         setBestScore(nextScore)
         saveStoredBestScore(nextScore)
       }
 
-      // Reposition moving sheet for next drop
       movingWidthRef.current = result.placedWidth
       speedRef.current = nextSpeed
-      // Start moving sheet from opposite side of placement for dynamic gameplay
       const startX = result.placedX > (ARENA_WIDTH - result.placedWidth) / 2 ? 0 : (ARENA_WIDTH - result.placedWidth)
       movingXRef.current = startX
       directionRef.current = startX === 0 ? 1 : -1
@@ -178,7 +171,6 @@ export default function PerfectStackGame() {
         speed: nextSpeed,
       }))
     } else {
-      // Game Over: Miss or too small
       statusRef.current = 'game_over'
       if (animFrameIdRef.current) {
         cancelAnimationFrame(animFrameIdRef.current)
@@ -192,7 +184,7 @@ export default function PerfectStackGame() {
     }
   }, [gameState.score, bestScore])
 
-  // Restart Round (Isolated from real order submission)
+  // Restart Round
   const handleRestart = useCallback((e) => {
     e?.stopPropagation()
     const fresh = createInitialGameState()
@@ -213,7 +205,7 @@ export default function PerfectStackGame() {
     setGameState(fresh)
   }, [])
 
-  // Keyboard navigation on button or arena
+  // Keyboard navigation
   const handleKeyDown = (e) => {
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault()
@@ -227,207 +219,190 @@ export default function PerfectStackGame() {
 
   // Camera scroll: smoothly keep top sheets and moving sheet centered
   const stackHeight = gameState.stack.length * SHEET_HEIGHT
-  const maxStackVisibleHeight = 85
+  const maxStackVisibleHeight = 110
   const cameraOffset = Math.max(0, stackHeight - maxStackVisibleHeight)
 
   return (
     <div
       ref={arenaElRef}
-      className="w-full bg-[#FFFDF9] border border-orange-200/90 rounded-2xl p-3 shadow-xs select-none"
+      role="button"
+      tabIndex={0}
+      onClick={gameState.status === 'playing' ? handleDrop : undefined}
+      onKeyDown={handleKeyDown}
+      className="relative w-full h-[225px] rounded-2xl overflow-hidden select-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#F78C25]/60 transition-all shadow-md"
+      style={{
+        backgroundColor: '#18271E',
+        backgroundImage: `
+          radial-gradient(ellipse at 50% 65%, #23372B 0%, #17241D 100%),
+          linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px)
+        `,
+        backgroundSize: '100% 100%, 20px 20px, 20px 20px',
+      }}
+      aria-label="XBuddy Perfect Stack: Tap to drop sheet"
     >
-      {/* Game Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <div className="flex items-center gap-1.5">
-            <span className="font-extrabold text-[#222222] text-xs sm:text-sm tracking-tight flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5 text-[#F78C25]" /> Perfect Stack
+      {/* ── Top Header matching the Blueprint Design ── */}
+      <div className="absolute top-0 left-0 right-0 z-30 px-4 py-3 flex items-center justify-between pointer-events-none">
+        <div className="flex items-center gap-2">
+          <span className="font-extrabold text-white/95 text-xs sm:text-sm tracking-wider uppercase font-sans drop-shadow-xs">
+            BUILD YOUR TOWER
+          </span>
+          {gameState.score > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-white/10 border border-white/10 text-[#F8A548] font-mono text-[11px] font-extrabold">
+              {gameState.score}
             </span>
-            <span className="px-1.5 py-0.2 rounded-full bg-orange-100 text-[#F78C25] text-[9px] font-black uppercase tracking-wider">
-              Mini-Game
-            </span>
-          </div>
-          <p className="text-[11px] text-gray-400 italic">Build your paper tower while we save your order!</p>
+          )}
         </div>
 
-        {/* Score Badges */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className="px-2 py-0.5 rounded-lg bg-orange-50 border border-orange-200 text-[#F78C25] font-bold text-xs">
-            Score: <span className="font-extrabold">{gameState.score}</span>
-          </div>
-          <div className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 font-semibold text-xs">
-            Best: <span className="font-bold">{bestScore}</span>
-          </div>
+        <div className="flex items-center gap-2">
+          {bestScore > 0 && (
+            <span className="text-[10px] text-white/40 font-mono font-medium tracking-wide hidden min-[360px]:inline">
+              BEST: {bestScore}
+            </span>
+          )}
+          <span className="text-white/60 font-bold text-[11px] sm:text-xs tracking-wider uppercase transition-opacity">
+            TAP TO DROP
+          </span>
         </div>
       </div>
 
-      {/* Arcade Surface / Arena */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={gameState.status === 'playing' ? handleDrop : undefined}
-        onKeyDown={handleKeyDown}
-        className="relative w-full h-[150px] bg-gradient-to-b from-[#FFF9F3] to-[#FFF4E8] rounded-xl border border-orange-200/80 overflow-hidden cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#F78C25]/50 transition-shadow"
-        aria-label={gameState.status === 'playing' ? 'Game Arena: Click or tap to drop sheet' : 'Game Arena: Round finished'}
-      >
-        {/* Paper Counter Desk Strip (bottom base) */}
-        <div className="absolute bottom-0 left-0 right-0 h-4 bg-amber-900/10 border-t border-amber-900/15 flex items-center justify-center">
-          <span className="text-[8px] font-bold uppercase tracking-widest text-amber-950/40">Xerox Counter Desk</span>
-        </div>
-
-        {/* Celebratory Feedback Badge */}
-        <AnimatePresence>
-          {feedback && (
-            <motion.div
-              key={feedback.id}
-              initial={{ opacity: 0, y: -6, scale: 0.8 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
-              className={`absolute top-2 left-1/2 -translate-x-1/2 z-30 px-3 py-1 rounded-full text-[11px] font-black shadow-sm flex items-center gap-1 ${
-                feedback.isPerfect
-                  ? 'bg-gradient-to-r from-amber-400 to-[#F78C25] text-white shadow-amber-500/20'
-                  : 'bg-white border border-orange-200 text-[#F78C25]'
-              }`}
-            >
-              {feedback.isPerfect && <Sparkles className="w-3 h-3 text-white animate-spin" />}
-              <span>{feedback.text}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Stack World Container (scrolled by cameraOffset) */}
-        <div
-          className="absolute inset-0 transition-transform duration-200 ease-out"
-          style={{ transform: `translate3d(0, ${cameraOffset}px, 0)` }}
-        >
-          {/* Stacked Paper Sheets */}
-          <div className="absolute bottom-4 left-0 right-0">
-            {gameState.stack.map((sheet, index) => {
-              const isBase = index === 0
-              const isTop = index === gameState.stack.length - 1
-              return (
-                <div
-                  key={sheet.id || index}
-                  style={{
-                    position: 'absolute',
-                    left: `${(sheet.x / ARENA_WIDTH) * 100}%`,
-                    width: `${(sheet.width / ARENA_WIDTH) * 100}%`,
-                    bottom: `${index * SHEET_HEIGHT}px`,
-                    height: `${SHEET_HEIGHT}px`,
-                  }}
-                  className={`rounded-[3px] border transition-all duration-150 flex items-center justify-center overflow-hidden ${
-                    isBase
-                      ? 'bg-amber-100 border-amber-300 shadow-2xs'
-                      : sheet.isPerfect
-                      ? 'bg-gradient-to-r from-orange-50 via-white to-orange-50 border-[#F78C25] shadow-xs'
-                      : 'bg-white border-orange-200 shadow-2xs'
-                  }`}
-                >
-                  {/* Subtle paper line */}
-                  <div className={`w-full h-full border-b border-black/5 ${isTop ? 'bg-orange-50/30' : ''}`} />
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Falling Trimmed Scraps */}
-          {fallingScraps.map(scrap => (
-            <motion.div
-              key={scrap.id}
-              initial={{ y: 0, opacity: 1, rotate: 0 }}
-              animate={{
-                y: 60,
-                opacity: 0,
-                rotate: scrap.side === 'left' ? -25 : 25,
-              }}
-              transition={{ duration: 0.6, ease: 'easeIn' }}
-              style={{
-                position: 'absolute',
-                left: `${(scrap.x / ARENA_WIDTH) * 100}%`,
-                width: `${(scrap.width / ARENA_WIDTH) * 100}%`,
-                bottom: `${(gameState.stack.length) * SHEET_HEIGHT + 16}px`,
-                height: `${SHEET_HEIGHT}px`,
-              }}
-              className="bg-orange-100/80 border border-orange-300 rounded-[2px]"
-            />
-          ))}
-        </div>
-
-        {/* Moving Paper Sheet (Top Layer) */}
-        {gameState.status === 'playing' && (
-          <div
-            className="absolute left-0 right-0 z-20 pointer-events-none"
-            style={{
-              bottom: `${Math.min(115, stackHeight - cameraOffset + 16)}px`,
-              height: `${SHEET_HEIGHT}px`,
-            }}
-          >
-            <div
-              ref={movingSheetElRef}
-              style={{
-                position: 'absolute',
-                left: 0,
-                width: `${(gameState.movingWidth / ARENA_WIDTH) * 100}%`,
-                height: `${SHEET_HEIGHT}px`,
-                willChange: 'transform',
-              }}
-              className="bg-white border-2 border-[#F78C25] rounded-[4px] shadow-md flex items-center justify-between px-1.5"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-              <div className="h-0.5 w-6 bg-orange-200 rounded-full" />
-              <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-            </div>
-          </div>
-        )}
-
-        {/* Game Over Overlay */}
-        {gameState.status === 'game_over' && (
+      {/* Celebratory Feedback Pop Badge */}
+      <AnimatePresence>
+        {feedback && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="absolute inset-0 z-40 bg-black/35 backdrop-blur-[1px] flex flex-col items-center justify-center p-3 text-white text-center"
+            key={feedback.id}
+            initial={{ opacity: 0, y: -6, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.9 }}
+            transition={{ duration: 0.2 }}
+            className={`absolute top-9 left-1/2 -translate-x-1/2 z-40 px-3 py-1 rounded-full text-[11px] font-black shadow-md flex items-center gap-1.5 pointer-events-none ${
+              feedback.isPerfect
+                ? 'bg-gradient-to-r from-amber-400 to-[#F78C25] text-white shadow-amber-500/25'
+                : 'bg-[#23372B] border border-white/20 text-[#F8A548]'
+            }`}
           >
-            <p className="font-extrabold text-sm mb-0.5">Tower Toppled!</p>
-            <p className="text-[11px] text-orange-200 mb-2.5">
-              Stack Height: <strong>{gameState.stack.length - 1}</strong> sheets
-            </p>
-            <button
-              type="button"
-              onClick={handleRestart}
-              className="py-1.5 px-4 bg-[#F78C25] hover:bg-[#e07010] active:scale-95 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Try Again
-            </button>
+            {feedback.isPerfect && <Sparkles className="w-3 h-3 text-white animate-spin" />}
+            <span>{feedback.text}</span>
           </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* ── Baseline / Drafting Wire Line across the bottom ── */}
+      <div
+        className="absolute left-3 right-3 h-[1px] bg-white/15 pointer-events-none"
+        style={{ bottom: '26px' }}
+      />
+
+      {/* ── Stack World Container (Camera scrolling) ── */}
+      <div
+        className="absolute inset-0 transition-transform duration-200 ease-out"
+        style={{ transform: `translate3d(0, ${cameraOffset}px, 0)` }}
+      >
+        {/* Placed Stack Sheets (Cream/Beige paper blocks) */}
+        <div className="absolute left-0 right-0 pointer-events-none" style={{ bottom: '27px' }}>
+          {gameState.stack.map((sheet, index) => {
+            const isBase = index === 0
+            return (
+              <div
+                key={sheet.id || index}
+                style={{
+                  position: 'absolute',
+                  left: `${(sheet.x / ARENA_WIDTH) * 100}%`,
+                  width: `${(sheet.width / ARENA_WIDTH) * 100}%`,
+                  bottom: `${index * SHEET_HEIGHT}px`,
+                  height: `${SHEET_HEIGHT}px`,
+                }}
+                className={`rounded-md transition-all duration-150 relative overflow-hidden shadow-[0_3px_8px_rgba(0,0,0,0.35)] ${
+                  isBase
+                    ? 'bg-gradient-to-b from-[#F7F2E8] to-[#E9DFCFCF] border border-[#DDD3C2]'
+                    : sheet.isPerfect
+                    ? 'bg-gradient-to-b from-[#FFF9EE] to-[#EFE4D2] border border-[#F8A548]/50 shadow-[0_0_8px_rgba(248,165,72,0.3)]'
+                    : 'bg-gradient-to-b from-[#F5EFE5] to-[#E8DECEDB] border border-[#DDD3C2]'
+                }`}
+              >
+                {/* Embossed Paper Document Lines */}
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 w-16 pointer-events-none opacity-30">
+                  <div className="h-[1.5px] bg-black/50 rounded-full w-full" />
+                  <div className="h-[1.5px] bg-black/50 rounded-full w-3/5" />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Falling Trimmed Scraps */}
+        {fallingScraps.map(scrap => (
+          <motion.div
+            key={scrap.id}
+            initial={{ y: 0, opacity: 1, rotate: 0 }}
+            animate={{
+              y: 70,
+              opacity: 0,
+              rotate: scrap.side === 'left' ? -25 : 25,
+            }}
+            transition={{ duration: 0.6, ease: 'easeIn' }}
+            style={{
+              position: 'absolute',
+              left: `${(scrap.x / ARENA_WIDTH) * 100}%`,
+              width: `${(scrap.width / ARENA_WIDTH) * 100}%`,
+              bottom: `${(gameState.stack.length) * SHEET_HEIGHT + 27}px`,
+              height: `${SHEET_HEIGHT}px`,
+            }}
+            className="bg-[#F8A548]/90 rounded-md shadow-xs pointer-events-none"
+          />
+        ))}
       </div>
 
-      {/* Game Controls Footer */}
-      <div className="mt-2.5 flex items-center justify-between gap-2">
-        <p className="text-[11px] text-gray-400">
-          Tap surface or click button to stack accurately
-        </p>
-
-        {gameState.status === 'playing' ? (
-          <button
-            type="button"
-            onClick={handleDrop}
-            className="py-2 px-5 bg-gradient-to-r from-[#F78C25] to-[#EA580C] hover:from-[#ea7915] hover:to-[#d04900] active:scale-95 text-white font-black text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-            aria-label="DROP SHEET: Place moving paper onto the stack"
+      {/* ── Moving Active Sheet (Warm Orange paper block) ── */}
+      {gameState.status === 'playing' && (
+        <div
+          className="absolute left-0 right-0 z-20 pointer-events-none"
+          style={{
+            bottom: `${Math.min(145, stackHeight - cameraOffset + 27)}px`,
+            height: `${SHEET_HEIGHT}px`,
+          }}
+        >
+          <div
+            ref={movingSheetElRef}
+            style={{
+              position: 'absolute',
+              left: 0,
+              width: `${(gameState.movingWidth / ARENA_WIDTH) * 100}%`,
+              height: `${SHEET_HEIGHT}px`,
+              willChange: 'transform',
+            }}
+            className="bg-gradient-to-b from-[#FFB766] via-[#F8A548] to-[#E98B26] border border-[#FFAE57] rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.45)] flex items-center px-3"
           >
-            <span>DROP SHEET</span>
-            <span className="text-white/80 text-[10px]">▼</span>
-          </button>
-        ) : (
+            {/* Embossed Paper Document Lines */}
+            <div className="flex flex-col gap-0.5 w-16 pointer-events-none opacity-35">
+              <div className="h-[1.5px] bg-black/50 rounded-full w-full" />
+              <div className="h-[1.5px] bg-black/50 rounded-full w-3/5" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Game Over Overlay matching the Blueprint Aesthetic ── */}
+      {gameState.status === 'game_over' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="absolute inset-0 z-50 bg-[#121E17]/80 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-white text-center cursor-default"
+          onClick={e => e.stopPropagation()}
+        >
+          <p className="font-extrabold text-base tracking-wider uppercase mb-0.5 text-white">Tower Toppled!</p>
+          <p className="text-xs text-[#F8A548] font-mono mb-3">
+            Height: <strong>{gameState.stack.length - 1}</strong> sheets
+          </p>
           <button
             type="button"
             onClick={handleRestart}
-            className="py-2 px-4 bg-slate-800 hover:bg-slate-900 active:scale-95 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            className="py-2 px-5 bg-gradient-to-r from-[#F8A548] to-[#EA7C1C] hover:from-[#fba23c] hover:to-[#db6d0e] active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1.5 cursor-pointer uppercase tracking-wider"
           >
-            <RotateCcw className="w-3.5 h-3.5" /> Restart Round
+            <RotateCcw className="w-3.5 h-3.5" /> Try Again
           </button>
-        )}
-      </div>
+        </motion.div>
+      )}
     </div>
   )
 }
