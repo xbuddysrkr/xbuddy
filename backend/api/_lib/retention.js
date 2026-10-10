@@ -32,19 +32,22 @@ export function isOrderReprintEligible(order, serverTimeIso = new Date().toISOSt
     return { eligible: false, reason: `Order is not printed (current status: ${order.printStatus})` }
   }
 
-  // 2. Must have a valid expiry timestamp
-  if (!order.pdfExpiresAt) {
-    return { eligible: false, reason: 'No retention expiry timestamp recorded' }
+  // 2. Must have a valid expiry timestamp or genuine printedAt from which 30m is derived
+  const effectiveExpiresAt = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : null)
+  if (!effectiveExpiresAt) {
+    return { eligible: false, reason: 'No retention expiry timestamp or print timestamp recorded' }
   }
 
   const serverTime = new Date(serverTimeIso).getTime()
-  const expiryTime = new Date(order.pdfExpiresAt).getTime()
+  const expiryTime = new Date(effectiveExpiresAt).getTime()
 
   // 3. Expiry check (authoritative server clock)
   if (expiryTime <= serverTime) {
     return {
       eligible: false,
       expired: true,
+      remainingSeconds: 0,
+      effectiveExpiresAt,
       reason: 'Reprint window expired; document permanently deleted.',
     }
   }
@@ -54,6 +57,8 @@ export function isOrderReprintEligible(order, serverTimeIso = new Date().toISOSt
     return {
       eligible: false,
       deleted: true,
+      remainingSeconds: 0,
+      effectiveExpiresAt,
       reason: 'Document has been permanently deleted.',
     }
   }
@@ -62,6 +67,8 @@ export function isOrderReprintEligible(order, serverTimeIso = new Date().toISOSt
   if (order.hasPdf === false && !order.hasGridFsPdf && !order.driveUrl && !order.pdfBase64) {
     return {
       eligible: false,
+      remainingSeconds: 0,
+      effectiveExpiresAt,
       reason: 'Original PDF is no longer available in durable storage.',
     }
   }
@@ -72,6 +79,8 @@ export function isOrderReprintEligible(order, serverTimeIso = new Date().toISOSt
     return {
       eligible: false,
       paymentBlocked: true,
+      remainingSeconds: Math.max(0, Math.floor((expiryTime - serverTime) / 1000)),
+      effectiveExpiresAt,
       reason: `Reprint blocked: payment status is "${order.paymentStatus}".`,
     }
   }
@@ -81,11 +90,19 @@ export function isOrderReprintEligible(order, serverTimeIso = new Date().toISOSt
     return {
       eligible: false,
       paymentBlocked: true,
+      remainingSeconds: Math.max(0, Math.floor((expiryTime - serverTime) / 1000)),
+      effectiveExpiresAt,
       reason: `Payment authorization required: payment status is "${order.paymentStatus}".`,
     }
   }
 
-  return { eligible: true, remainingMs: Math.max(0, expiryTime - serverTime) }
+  const remainingSeconds = Math.max(0, Math.floor((expiryTime - serverTime) / 1000))
+  return {
+    eligible: true,
+    remainingMs: Math.max(0, expiryTime - serverTime),
+    remainingSeconds,
+    effectiveExpiresAt,
+  }
 }
 
 /**
@@ -104,15 +121,28 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
   const nowIso = new Date().toISOString()
   const ordersCollection = db.collection('orders')
 
-  // Find all orders that have expired and whose PDF has not yet been marked deleted
+  const thirtyMinsAgoIso = new Date(Date.now() - RETENTION_WINDOW_MS).toISOString()
+
+  // Find all orders that have expired (either by explicit pdfExpiresAt or legacy printedAt + 30m)
+  // and whose PDF has not yet been marked deleted
   const query = {
-    pdfExpiresAt: { $exists: true, $lte: nowIso },
-    pdfDeletedAt: { $exists: false },
     $or: [
-      { hasPdf: true },
-      { hasGridFsPdf: true },
-      { pdfStorage: { $ne: 'none' } },
-      { pdfBase64: { $exists: true, $ne: '' } },
+      { pdfExpiresAt: { $exists: true, $lte: nowIso } },
+      {
+        pdfExpiresAt: { $exists: false },
+        printedAt: { $exists: true, $ne: null, $lte: thirtyMinsAgoIso },
+      },
+    ],
+    pdfDeletedAt: { $exists: false },
+    $and: [
+      {
+        $or: [
+          { hasPdf: true },
+          { hasGridFsPdf: true },
+          { pdfStorage: { $ne: 'none' } },
+          { pdfBase64: { $exists: true, $ne: '' } },
+        ],
+      },
     ],
     ...(orderIds && Array.isArray(orderIds) && orderIds.length > 0 ? { orderId: { $in: orderIds } } : {}),
     ...(additionalFilter && typeof additionalFilter === 'object' ? additionalFilter : {}),
@@ -164,6 +194,9 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
         }
       }
 
+      // Derive genuine expiry from printedAt if pdfExpiresAt was not previously set
+      const derivedExpiry = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : nowIso)
+
       // 3. Atomically update MongoDB Atlas order document
       const updateResult = await ordersCollection.updateOne(
         { orderId, pdfDeletedAt: { $exists: false } },
@@ -175,6 +208,7 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
             pdfBase64: '',
             pdfSize: 0,
             pdfDeletedAt: nowIso,
+            pdfExpiresAt: derivedExpiry,
             updatedAt: nowIso,
           },
           $push: {
@@ -182,7 +216,7 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
               action: 'pdf_retention_deleted',
               deletedAt: nowIso,
               reason: '30_minute_retention_expired',
-              pdfExpiresAt: order.pdfExpiresAt,
+              pdfExpiresAt: derivedExpiry,
             },
           },
         }
@@ -190,7 +224,7 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
 
       if (updateResult.modifiedCount > 0) {
         cleanedOrderIds.push(orderId)
-        logger.log(`[RETENTION_CLEANUP_SUCCESS] Purged PDF for ${orderId} (expiredAt: ${order.pdfExpiresAt})`)
+        logger.log(`[RETENTION_CLEANUP_SUCCESS] Purged PDF for ${orderId} (expiredAt: ${derivedExpiry})`)
       }
     } catch (err) {
       logger.error(`[RETENTION_CLEANUP_FAILED] Could not purge PDF for ${orderId}: ${err.message}`)
@@ -205,6 +239,7 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
     success: errors.length === 0,
     expiredCount: expiredOrders.length,
     cleanedCount: cleanedOrderIds.length,
+    deletedCount: cleanedOrderIds.length,
     cleanedOrderIds,
     errors,
   }

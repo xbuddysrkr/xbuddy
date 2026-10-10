@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getMyOrders, saveOrder } from '../utils/orderStore'
+import { getMyOrders, saveOrder, updateOrder } from '../utils/orderStore'
 import { getOrderStatus, reprintOrder } from '../utils/api'
 import {
   Bell,
@@ -24,19 +24,35 @@ import {
 } from 'lucide-react'
 
 // Status mappings for comprehensive lifecycle
-const STATUS_MAP = {
-  'Pending':               { label: 'Pending',              cls: 'bg-slate-100 text-slate-700 border-slate-200', icon: Clock },
-  'Payment Submitted':     { label: 'Payment Submitted',    cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: CreditCard },
-  'Order Received':        { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'Accepted':              { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'Waiting':               { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'Printing':              { label: 'Printing...',          cls: 'bg-violet-50 text-violet-700 border-violet-200 animate-pulse', icon: Printer },
-  'Ready for Collection':  { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
-  'Ready':                 { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
-  'Collected':             { label: 'Collected',            cls: 'bg-slate-100 text-slate-600 border-slate-200', icon: CheckCircle2 },
-  'Printed':               { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
-  'Cancelled':             { label: 'Cancelled',            cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
-  'Failed':                { label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
+export const STATUS_MAP = {
+  'pending':                { label: 'Pending',              cls: 'bg-slate-100 text-slate-700 border-slate-200', icon: Clock },
+  'payment submitted':      { label: 'Payment Submitted',    cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: CreditCard },
+  'order received':         { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'waiting_for_shopkeeper': { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'waiting':                { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'accepted':               { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'queued':                 { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'printing':               { label: 'Printing...',          cls: 'bg-violet-50 text-violet-700 border-violet-200 animate-pulse', icon: Printer },
+  'ready for collection':   { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
+  'ready':                  { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
+  'printed':                { label: 'Printed',              cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: CheckCircle2 },
+  'collected':              { label: 'Collected',            cls: 'bg-slate-100 text-slate-600 border-slate-200', icon: CheckCircle2 },
+  'cancelled':              { label: 'Cancelled',            cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
+  'failed':                 { label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
+}
+
+export function getStatusInfo(rawStatus) {
+  if (!rawStatus) return STATUS_MAP['order received']
+  const key = String(rawStatus).toLowerCase().trim().replace(/[\s-]+/g, ' ')
+  if (STATUS_MAP[key]) return STATUS_MAP[key]
+  const underscoredKey = key.replace(/\s+/g, '_')
+  if (STATUS_MAP[underscoredKey]) return STATUS_MAP[underscoredKey]
+  if (key.includes('print') && !key.includes('not')) {
+    if (key === 'printed') return STATUS_MAP['printed']
+    return STATUS_MAP['printing']
+  }
+  if (key.includes('ready')) return STATUS_MAP['ready for collection']
+  return STATUS_MAP['order received']
 }
 
 function formatRemainingCountdown(seconds) {
@@ -87,33 +103,54 @@ export default function MyOrdersPage({ onStartPrinting }) {
     async function pollStatuses() {
       const statusUpdates = {}
       const dataUpdates = {}
-      for (const order of orders) {
-        if (!order.orderId) continue
-        try {
+
+      const results = await Promise.allSettled(
+        orders.filter(o => o.orderId).map(async (order) => {
           const res = await getOrderStatus(order.orderId)
-          if (res?.success) {
-            const ord = res.order || res
-            const st = ord.printStatus || res.printStatus
-            if (st) statusUpdates[order.orderId] = st
-            dataUpdates[order.orderId] = {
+          return { orderId: order.orderId, res }
+        })
+      )
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value?.res?.success) {
+          const { orderId, res } = result.value
+          const ord = res.order || res
+          const st = ord.printStatus || res.printStatus
+          if (st) {
+            statusUpdates[orderId] = st
+            updateOrder(orderId, {
+              status: st,
               printStatus: st,
+              paymentStatus: ord.paymentStatus,
               printedAt: ord.printedAt,
               pdfExpiresAt: ord.pdfExpiresAt,
               pdfDeletedAt: ord.pdfDeletedAt,
               hasPdf: ord.hasPdf,
-              paymentStatus: ord.paymentStatus,
-              reprintCount: Number(ord.reprintCount) || 0,
-              reprintEligible: ord.reprintEligible,
-              reprintReason: ord.reprintReason,
-            }
-            if (res.serverTime) {
-              setServerOffset(Date.now() - new Date(res.serverTime).getTime())
-            }
+            })
           }
-        } catch {}
+          dataUpdates[orderId] = {
+            printStatus: st,
+            printedAt: ord.printedAt,
+            pdfExpiresAt: ord.pdfExpiresAt,
+            pdfDeletedAt: ord.pdfDeletedAt,
+            hasPdf: ord.hasPdf,
+            paymentStatus: ord.paymentStatus,
+            reprintCount: Number(ord.reprintCount) || 0,
+            reprintEligible: ord.reprintEligible,
+            reprintReason: ord.reprintReason,
+          }
+          if (res.serverTime) {
+            setServerOffset(Date.now() - new Date(res.serverTime).getTime())
+          }
+        }
       }
-      setLiveStatuses(prev => ({ ...prev, ...statusUpdates }))
-      setLiveOrderData(prev => ({ ...prev, ...dataUpdates }))
+
+      if (Object.keys(statusUpdates).length > 0) {
+        setLiveStatuses(prev => ({ ...prev, ...statusUpdates }))
+      }
+      if (Object.keys(dataUpdates).length > 0) {
+        setLiveOrderData(prev => ({ ...prev, ...dataUpdates }))
+      }
     }
 
     pollStatuses()
@@ -182,7 +219,12 @@ export default function MyOrdersPage({ onStartPrinting }) {
           pageSize: ord.pageSize || 'A4',
           amount: Number(ord.amount || 0),
           status: ord.printStatus || 'Order Received',
+          printStatus: ord.printStatus || 'Order Received',
           paymentStatus: ord.paymentStatus || 'Pending',
+          printedAt: ord.printedAt,
+          pdfExpiresAt: ord.pdfExpiresAt,
+          pdfDeletedAt: ord.pdfDeletedAt,
+          hasPdf: ord.hasPdf,
           transactionId: ord.transactionId || '',
           savedAt: Date.now(),
         }
@@ -233,8 +275,8 @@ export default function MyOrdersPage({ onStartPrinting }) {
 
   // Check if any order is currently Ready for Collection
   const readyOrders = orders.filter(o => {
-    const s = liveStatuses[o.orderId] || o.status || 'Order Received'
-    return s === 'Ready for Collection' || s === 'Ready' || s === 'Printed'
+    const s = String(liveStatuses[o.orderId] || o.printStatus || o.status || '').toLowerCase().trim()
+    return s === 'ready for collection' || s === 'ready' || s === 'printed'
   })
 
   return (
@@ -409,29 +451,36 @@ export default function MyOrdersPage({ onStartPrinting }) {
         <div className="space-y-4">
           {filteredOrders.map((order) => {
             const liveData = liveOrderData[order.orderId] || {}
-            const rawStatus = liveData.printStatus || liveStatuses[order.orderId] || order.status || 'Order Received'
-            const statusInfo = STATUS_MAP[rawStatus] || STATUS_MAP['Order Received']
+            const rawStatus = liveData.printStatus || liveStatuses[order.orderId] || order.printStatus || order.status || 'Order Received'
+            const statusInfo = getStatusInfo(rawStatus)
             const StatusIcon = statusInfo.icon
 
-            const isPrinted = rawStatus === 'Printed' || rawStatus === 'Ready for Collection' || rawStatus === 'Ready' || Boolean(liveData.printedAt)
-            const pdfExpiresAt = liveData.pdfExpiresAt
+            const printedAt = liveData.printedAt || order.printedAt
+            const normStatus = String(rawStatus).toLowerCase().trim()
+            const isPrinted = normStatus === 'printed' || normStatus === 'ready for collection' || normStatus === 'ready' || Boolean(printedAt)
+
+            // Derive deadline as printedAt + 30 minutes if pdfExpiresAt absent
+            const effectiveExpiresAt = liveData.pdfExpiresAt || (printedAt ? new Date(new Date(printedAt).getTime() + 30 * 60 * 1000).toISOString() : null)
             const isPdfDeleted = Boolean(liveData.pdfDeletedAt || liveData.hasPdf === false)
 
             // Authoritative server-clock adjusted countdown
             const serverNow = Date.now() - serverOffset
-            const remainingSecs = pdfExpiresAt ? Math.max(0, Math.floor((new Date(pdfExpiresAt).getTime() - serverNow) / 1000)) : 0
-            const isExpired = Boolean(pdfExpiresAt && remainingSecs <= 0)
+            const remainingSecs = effectiveExpiresAt ? Math.max(0, Math.floor((new Date(effectiveExpiresAt).getTime() - serverNow) / 1000)) : 0
+            const isExpired = Boolean(effectiveExpiresAt && remainingSecs <= 0)
+
+            // Payment guard: reprint blocked if payment is pending, failed, rejected, or cancelled
+            const normPayment = String(liveData.paymentStatus || order.paymentStatus || 'pending').toLowerCase().trim()
+            const isPaymentEligible = normPayment === 'paid' || normPayment === 'completed'
 
             const canReprint = Boolean(
               isPrinted &&
-              pdfExpiresAt &&
+              effectiveExpiresAt &&
               !isExpired &&
               !isPdfDeleted &&
-              liveData.paymentStatus !== 'failed' &&
-              liveData.paymentStatus !== 'rejected' &&
-              liveData.paymentStatus !== 'cancelled' &&
-              rawStatus !== 'Printing' &&
-              !liveData.reprintPending
+              isPaymentEligible &&
+              normStatus !== 'printing' &&
+              !liveData.reprintPending &&
+              (liveData.reprintEligible !== false)
             )
 
             return (
@@ -480,7 +529,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     </div>
                   )}
 
-                  {(isExpired || isPdfDeleted) && (isPrinted || liveData.printedAt) && (
+                  {(isExpired || isPdfDeleted) && (isPrinted || printedAt) && (
                     <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl mt-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span>Reprint window expired; document permanently deleted.</span>

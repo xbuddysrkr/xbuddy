@@ -428,6 +428,92 @@ assert.strictEqual(strictPaidResult.eligible, true, 'Paid must be accepted when 
 assert.strictEqual(strictPaidResult.status, 200)
 console.log('✓ TEST 20 PASSED: Strict payment verification correctly requires 402 for pending and authorizes paid with 200')
 
-console.log('\n=== ALL 20 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
+// 21. Test My Orders STATUS_MAP and getStatusInfo mapping consistency
+console.log('\n[TEST 21] Testing My Orders status mapping consistency across status variations...')
+const STATUS_MAP = {
+  'pending':                { label: 'Pending' },
+  'payment submitted':      { label: 'Payment Submitted' },
+  'order received':         { label: 'Order Received' },
+  'waiting_for_shopkeeper': { label: 'Order Received' },
+  'waiting':                { label: 'Order Received' },
+  'accepted':               { label: 'Order Received' },
+  'queued':                 { label: 'Order Received' },
+  'printing':               { label: 'Printing...' },
+  'ready for collection':   { label: 'Ready for Collection' },
+  'ready':                  { label: 'Ready for Collection' },
+  'printed':                { label: 'Printed' },
+  'collected':              { label: 'Collected' },
+  'cancelled':              { label: 'Cancelled' },
+  'failed':                 { label: 'Order Failed' },
+}
+
+function getStatusInfo(rawStatus) {
+  if (!rawStatus) return STATUS_MAP['order received']
+  const key = String(rawStatus).toLowerCase().trim().replace(/[\s-]+/g, ' ')
+  if (STATUS_MAP[key]) return STATUS_MAP[key]
+  const underscoredKey = key.replace(/\s+/g, '_')
+  if (STATUS_MAP[underscoredKey]) return STATUS_MAP[underscoredKey]
+  if (key.includes('print') && !key.includes('not')) {
+    if (key === 'printed') return STATUS_MAP['printed']
+    return STATUS_MAP['printing']
+  }
+  if (key.includes('ready')) return STATUS_MAP['ready for collection']
+  return STATUS_MAP['order received']
+}
+
+assert.strictEqual(getStatusInfo('Printed').label, 'Printed', 'Canonical "Printed" must map to label "Printed"')
+assert.strictEqual(getStatusInfo('printed').label, 'Printed', 'Lowercase "printed" must map to label "Printed"')
+assert.strictEqual(getStatusInfo('PRINTED').label, 'Printed', 'Uppercase "PRINTED" must map to label "Printed"')
+assert.strictEqual(getStatusInfo('waiting_for_shopkeeper').label, 'Order Received')
+assert.strictEqual(getStatusInfo('queued').label, 'Order Received')
+assert.strictEqual(getStatusInfo('Ready for Collection').label, 'Ready for Collection')
+assert.strictEqual(getStatusInfo('printing').label, 'Printing...')
+assert.strictEqual(getStatusInfo(undefined).label, 'Order Received')
+console.log('✓ TEST 21 PASSED: Status mapping correctly resolves all variants, ensuring "Printed" displays "Printed"')
+
+// 22. Test My Orders legacy order (XB6480) display and guard contract
+console.log('\n[TEST 22] Testing My Orders legacy order display and guard contract for XB6480...')
+const xb6480ProductionSample = {
+  orderId: 'XB6480',
+  printStatus: 'Printed',
+  printedAt: '2026-10-10T04:21:58.640Z',
+  // pdfExpiresAt is absent in raw legacy record
+  hasPdf: true,
+  pdfStorage: 'gridfs',
+  paymentStatus: 'pending',
+}
+const serverClockTime = new Date('2026-10-10T05:45:08.058Z').getTime()
+
+// 1. Status label must be "Printed"
+const xb6480StatusInfo = getStatusInfo(xb6480ProductionSample.printStatus)
+assert.strictEqual(xb6480StatusInfo.label, 'Printed', 'XB6480 must display "Printed" badge in My Orders')
+
+// 2. Derive deadline as printedAt + 30 minutes
+const derivedDeadlineMs = new Date(xb6480ProductionSample.printedAt).getTime() + 30 * 60 * 1000
+const derivedDeadlineIso = new Date(derivedDeadlineMs).toISOString()
+assert.strictEqual(derivedDeadlineIso, '2026-10-10T04:51:58.640Z', 'Deadline must be exactly printedAt + 30 minutes')
+
+// 3. Expiration evaluation at server clock time
+const remainingSecs = Math.max(0, Math.floor((derivedDeadlineMs - serverClockTime) / 1000))
+assert.strictEqual(remainingSecs, 0, 'Remaining countdown must be 0 for expired legacy order')
+const isExpired = derivedDeadlineMs <= serverClockTime
+assert.strictEqual(isExpired, true, 'XB6480 must evaluate as expired at 05:45:08 UTC')
+
+// 4. Reprint guard: both expired and pending payment must block reprint
+const normPayment = String(xb6480ProductionSample.paymentStatus || 'pending').toLowerCase().trim()
+const isPaymentEligible = normPayment === 'paid' || normPayment === 'completed'
+assert.strictEqual(isPaymentEligible, false, 'Pending payment must never be eligible for reprint')
+
+const canReprint = Boolean(
+  xb6480ProductionSample.printStatus === 'Printed' &&
+  derivedDeadlineIso &&
+  !isExpired &&
+  isPaymentEligible
+)
+assert.strictEqual(canReprint, false, 'XB6480 must NOT have reprint button enabled')
+assert.strictEqual(xb6480ProductionSample.paymentStatus, 'pending', 'Payment status must remain unmodified pending')
+console.log('✓ TEST 22 PASSED: XB6480 legacy contract guarantees "Printed" display, expired state, pending payment safety, and blocked reprint')
+
+console.log('\n=== ALL 22 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
 
 

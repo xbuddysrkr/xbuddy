@@ -176,18 +176,29 @@ app.listen(PORT, () => {
 
       // 3. Pre-warming strictly active, non-expired orders from authoritative MongoDB Atlas
       const nowIso = new Date().toISOString()
+      const thirtyMinsAgoIso = new Date(Date.now() - 30 * 60 * 1000).toISOString()
       const activeOrders = await db.collection('orders')
         .find(
           {
             printStatus: { $in: ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed'] },
             pdfDeletedAt: { $exists: false },
             hasPdf: { $ne: false },
-            $or: [
-              { pdfExpiresAt: { $exists: false } },
-              { pdfExpiresAt: { $gt: nowIso } }
+            $and: [
+              {
+                $or: [
+                  { pdfExpiresAt: { $exists: false } },
+                  { pdfExpiresAt: { $gt: nowIso } },
+                ],
+              },
+              {
+                $or: [
+                  { printedAt: { $exists: false } },
+                  { printedAt: { $gt: thirtyMinsAgoIso } },
+                ],
+              },
             ],
           },
-          { projection: { orderId: 1, pdfBase64: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, hasPdf: 1 } }
+          { projection: { orderId: 1, pdfBase64: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, printedAt: 1, hasPdf: 1 } }
         )
         .sort({ createdAt: -1 })
         .limit(10)
@@ -196,8 +207,9 @@ app.listen(PORT, () => {
       let count = 0
       for (const order of activeOrders) {
         if (!order.orderId) continue
-        // Prewarming audit: Never prewarm expired or deleted order
-        if (order.pdfDeletedAt || (order.pdfExpiresAt && order.pdfExpiresAt <= new Date().toISOString())) {
+        // Prewarming audit: Never prewarm expired or deleted order (including legacy orders)
+        const effectiveExpiry = order.pdfExpiresAt || (order.printedAt ? new Date(new Date(order.printedAt).getTime() + 30 * 60 * 1000).toISOString() : null)
+        if (order.pdfDeletedAt || (effectiveExpiry && effectiveExpiry <= new Date().toISOString())) {
           continue
         }
 

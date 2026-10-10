@@ -178,6 +178,8 @@ export function isHtmlResponse(text, contentType = '') {
 
 function getCandidateOrdersEndpoints() {
   const endpoints = [
+    typeof window !== 'undefined' && window.location?.origin ? `${window.location.origin}/api/orders` : '',
+    '/api/orders',
     'https://xbuddy.onrender.com/api/orders',
     ORDERS_ENDPOINT,
   ]

@@ -716,9 +716,10 @@ export default async function handler(req, res) {
         if (order) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
           const nowMs = Date.now()
+          const derivedExpiry = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : null)
           const isExpired = Boolean(
             order.pdfDeletedAt ||
-            (order.pdfExpiresAt && new Date(order.pdfExpiresAt).getTime() <= nowMs)
+            (derivedExpiry && new Date(derivedExpiry).getTime() <= nowMs)
           )
           let hasPdf = !isExpired && Boolean(
             order.hasGridFsPdf === true ||
@@ -735,6 +736,7 @@ export default async function handler(req, res) {
           const reprintCheck = isOrderReprintEligible(order)
           const cleanOrder = {
             ...order,
+            pdfExpiresAt: derivedExpiry,
             hasPdf,
             pdfStorage: isExpired ? 'none' : (order.pdfStorage || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
             reprintEligible: reprintCheck.eligible,
@@ -768,7 +770,7 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const order = await db.collection('orders').findOne(
           { orderId },
-          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfDeletedAt: 1 } }
+          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, printedAt: 1 } }
         )
         if (!order) {
           // If order does not exist in authoritative MongoDB, purge any stale disk cache file
@@ -779,7 +781,8 @@ export default async function handler(req, res) {
         }
 
         // RETENTION POLICY GATE: Document permanently expired or deleted
-        if (order.pdfDeletedAt || (order.pdfExpiresAt && new Date(order.pdfExpiresAt).getTime() <= Date.now())) {
+        const effectiveExpiry = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : null)
+        if (order.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
           if (fs.existsSync(cachePath)) {
             try { fs.unlinkSync(cachePath) } catch {}
           }
@@ -1005,9 +1008,10 @@ export default async function handler(req, res) {
         if (Array.isArray(orders)) {
           const nowMs = Date.now()
           const cleanOrders = orders.map(order => {
+            const derivedExpiry = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : null)
             const isExpired = Boolean(
               order.pdfDeletedAt ||
-              (order.pdfExpiresAt && new Date(order.pdfExpiresAt).getTime() <= nowMs)
+              (derivedExpiry && new Date(derivedExpiry).getTime() <= nowMs)
             )
             const hasPdf = !isExpired && Boolean(
               order.hasPdf === true ||
@@ -1018,6 +1022,7 @@ export default async function handler(req, res) {
             const reprintCheck = isOrderReprintEligible(order)
             return {
               ...order,
+              pdfExpiresAt: derivedExpiry,
               hasPdf,
               pdfStorage: isExpired ? 'none' : (order.pdfStorage || (hasPdf ? 'gridfs' : 'none')),
               reprintEligible: reprintCheck.eligible,
@@ -1268,20 +1273,21 @@ export default async function handler(req, res) {
         }
 
         // Retention Expiry Guard (Server Authoritative)
-        if (!existing.pdfExpiresAt) {
+        const effectiveExpiresAt = existing.pdfExpiresAt || (existing.printedAt ? calculateExpiryTimestamp(existing.printedAt) : null)
+        if (!effectiveExpiresAt) {
           return res.status(400).json({
             success: false,
             error: 'No retention window recorded for this order.',
           })
         }
 
-        const expiryMs = new Date(existing.pdfExpiresAt).getTime()
+        const expiryMs = new Date(effectiveExpiresAt).getTime()
         if (expiryMs <= nowMs || existing.pdfDeletedAt) {
           return res.status(410).json({
             success: false,
             expired: true,
             error: 'Reprint window expired; document permanently deleted.',
-            pdfExpiresAt: existing.pdfExpiresAt,
+            pdfExpiresAt: effectiveExpiresAt,
           })
         }
 
@@ -1330,12 +1336,19 @@ export default async function handler(req, res) {
         }
 
         // Atomic claim / idempotency guard: prevents concurrent duplicate clicks
+        const thirtyMinsAgoIso = new Date(Date.now() - 30 * 60 * 1000).toISOString()
         const atomicFilter = {
           orderId,
           printStatus: 'Printed',
           pdfDeletedAt: { $exists: false },
-          pdfExpiresAt: { $gt: nowIso },
           reprintPending: { $ne: true },
+          $or: [
+            { pdfExpiresAt: { $gt: nowIso } },
+            {
+              pdfExpiresAt: { $exists: false },
+              printedAt: { $gt: thirtyMinsAgoIso },
+            },
+          ],
           paymentStatus: requirePay
             ? { $in: ['paid', 'completed'] }
             : { $nin: ['failed', 'rejected', 'cancelled'] },
@@ -1348,6 +1361,7 @@ export default async function handler(req, res) {
               printStatus: 'waiting_for_shopkeeper',
               reprintPending: true,
               lastReprintRequestedAt: nowIso,
+              pdfExpiresAt: effectiveExpiresAt,
               updatedAt: nowIso,
             },
             $push: {

@@ -542,8 +542,103 @@ async function runRegressionSuite() {
 
     console.log('✓ TEST 11 PASSED: Payment and order authorization safeguards fully enforced\n')
 
+    // ── TEST 12: Legacy orders lacking pdfExpiresAt derive deadline from printedAt + 30m ───
+    console.log('[TEST 12] Testing legacy orders without pdfExpiresAt (XB6480 pattern)...')
+    const id12ExpiredLegacy = `XB96${Math.floor(10000 + Math.random() * 90000)}`
+    const id12ActiveLegacy = `XB97${Math.floor(10000 + Math.random() * 90000)}`
+    testIdsToCleanup.push(id12ExpiredLegacy, id12ActiveLegacy)
+
+    // 12.1 Expired legacy order (printed 50 mins ago, no pdfExpiresAt, pending payment)
+    const printed50MinsAgo = new Date(Date.now() - 50 * 60 * 1000).toISOString()
+    const expectedLegacyDeadlineToIso = new Date(new Date(printed50MinsAgo).getTime() + 30 * 60 * 1000).toISOString()
+
+    await savePdfToGridFS(db, id12ExpiredLegacy, SAMPLE_PDF)
+    const legacyCachePath = path.join(PDF_CACHE_DIR, `${id12ExpiredLegacy}.pdf`)
+    fs.writeFileSync(legacyCachePath, SAMPLE_PDF)
+
+    await ordersCol.insertOne({
+      orderId: id12ExpiredLegacy,
+      printStatus: 'Printed',
+      printedAt: printed50MinsAgo,
+      hasPdf: true,
+      pdfStorage: 'gridfs',
+      paymentStatus: 'pending',
+    })
+
+    // Evaluation check:
+    const legacyDoc = await ordersCol.findOne({ orderId: id12ExpiredLegacy })
+    const evalExpired = isOrderReprintEligible(legacyDoc)
+    assert.strictEqual(evalExpired.eligible, false, 'Expired legacy order must NOT be eligible')
+    assert.strictEqual(evalExpired.reason, 'Reprint window expired; document permanently deleted.', 'Reason must be expiration, not missing timestamp')
+    assert.strictEqual(evalExpired.remainingSeconds, 0)
+    assert.strictEqual(evalExpired.effectiveExpiresAt, expectedLegacyDeadlineToIso)
+
+    // getOrderStatus check:
+    const { req: req12Status, res: res12Status } = createMockReqRes({
+      method: 'GET',
+      query: { action: 'getOrderStatus', orderId: id12ExpiredLegacy }
+    })
+    await ordersHandler(req12Status, res12Status)
+    assert.strictEqual(res12Status.statusCode, 200)
+    assert.strictEqual(res12Status.bodyData.order.printStatus, 'Printed')
+    assert.strictEqual(res12Status.bodyData.order.paymentStatus, 'pending', 'Payment status must remain pending')
+    assert.strictEqual(res12Status.bodyData.order.pdfExpiresAt, expectedLegacyDeadlineToIso, 'Derived deadline must be printedAt + 30m')
+    assert.strictEqual(res12Status.bodyData.order.hasPdf, false, 'hasPdf must project false after expiry')
+    assert.strictEqual(res12Status.bodyData.order.reprintEligible, false)
+    assert.strictEqual(res12Status.bodyData.order.reprintReason, 'Reprint window expired; document permanently deleted.')
+
+    // Direct PDF fetch must return HTTP 410 and purge cache
+    const { req: req12Pdf, res: res12Pdf } = createMockReqRes({
+      method: 'GET',
+      query: { action: 'getOrderPdf', orderId: id12ExpiredLegacy }
+    })
+    await ordersHandler(req12Pdf, res12Pdf)
+    assert.strictEqual(res12Pdf.statusCode, 410, 'Expired legacy order must return HTTP 410 Gone')
+    assert.strictEqual(fs.existsSync(legacyCachePath), false, 'Disk cache must be purged on expired access')
+
+    // Cleanup deletion:
+    const cleanLegacyRes = await cleanupExpiredPdfs(db, { orderIds: [id12ExpiredLegacy] })
+    assert.strictEqual(cleanLegacyRes.success, true)
+    assert.strictEqual(cleanLegacyRes.cleanedCount, 1)
+    assert.strictEqual(await hasPdfInGridFS(db, id12ExpiredLegacy), false, 'GridFS file must be permanently removed')
+
+    const cleanedLegacyDoc = await ordersCol.findOne({ orderId: id12ExpiredLegacy })
+    assert.strictEqual(cleanedLegacyDoc.hasPdf, false)
+    assert.strictEqual(cleanedLegacyDoc.paymentStatus, 'pending', 'Payment status must NEVER be modified during cleanup')
+    assert.strictEqual(cleanedLegacyDoc.printStatus, 'Printed', 'Print status must be preserved')
+    assert.strictEqual(cleanedLegacyDoc.pdfExpiresAt, expectedLegacyDeadlineToIso, 'Derived expiry must be persisted')
+    assert.ok(cleanedLegacyDoc.pdfDeletedAt, 'pdfDeletedAt must be recorded')
+
+    // Reprint rejection:
+    const { req: req12Reprint, res: res12Reprint } = createMockReqRes({
+      body: { action: 'reprintOrder', orderId: id12ExpiredLegacy }
+    })
+    await ordersHandler(req12Reprint, res12Reprint)
+    assert.strictEqual(res12Reprint.statusCode, 410, 'Reprint request on expired legacy order must return HTTP 410')
+
+    // 12.2 Active legacy order (printed 10 mins ago, no pdfExpiresAt, payment paid)
+    const printed10MinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    const activeExpectedDeadline = new Date(new Date(printed10MinsAgo).getTime() + 30 * 60 * 1000).toISOString()
+
+    await ordersCol.insertOne({
+      orderId: id12ActiveLegacy,
+      printStatus: 'Printed',
+      printedAt: printed10MinsAgo,
+      hasPdf: true,
+      pdfStorage: 'gridfs',
+      paymentStatus: 'paid',
+    })
+
+    const activeLegacyDoc = await ordersCol.findOne({ orderId: id12ActiveLegacy })
+    const evalActive = isOrderReprintEligible(activeLegacyDoc)
+    assert.strictEqual(evalActive.eligible, true, 'Active legacy order with paid payment must be eligible')
+    assert.strictEqual(evalActive.effectiveExpiresAt, activeExpectedDeadline)
+    assert.ok(evalActive.remainingSeconds > 1100 && evalActive.remainingSeconds <= 1200, 'Remaining time must be ~20 mins, never reset to 30 mins from now')
+
+    console.log('✓ TEST 12 PASSED: Legacy orders lacking pdfExpiresAt accurately derive deadline, purge upon expiry, and protect payment status\n')
+
     console.log('================================================================')
-    console.log('  ALL 11 RETENTION & REPRINT REGRESSION TESTS PASSED!           ')
+    console.log('  ALL 12 RETENTION & REPRINT REGRESSION TESTS PASSED!           ')
     console.log('================================================================\n')
   } finally {
     // Clean up test documents

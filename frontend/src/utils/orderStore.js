@@ -66,6 +66,13 @@ export function saveOrder(order) {
     amount: Number(order.amount) || 0,
     phone: order.phone || '',
     savedAt: order.savedAt || Date.now(),
+    status: order.printStatus || order.status || 'Order Received',
+    printStatus: order.printStatus || order.status || 'Order Received',
+    paymentStatus: order.paymentStatus || 'pending',
+    printedAt: order.printedAt || null,
+    pdfExpiresAt: order.pdfExpiresAt || null,
+    pdfDeletedAt: order.pdfDeletedAt || null,
+    hasPdf: order.hasPdf !== false,
   }
 
   try {
@@ -80,6 +87,34 @@ export function saveOrder(order) {
     return updated
   } catch (err) {
     console.error('Failed to save order to localStorage:', err)
+    return getMyOrders()
+  }
+}
+
+/**
+ * Updates specific fields on an existing saved order in localStorage.
+ * @param {string} orderId 
+ * @param {Object} patch 
+ * @returns {Array} Updated list of orders
+ */
+export function updateOrder(orderId, patch) {
+  if (!orderId || !patch || typeof patch !== 'object') return getMyOrders()
+  try {
+    const existing = getMyOrders()
+    let found = false
+    const updated = existing.map(item => {
+      if (item.orderId === orderId) {
+        found = true
+        return { ...item, ...patch }
+      }
+      return item
+    })
+    if (found) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+    }
+    return updated
+  } catch (err) {
+    console.error('Failed to update order in localStorage:', err)
     return getMyOrders()
   }
 }
