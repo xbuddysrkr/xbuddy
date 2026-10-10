@@ -28,7 +28,7 @@ import CampusAdsAdmin from './components/CampusAdsAdmin'
 import XBuddyIntro from './components/XBuddyIntro'
 import XBuddyLogo from './components/XBuddyLogo'
 import Footer from './components/Footer'
-import { Menu, ClipboardList, Store, Megaphone, Check } from 'lucide-react'
+import { Menu, ClipboardList, Check } from 'lucide-react'
 
 const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin', ADS: 'ads' }
 const DEFAULT_SETTINGS = {
@@ -444,8 +444,8 @@ export default function App() {
             </div>
 
             {step === STEP.HERO ? (
-              <div className="flex items-center gap-6">
-                <div className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
+              <div className="flex items-center gap-4 sm:gap-6">
+                <div className="hidden md:flex items-center gap-5 lg:gap-6 text-xs font-semibold text-slate-600">
                   <a href="#how-it-works" className="hover:text-[#F7931E] transition-colors">How It Works</a>
                   <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors">Why X Buddy</a>
                   <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors">Who Is It For</a>
@@ -455,12 +455,6 @@ export default function App() {
                   </button>
                   <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1.5 cursor-pointer">
                     <ClipboardList className="w-4 h-4 text-[#F7931E]" /> My Orders
-                  </button>
-                  <button onClick={() => goToStep(STEP.ADMIN)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer">
-                    <Store className="w-3.5 h-3.5" /> Shop Staff
-                  </button>
-                  <button onClick={() => goToStep(STEP.ADS)} className="px-3 py-1 bg-orange-50 hover:bg-orange-100 text-[#F7931E] border border-orange-200 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer">
-                    <Megaphone className="w-3.5 h-3.5" /> Campus Ads
                   </button>
                 </div>
                 <button

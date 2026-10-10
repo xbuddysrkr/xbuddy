@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, ClipboardList, Store, Info, HelpCircle, X } from 'lucide-react'
+import { Home, ClipboardList, Store, Megaphone, Info, HelpCircle, X } from 'lucide-react'
 import XBuddyLogo from './XBuddyLogo'
 
 export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentStep }) {
@@ -7,6 +7,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
     { id: 'home', label: 'Home', icon: Home, action: () => onNavigate('home') },
     { id: 'my_orders', label: 'My Orders', icon: ClipboardList, action: () => onNavigate('my_orders') },
     { id: 'admin', label: 'Shop Dashboard', icon: Store, action: () => onNavigate('admin') },
+    { id: 'ads', label: 'Campus Ads', icon: Megaphone, action: () => onNavigate('ads') },
     { id: 'about', label: 'About X Buddy', icon: Info, action: () => onNavigate('about') },
     { id: 'help', label: 'Help', icon: HelpCircle, action: () => onNavigate('help') },
   ]
