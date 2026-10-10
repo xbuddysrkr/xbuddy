@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { connectToDatabase } from '../_lib/mongodb.js'
+import { calculateExpiryTimestamp } from '../_lib/retention.js'
 
 const AUTHORIZED_KEY_HASHES = new Set([
   'ea4af0179d15ec55173b299b18bbffb8b770589fe9df62b6239aee52eee4f04d',
@@ -76,6 +77,9 @@ export function normalizeAgentOrder(order = {}) {
     claimedAt: order.claimedAt || null,
     claimedBy: order.claimedBy || null,
     printedAt: order.printedAt || null,
+    pdfExpiresAt: order.pdfExpiresAt || null,
+    pdfDeletedAt: order.pdfDeletedAt || null,
+    reprintCount: Number(order.reprintCount) || 0,
     source: 'mongo',
   }
 }
@@ -235,6 +239,17 @@ export default async function handler(req, res) {
         })
       }
 
+      // 1.5. Reject claiming expired or deleted documents
+      if (existing.pdfDeletedAt || (existing.pdfExpiresAt && new Date(existing.pdfExpiresAt).getTime() <= Date.now())) {
+        console.warn(`[AGENT_CLAIM_EXPIRED] Order ${cleanId} claim rejected: retention window expired`)
+        return res.status(410).json({
+          success: false,
+          error: `Order ${cleanId} PDF retention window expired; document permanently deleted.`,
+          expired: true,
+          orderId: cleanId,
+        })
+      }
+
       // 2. Reject failed, rejected, or cancelled payments unconditionally
       const normPayStatus = String(existing.paymentStatus || 'pending').trim().toLowerCase()
       if (['failed', 'rejected', 'cancelled'].includes(normPayStatus)) {
@@ -265,6 +280,7 @@ export default async function handler(req, res) {
       const claimFilter = {
         orderId: cleanId,
         printStatus: { $in: PENDING_PRINT_STATUSES },
+        pdfDeletedAt: { $exists: false },
         paymentStatus: requirePaymentVerification
           ? { $in: ['paid', 'completed'] }
           : { $nin: ['failed', 'rejected', 'cancelled'] },
@@ -323,28 +339,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'orderId and status are required' })
       }
 
-      const updateDoc = {
-        printStatus: newStatus,
-        updatedAt: nowIso,
-      }
-
-      if (newStatus === 'Printed') {
-        updateDoc.printedAt = nowIso
-      } else if (newStatus === 'Printing') {
-        updateDoc.printingAt = nowIso
-      } else if (newStatus.toLowerCase().includes('fail')) {
-        updateDoc.failedAt = nowIso
-        if (req.body?.errorMessage) {
-          updateDoc.errorMessage = String(req.body.errorMessage)
-        }
-      }
-
-      const updateRes = await ordersCollection.updateOne(
-        { orderId: cleanId },
-        { $set: updateDoc }
-      )
-
-      if (updateRes.matchedCount === 0) {
+      const existing = await ordersCollection.findOne({ orderId: cleanId }, { projection: { pdfBase64: 0 } })
+      if (!existing) {
         return res.status(404).json({
           success: false,
           error: `Order ${cleanId} not found in MongoDB Atlas`,
@@ -352,11 +348,62 @@ export default async function handler(req, res) {
         })
       }
 
+      const updateDoc = {
+        printStatus: newStatus,
+        updatedAt: nowIso,
+      }
+      const mongoUpdates = { $set: updateDoc }
+
+      if (newStatus === 'Printed') {
+        // Requirement 1: When an order first transitions to Printed, record immutable printedAt
+        // and set pdfExpiresAt = printedAt + 30 minutes. Repeated updates or reprints must NOT reset it.
+        if (!existing.printedAt) {
+          updateDoc.printedAt = nowIso
+          updateDoc.pdfExpiresAt = calculateExpiryTimestamp(nowIso)
+        } else if (existing.reprintPending) {
+          // Requirement 3: Reprint finished successfully
+          updateDoc.reprintPending = false
+          updateDoc.lastReprintAt = nowIso
+          mongoUpdates.$inc = { reprintCount: 1 }
+          mongoUpdates.$push = {
+            auditLog: {
+              action: 'reprint_completed',
+              printedAt: nowIso,
+            },
+          }
+        }
+      } else if (newStatus === 'Printing') {
+        updateDoc.printingAt = nowIso
+      } else if (newStatus.toLowerCase().includes('fail')) {
+        updateDoc.failedAt = nowIso
+        if (req.body?.errorMessage) {
+          updateDoc.errorMessage = String(req.body.errorMessage)
+        }
+        if (existing.reprintPending) {
+          updateDoc.reprintPending = false
+          // A failed reprint must not be counted as a successful reprint
+          mongoUpdates.$push = {
+            auditLog: {
+              action: 'reprint_failed',
+              failedAt: nowIso,
+              errorMessage: req.body?.errorMessage || 'Print failed',
+            },
+          }
+        }
+      }
+
+      await ordersCollection.updateOne(
+        { orderId: cleanId },
+        mongoUpdates
+      )
+
       console.log(`[AGENT_STATUS_UPDATE] Order ${cleanId} -> MongoDB printStatus "${newStatus}"`)
       return res.status(200).json({
         success: true,
         orderId: cleanId,
         printStatus: newStatus,
+        printedAt: updateDoc.printedAt || existing.printedAt || null,
+        pdfExpiresAt: updateDoc.pdfExpiresAt || existing.pdfExpiresAt || null,
         updatedAt: nowIso,
         source: 'mongo',
       })

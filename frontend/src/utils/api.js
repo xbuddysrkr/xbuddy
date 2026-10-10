@@ -541,6 +541,40 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
   return { success: false, error: 'Failed to update payment status in authoritative MongoDB' }
 }
 
+export async function reprintOrder(orderId, options = {}) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId) return { success: false, error: 'orderId is required' }
+
+  const candidateEndpoints = getCandidateOrdersEndpoints()
+  let lastError = 'Failed to request reprint'
+
+  for (const endpoint of candidateEndpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reprintOrder',
+          orderId: cleanId,
+          ...options,
+        }),
+        signal: AbortSignal.timeout(12000),
+      })
+      const text = await res.text()
+      if (isHtmlResponse(text, res.headers.get('content-type'))) continue
+      try {
+        const data = JSON.parse(text)
+        if (data) return data
+      } catch {}
+    } catch (err) {
+      console.warn(`[reprintOrder] Notice on ${endpoint}:`, err.message)
+      lastError = err.message
+    }
+  }
+
+  return { success: false, error: lastError }
+}
+
 export async function submitOrder(orderData, { onStep } = {}) {
   const clientOrderId = orderData.orderId || ('XB' + String(Math.floor(1000 + Math.random() * 9000)))
 

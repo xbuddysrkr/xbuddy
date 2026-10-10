@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getMyOrders, saveOrder } from '../utils/orderStore'
-import { getOrderStatus } from '../utils/api'
+import { getOrderStatus, reprintOrder } from '../utils/api'
 import {
   Bell,
   Copy,
@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   ClipboardList,
   X,
+  RotateCw,
 } from 'lucide-react'
 
 // Status mappings for comprehensive lifecycle
@@ -38,10 +39,22 @@ const STATUS_MAP = {
   'Failed':                { label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
 }
 
+function formatRemainingCountdown(seconds) {
+  if (seconds <= 0) return '00:00'
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}m ${s < 10 ? '0' : ''}${s}s`
+}
+
 export default function MyOrdersPage({ onStartPrinting }) {
   const [orders, setOrders] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   const [liveStatuses, setLiveStatuses] = useState({})
+  const [liveOrderData, setLiveOrderData] = useState({})
+  const [serverOffset, setServerOffset] = useState(0)
+  const [reprintingId, setReprintingId] = useState(null)
+  const [reprintMessage, setReprintMessage] = useState(null)
+  const [tick, setTick] = useState(0)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [shopModalOrder, setShopModalOrder] = useState(null)
   const [copied, setCopied] = useState(false)
@@ -59,29 +72,93 @@ export default function MyOrdersPage({ onStartPrinting }) {
     loadOrders()
   }, [])
 
+  // 1-second interval ticker for smooth countdown rendering
+  useEffect(() => {
+    const ticker = setInterval(() => {
+      setTick(t => t + 1)
+    }, 1000)
+    return () => clearInterval(ticker)
+  }, [])
+
   // Live polling for getOrderStatus(orderId) across saved orders
   useEffect(() => {
     if (orders.length === 0) return
 
     async function pollStatuses() {
-      const updates = {}
+      const statusUpdates = {}
+      const dataUpdates = {}
       for (const order of orders) {
         if (!order.orderId) continue
         try {
           const res = await getOrderStatus(order.orderId)
           if (res?.success) {
-            const st = res.printStatus || res.order?.printStatus
-            if (st) updates[order.orderId] = st
+            const ord = res.order || res
+            const st = ord.printStatus || res.printStatus
+            if (st) statusUpdates[order.orderId] = st
+            dataUpdates[order.orderId] = {
+              printStatus: st,
+              printedAt: ord.printedAt,
+              pdfExpiresAt: ord.pdfExpiresAt,
+              pdfDeletedAt: ord.pdfDeletedAt,
+              hasPdf: ord.hasPdf,
+              paymentStatus: ord.paymentStatus,
+              reprintCount: Number(ord.reprintCount) || 0,
+              reprintEligible: ord.reprintEligible,
+              reprintReason: ord.reprintReason,
+            }
+            if (res.serverTime) {
+              setServerOffset(Date.now() - new Date(res.serverTime).getTime())
+            }
           }
         } catch {}
       }
-      setLiveStatuses(prev => ({ ...prev, ...updates }))
+      setLiveStatuses(prev => ({ ...prev, ...statusUpdates }))
+      setLiveOrderData(prev => ({ ...prev, ...dataUpdates }))
     }
 
     pollStatuses()
     pollRef.current = setInterval(pollStatuses, 5000)
     return () => clearInterval(pollRef.current)
   }, [orders])
+
+  async function handleReprint(orderId) {
+    if (!orderId || reprintingId) return
+    setReprintingId(orderId)
+    setReprintMessage(null)
+    try {
+      const res = await reprintOrder(orderId)
+      if (res?.success) {
+        setReprintMessage({
+          orderId,
+          type: 'success',
+          text: 'Reprint requested successfully! Document is queued at the Xerox shop.',
+        })
+        setLiveStatuses(prev => ({ ...prev, [orderId]: 'waiting_for_shopkeeper' }))
+        setLiveOrderData(prev => ({
+          ...prev,
+          [orderId]: {
+            ...(prev[orderId] || {}),
+            printStatus: 'waiting_for_shopkeeper',
+            reprintPending: true,
+          },
+        }))
+      } else {
+        setReprintMessage({
+          orderId,
+          type: 'error',
+          text: res?.error || 'Reprint window expired; document permanently deleted.',
+        })
+      }
+    } catch (err) {
+      setReprintMessage({
+        orderId,
+        type: 'error',
+        text: `Network error: ${err.message}`,
+      })
+    } finally {
+      setReprintingId(null)
+    }
+  }
 
   async function handleCloudSearch(targetId) {
     const id = (targetId || searchQuery).trim().toUpperCase()
@@ -331,9 +408,31 @@ export default function MyOrdersPage({ onStartPrinting }) {
         /* Orders List */
         <div className="space-y-4">
           {filteredOrders.map((order) => {
-            const rawStatus = liveStatuses[order.orderId] || order.status || 'Order Received'
+            const liveData = liveOrderData[order.orderId] || {}
+            const rawStatus = liveData.printStatus || liveStatuses[order.orderId] || order.status || 'Order Received'
             const statusInfo = STATUS_MAP[rawStatus] || STATUS_MAP['Order Received']
             const StatusIcon = statusInfo.icon
+
+            const isPrinted = rawStatus === 'Printed' || rawStatus === 'Ready for Collection' || rawStatus === 'Ready' || Boolean(liveData.printedAt)
+            const pdfExpiresAt = liveData.pdfExpiresAt
+            const isPdfDeleted = Boolean(liveData.pdfDeletedAt || liveData.hasPdf === false)
+
+            // Authoritative server-clock adjusted countdown
+            const serverNow = Date.now() - serverOffset
+            const remainingSecs = pdfExpiresAt ? Math.max(0, Math.floor((new Date(pdfExpiresAt).getTime() - serverNow) / 1000)) : 0
+            const isExpired = Boolean(pdfExpiresAt && remainingSecs <= 0)
+
+            const canReprint = Boolean(
+              isPrinted &&
+              pdfExpiresAt &&
+              !isExpired &&
+              !isPdfDeleted &&
+              liveData.paymentStatus !== 'failed' &&
+              liveData.paymentStatus !== 'rejected' &&
+              liveData.paymentStatus !== 'cancelled' &&
+              rawStatus !== 'Printing' &&
+              !liveData.reprintPending
+            )
 
             return (
               <motion.div
@@ -367,9 +466,72 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   <p className="text-[11px] text-gray-400">
                     Placed: {formatSavedAt(order.savedAt)}
                   </p>
+
+                  {/* 30-Minute Retention Countdown & Status Badges */}
+                  {canReprint && (
+                    <div className="inline-flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-xl mt-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
+                      <span>Reprint available: <strong className="font-mono font-bold text-amber-900">{formatRemainingCountdown(remainingSecs)}</strong></span>
+                      {liveData.reprintCount > 0 && (
+                        <span className="text-[10px] bg-amber-200/80 text-amber-900 font-bold px-1.5 py-0.5 rounded-md ml-1">
+                          {liveData.reprintCount} {liveData.reprintCount === 1 ? 'reprint' : 'reprints'}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {(isExpired || isPdfDeleted) && (isPrinted || liveData.printedAt) && (
+                    <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl mt-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span>Reprint window expired; document permanently deleted.</span>
+                    </div>
+                  )}
+
+                  {liveData.reprintPending && (
+                    <div className="inline-flex items-center gap-1.5 text-xs text-blue-800 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl mt-1">
+                      <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
+                      <span>Reprint queued — waiting for Xerox shop dispatch</span>
+                    </div>
+                  )}
+
+                  {reprintMessage && reprintMessage.orderId === order.orderId && (
+                    <div className={`mt-2 p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${
+                      reprintMessage.type === 'success'
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                        : 'bg-rose-50 text-rose-800 border border-rose-200'
+                    }`}>
+                      {reprintMessage.type === 'success' ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      )}
+                      <span>{reprintMessage.text}</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-orange-100">
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-orange-100 flex-wrap">
+                  {canReprint && (
+                    <button
+                      id={`reprint-btn-${order.orderId}`}
+                      disabled={reprintingId === order.orderId}
+                      onClick={() => handleReprint(order.orderId)}
+                      className="px-3.5 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      title="Reprint order using existing stored PDF within 30 minutes"
+                    >
+                      {reprintingId === order.orderId ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Queueing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCw className="w-3.5 h-3.5" />
+                          <span>Reprint</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                   <button
                     onClick={() => setShopModalOrder(order)}
                     className="px-3.5 py-2 bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -506,6 +668,73 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     })()}
                   </div>
                 </div>
+
+                {/* Details Modal 30-Minute Retention & Reprint Guard */}
+                {(() => {
+                  const selData = liveOrderData[selectedOrder.orderId] || {}
+                  const selStatus = selData.printStatus || liveStatuses[selectedOrder.orderId] || selectedOrder.status || 'Order Received'
+                  const isPrinted = selStatus === 'Printed' || selStatus === 'Ready for Collection' || selStatus === 'Ready' || Boolean(selData.printedAt)
+                  const pdfExpiresAt = selData.pdfExpiresAt
+                  const isPdfDeleted = Boolean(selData.pdfDeletedAt || selData.hasPdf === false)
+                  const serverNow = Date.now() - serverOffset
+                  const remainingSecs = pdfExpiresAt ? Math.max(0, Math.floor((new Date(pdfExpiresAt).getTime() - serverNow) / 1000)) : 0
+                  const isExpired = Boolean(pdfExpiresAt && remainingSecs <= 0)
+
+                  const canReprint = Boolean(
+                    isPrinted &&
+                    pdfExpiresAt &&
+                    !isExpired &&
+                    !isPdfDeleted &&
+                    selData.paymentStatus !== 'failed' &&
+                    selData.paymentStatus !== 'rejected' &&
+                    selData.paymentStatus !== 'cancelled' &&
+                    selStatus !== 'Printing' &&
+                    !selData.reprintPending
+                  )
+
+                  if (canReprint) {
+                    return (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                          <div className="text-xs">
+                            <span className="text-amber-800 font-semibold">Reprint window: </span>
+                            <strong className="font-mono font-bold text-amber-950">{formatRemainingCountdown(remainingSecs)}</strong>
+                          </div>
+                        </div>
+                        <button
+                          id={`modal-reprint-btn-${selectedOrder.orderId}`}
+                          disabled={reprintingId === selectedOrder.orderId}
+                          onClick={() => handleReprint(selectedOrder.orderId)}
+                          className="px-3.5 py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                        >
+                          {reprintingId === selectedOrder.orderId ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Queueing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RotateCw className="w-3.5 h-3.5" />
+                              <span>Reprint Document</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )
+                  }
+
+                  if ((isExpired || isPdfDeleted) && (isPrinted || selData.printedAt)) {
+                    return (
+                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>Reprint window expired; document permanently deleted.</span>
+                      </div>
+                    )
+                  }
+
+                  return null
+                })()}
 
                 <button
                   onClick={() => {

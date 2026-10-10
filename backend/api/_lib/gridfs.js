@@ -155,16 +155,21 @@ export async function deletePdfFromGridFS(db, orderId) {
     const files = await bucket.find({
       $or: [{ filename }, { 'metadata.orderId': cleanId }]
     }).toArray()
+    let anyErrors = false
     for (const file of files) {
       try {
         await bucket.delete(file._id)
       } catch (delErr) {
-        console.warn(`[GridFS delete error] File ${file._id} for ${cleanId}:`, delErr.message)
+        console.error(`[GridFS delete error] File ${file._id} for ${cleanId}:`, delErr.message)
+        anyErrors = true
       }
+    }
+    if (anyErrors) {
+      throw new Error(`Failed to delete one or more GridFS chunks/files for ${cleanId}`)
     }
     return true
   } catch (err) {
-    console.warn(`[GridFS delete lookup error] ${cleanId}:`, err.message)
-    return false
+    console.error(`[GridFS delete failure] ${cleanId}:`, err.message)
+    throw err
   }
 }

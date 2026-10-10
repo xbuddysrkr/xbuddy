@@ -8,6 +8,11 @@ import {
   hasPdfInGridFS,
   getGridFSBucket,
 } from './_lib/gridfs.js'
+import {
+  calculateExpiryTimestamp,
+  isOrderReprintEligible,
+  cleanupExpiredPdfs,
+} from './_lib/retention.js'
 
 const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
 
@@ -710,21 +715,32 @@ export default async function handler(req, res) {
         const order = await db.collection('orders').findOne({ orderId }, { projection: { pdfBase64: 0 } })
         if (order) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
-          let hasPdf = Boolean(
+          const nowMs = Date.now()
+          const isExpired = Boolean(
+            order.pdfDeletedAt ||
+            (order.pdfExpiresAt && new Date(order.pdfExpiresAt).getTime() <= nowMs)
+          )
+          let hasPdf = !isExpired && Boolean(
             order.hasGridFsPdf === true ||
             Boolean(order.driveUrl && order.driveUrl.trim()) ||
             Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
           )
           // If not confirmed by document fields, check GridFS bucket directly (durable storage)
-          if (!hasPdf) {
+          if (hasPdf && !order.hasGridFsPdf && !order.pdfBase64 && !order.driveUrl) {
             hasPdf = await hasPdfInGridFS(db, orderId)
           }
+          if (isExpired) {
+            hasPdf = false
+          }
+          const reprintCheck = isOrderReprintEligible(order)
           const cleanOrder = {
             ...order,
             hasPdf,
-            pdfStorage: order.pdfStorage || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none')))),
+            pdfStorage: isExpired ? 'none' : (order.pdfStorage || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
+            reprintEligible: reprintCheck.eligible,
+            reprintReason: reprintCheck.reason,
           }
-          return res.status(200).json({ success: true, order: cleanOrder, source: 'mongo' })
+          return res.status(200).json({ success: true, order: cleanOrder, serverTime: new Date().toISOString(), source: 'mongo' })
         } else {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} not found in MongoDB Atlas`)
           return res.status(404).json({ success: false, error: 'Order not found', source: 'mongo' })
@@ -752,7 +768,7 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const order = await db.collection('orders').findOne(
           { orderId },
-          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1, hasGridFsPdf: 1 } }
+          { projection: { pdfBase64: 1, driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfDeletedAt: 1 } }
         )
         if (!order) {
           // If order does not exist in authoritative MongoDB, purge any stale disk cache file
@@ -760,6 +776,19 @@ export default async function handler(req, res) {
             try { fs.unlinkSync(cachePath) } catch {}
           }
           return res.status(404).json({ success: false, error: 'Order not found in database', hasPdf: false })
+        }
+
+        // RETENTION POLICY GATE: Document permanently expired or deleted
+        if (order.pdfDeletedAt || (order.pdfExpiresAt && new Date(order.pdfExpiresAt).getTime() <= Date.now())) {
+          if (fs.existsSync(cachePath)) {
+            try { fs.unlinkSync(cachePath) } catch {}
+          }
+          return res.status(410).json({
+            success: false,
+            error: 'Reprint window expired; document permanently deleted.',
+            expired: true,
+            hasPdf: false,
+          })
         }
 
         const safeFileName = (order.fileName || `${orderId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -974,17 +1003,29 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const orders = await db.collection('orders').find({}, { projection: { pdfBase64: 0 } }).sort({ createdAt: -1 }).limit(100).toArray()
         if (Array.isArray(orders)) {
-          const cleanOrders = orders.map(order => ({
-            ...order,
-            hasPdf: Boolean(
+          const nowMs = Date.now()
+          const cleanOrders = orders.map(order => {
+            const isExpired = Boolean(
+              order.pdfDeletedAt ||
+              (order.pdfExpiresAt && new Date(order.pdfExpiresAt).getTime() <= nowMs)
+            )
+            const hasPdf = !isExpired && Boolean(
               order.hasPdf === true ||
               order.hasGridFsPdf === true ||
               Boolean(order.driveUrl && order.driveUrl.trim()) ||
               Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
-            ),
-          }))
+            )
+            const reprintCheck = isOrderReprintEligible(order)
+            return {
+              ...order,
+              hasPdf,
+              pdfStorage: isExpired ? 'none' : (order.pdfStorage || (hasPdf ? 'gridfs' : 'none')),
+              reprintEligible: reprintCheck.eligible,
+              reprintReason: reprintCheck.reason,
+            }
+          })
           console.log(`[MONGO_ORDER_READ_PRIMARY] Successfully retrieved ${cleanOrders.length} orders from MongoDB Atlas`)
-          return res.status(200).json({ success: true, orders: cleanOrders, source: 'mongo' })
+          return res.status(200).json({ success: true, orders: cleanOrders, serverTime: new Date().toISOString(), source: 'mongo' })
         }
       } catch (mongoErr) {
         console.error(`[MONGO_READ_ERROR] MongoDB listOrders error: ${mongoErr.message}`)
@@ -1037,9 +1078,19 @@ export default async function handler(req, res) {
             })
           }
 
+          // Expiry check: cannot release an expired document
+          if (existing.pdfDeletedAt || (existing.pdfExpiresAt && new Date(existing.pdfExpiresAt).getTime() <= Date.now())) {
+            return res.status(410).json({
+              success: false,
+              error: `Order ${orderId} PDF retention window expired; document permanently deleted.`,
+              expired: true,
+            })
+          }
+
           const raceSafeFilter = {
             orderId,
             printStatus: { $nin: ['Printing', 'Printed'] },
+            pdfDeletedAt: { $exists: false },
             paymentStatus: requirePay
               ? { $in: ['paid', 'completed'] }
               : { $nin: ['failed', 'rejected', 'cancelled'] },
@@ -1066,9 +1117,50 @@ export default async function handler(req, res) {
         } else {
           const updateFields = { printStatus, updatedAt: nowIso }
           if (req.body?.driveUrl) updateFields.driveUrl = String(req.body.driveUrl).trim()
+          const mongoUpdates = { $set: updateFields }
+
+          if (printStatus === 'Printed') {
+            const existing = await orders.findOne({ orderId }, { projection: { printedAt: 1, pdfExpiresAt: 1, reprintPending: 1 } })
+            if (existing) {
+              if (!existing.printedAt) {
+                // Requirement 1: Only record immutable printedAt if not already recorded.
+                // Set pdfExpiresAt = printedAt + 30 minutes.
+                updateFields.printedAt = nowIso
+                updateFields.pdfExpiresAt = calculateExpiryTimestamp(nowIso)
+              } else if (existing.reprintPending) {
+                // Requirement 3: Reprint finished successfully
+                updateFields.reprintPending = false
+                updateFields.lastReprintAt = nowIso
+                mongoUpdates.$inc = { reprintCount: 1 }
+                mongoUpdates.$push = {
+                  auditLog: {
+                    action: 'reprint_completed',
+                    printedAt: nowIso,
+                  },
+                }
+              }
+            }
+          } else if (printStatus.toLowerCase().includes('fail')) {
+            updateFields.failedAt = nowIso
+            if (req.body?.errorMessage) {
+              updateFields.errorMessage = String(req.body.errorMessage)
+            }
+            const existing = await orders.findOne({ orderId }, { projection: { reprintPending: 1 } })
+            if (existing?.reprintPending) {
+              updateFields.reprintPending = false
+              mongoUpdates.$push = {
+                auditLog: {
+                  action: 'reprint_failed',
+                  failedAt: nowIso,
+                  errorMessage: req.body?.errorMessage || 'Print failed',
+                },
+              }
+            }
+          }
+
           await orders.updateOne(
             { orderId },
-            { $set: updateFields }
+            mongoUpdates
           )
           mongoUpdated = true
         }
@@ -1131,6 +1223,181 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, orderId, paymentStatus, mongoUpdated, sheetWriteMode })
+    }
+
+    // ── 5.5 REPRINT ORDER (CANONICAL API + 30-MIN RETENTION ENFORCEMENT) ─────
+    if (action === 'reprintOrder') {
+      const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
+      if (!orderId) {
+        return res.status(400).json({ success: false, error: 'orderId is required' })
+      }
+
+      const nowIso = new Date().toISOString()
+      const nowMs = Date.now()
+
+      try {
+        const { db } = await connectToDatabase()
+        const orders = db.collection('orders')
+
+        const existing = await orders.findOne({ orderId }, { projection: { pdfBase64: 0 } })
+        if (!existing) {
+          return res.status(404).json({ success: false, error: `Order ${orderId} not found in authoritative database` })
+        }
+
+        // Student order ownership verification (if transactionId or client identifier is provided)
+        const incomingTxId = String(req.body?.transactionId || req.query?.transactionId || '').trim()
+        if (incomingTxId && existing.transactionId && incomingTxId !== String(existing.transactionId).trim()) {
+          return res.status(403).json({ success: false, error: 'Order authorization mismatch' })
+        }
+
+        // Check if order was successfully printed
+        if (existing.printStatus !== 'Printed') {
+          if (existing.reprintPending || existing.printStatus === 'Printing' || existing.printStatus === 'waiting_for_shopkeeper') {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: 'Reprint request already in progress for this order.',
+              printStatus: existing.printStatus,
+            })
+          }
+          return res.status(400).json({
+            success: false,
+            error: `Order ${orderId} cannot be reprinted: current print status is "${existing.printStatus}". Only successfully printed orders are eligible.`,
+            printStatus: existing.printStatus,
+          })
+        }
+
+        // Retention Expiry Guard (Server Authoritative)
+        if (!existing.pdfExpiresAt) {
+          return res.status(400).json({
+            success: false,
+            error: 'No retention window recorded for this order.',
+          })
+        }
+
+        const expiryMs = new Date(existing.pdfExpiresAt).getTime()
+        if (expiryMs <= nowMs || existing.pdfDeletedAt) {
+          return res.status(410).json({
+            success: false,
+            expired: true,
+            error: 'Reprint window expired; document permanently deleted.',
+            pdfExpiresAt: existing.pdfExpiresAt,
+          })
+        }
+
+        // Payment eligibility check (Primary Security Gate)
+        const normPay = String(existing.paymentStatus || 'pending').trim().toLowerCase()
+        if (['failed', 'rejected', 'cancelled'].includes(normPay)) {
+          return res.status(403).json({
+            success: false,
+            error: `Reprint blocked: payment status is "${existing.paymentStatus}". Release strictly prohibited.`,
+            paymentBlocked: true,
+            paymentStatus: existing.paymentStatus,
+          })
+        }
+
+        const requirePay = process.env.REQUIRE_PAYMENT_VERIFICATION === 'true'
+        if (requirePay && !['paid', 'completed'].includes(normPay)) {
+          return res.status(402).json({
+            success: false,
+            error: `Payment authorization required: order ${orderId} payment status is "${existing.paymentStatus}". Verify payment before reprint.`,
+            paymentBlocked: true,
+            paymentStatus: existing.paymentStatus,
+          })
+        }
+
+        // Durable PDF availability check
+        let hasDurablePdf = Boolean(existing.hasPdf !== false && !existing.pdfDeletedAt && existing.pdfStorage !== 'none')
+        if (hasDurablePdf) {
+          if (existing.hasGridFsPdf || existing.pdfStorage === 'gridfs') {
+            hasDurablePdf = await hasPdfInGridFS(db, orderId)
+          } else if (existing.pdfStorage === 'inline' || existing.driveUrl) {
+            hasDurablePdf = true
+          } else {
+            hasDurablePdf = await hasPdfInGridFS(db, orderId)
+            if (!hasDurablePdf) {
+              const checkDoc = await orders.findOne({ orderId }, { projection: { pdfBase64: 1 } })
+              hasDurablePdf = Boolean(checkDoc?.pdfBase64 && checkDoc.pdfBase64.length > 50)
+            }
+          }
+        }
+        if (!hasDurablePdf) {
+          return res.status(410).json({
+            success: false,
+            expired: true,
+            error: 'Original PDF is no longer available in durable storage.',
+          })
+        }
+
+        // Atomic claim / idempotency guard: prevents concurrent duplicate clicks
+        const atomicFilter = {
+          orderId,
+          printStatus: 'Printed',
+          pdfDeletedAt: { $exists: false },
+          pdfExpiresAt: { $gt: nowIso },
+          reprintPending: { $ne: true },
+          paymentStatus: requirePay
+            ? { $in: ['paid', 'completed'] }
+            : { $nin: ['failed', 'rejected', 'cancelled'] },
+        }
+
+        const reprintResult = await orders.findOneAndUpdate(
+          atomicFilter,
+          {
+            $set: {
+              printStatus: 'waiting_for_shopkeeper',
+              reprintPending: true,
+              lastReprintRequestedAt: nowIso,
+              updatedAt: nowIso,
+            },
+            $push: {
+              auditLog: {
+                action: 'reprint_requested',
+                requestedAt: nowIso,
+                reprintCount: existing.reprintCount || 0,
+                pdfExpiresAt: existing.pdfExpiresAt,
+              },
+            },
+          },
+          { returnDocument: 'after', projection: { pdfBase64: 0 } }
+        )
+
+        if (!reprintResult) {
+          return res.status(409).json({
+            success: false,
+            conflict: true,
+            error: 'Reprint request conflict: order is already reprinting or no longer eligible.',
+          })
+        }
+
+        console.log(`[ORDER_REPRINT_REQUESTED] Order ${orderId} successfully queued for reprint (expiry preserved: ${reprintResult.pdfExpiresAt})`)
+
+        return res.status(200).json({
+          success: true,
+          message: 'Reprint requested successfully. Document queued for printing.',
+          orderId,
+          printStatus: reprintResult.printStatus,
+          pdfExpiresAt: reprintResult.pdfExpiresAt,
+          printedAt: reprintResult.printedAt,
+          reprintCount: reprintResult.reprintCount || 0,
+          remainingMs: Math.max(0, expiryMs - nowMs),
+          serverTime: nowIso,
+        })
+      } catch (reprintErr) {
+        console.error(`[ORDER_REPRINT_ERROR] Order ${orderId}:`, reprintErr.message)
+        return res.status(500).json({ success: false, error: reprintErr.message })
+      }
+    }
+
+    // ── 5.6 RETENTION CLEANUP JOB (CANONICAL SERVER-SIDE PDF PURGE) ─────────
+    if (action === 'cleanupExpiredPdfs') {
+      try {
+        const { db } = await connectToDatabase()
+        const cleanupResult = await cleanupExpiredPdfs(db)
+        return res.status(200).json(cleanupResult)
+      } catch (cleanErr) {
+        return res.status(500).json({ success: false, error: cleanErr.message })
+      }
     }
 
     // ── 6. PHASE 2: READ-ONLY ORDERS PARITY AUDIT ───────────────────────────

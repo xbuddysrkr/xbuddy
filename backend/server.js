@@ -145,24 +145,62 @@ app.listen(PORT, () => {
   console.log(`  Orders API:   http://localhost:${PORT}/api/orders`)
   console.log(`=======================================================`)
 
-  // Non-blocking background startup cache pre-warming from authoritative MongoDB Atlas
+  // Scheduled server-side retention cleanup job & guarded pre-warming
   setTimeout(async () => {
     try {
       const { connectToDatabase } = await import('./api/_lib/mongodb.js')
+      const { cleanupExpiredPdfs } = await import('./api/_lib/retention.js')
+      const { getPdfBufferFromGridFS } = await import('./api/_lib/gridfs.js')
       const { db } = await connectToDatabase()
+
+      // 1. Initial startup purge of any expired PDFs
+      try {
+        await cleanupExpiredPdfs(db)
+      } catch (cleanErr) {
+        console.warn(`[RETENTION_STARTUP_WARN] Initial cleanup notice: ${cleanErr.message}`)
+      }
+
+      // 2. Periodic background retention cleanup worker (runs every 60 seconds)
+      let isCleanupRunning = false
+      setInterval(async () => {
+        if (isCleanupRunning) return
+        isCleanupRunning = true
+        try {
+          await cleanupExpiredPdfs(db)
+        } catch (intervalErr) {
+          console.warn(`[RETENTION_WORKER_WARN] Cleanup interval notice: ${intervalErr.message}`)
+        } finally {
+          isCleanupRunning = false
+        }
+      }, 60 * 1000)
+
+      // 3. Pre-warming strictly active, non-expired orders from authoritative MongoDB Atlas
+      const nowIso = new Date().toISOString()
       const activeOrders = await db.collection('orders')
         .find(
-          { printStatus: { $in: ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed'] } },
-          { projection: { orderId: 1, pdfBase64: 1 } }
+          {
+            printStatus: { $in: ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed'] },
+            pdfDeletedAt: { $exists: false },
+            hasPdf: { $ne: false },
+            $or: [
+              { pdfExpiresAt: { $exists: false } },
+              { pdfExpiresAt: { $gt: nowIso } }
+            ],
+          },
+          { projection: { orderId: 1, pdfBase64: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, hasPdf: 1 } }
         )
         .sort({ createdAt: -1 })
         .limit(10)
         .toArray()
 
-      const { getPdfBufferFromGridFS } = await import('./api/_lib/gridfs.js')
       let count = 0
       for (const order of activeOrders) {
         if (!order.orderId) continue
+        // Prewarming audit: Never prewarm expired or deleted order
+        if (order.pdfDeletedAt || (order.pdfExpiresAt && order.pdfExpiresAt <= new Date().toISOString())) {
+          continue
+        }
+
         const target = path.join(PDF_CACHE_DIR, `${order.orderId}.pdf`)
         if (fs.existsSync(target)) continue
 
