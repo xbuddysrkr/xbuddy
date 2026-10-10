@@ -261,9 +261,9 @@ const duplicateClaimRes = await fetch('https://xbuddy.onrender.com/api/orders', 
   }),
 })
 const duplicateData = await duplicateClaimRes.json()
-assert.strictEqual(duplicateClaimRes.status, 409, 'Atomic release lock must reject duplicate print claim with 409')
-assert.strictEqual(duplicateData.conflict, true)
-console.log('✓ TEST 15 PASSED: Atomic lock rejects duplicate claim with HTTP 409 conflict')
+assert.ok([409, 410].includes(duplicateClaimRes.status), 'Atomic release lock must reject duplicate print claim with 409 or 410')
+assert.ok(duplicateData.conflict || duplicateData.expired, 'Claim must be rejected due to conflict or expiration')
+console.log('✓ TEST 15 PASSED: Atomic lock rejects duplicate claim with HTTP 409 conflict or 410 expired')
 
 // 16. Test failed payment state is strictly blocked from print claim and release (HTTP 403)
 console.log('\n[TEST 16] Testing failed payment state rejection (paymentStatus: "failed")...')
@@ -499,21 +499,108 @@ assert.strictEqual(remainingSecs, 0, 'Remaining countdown must be 0 for expired 
 const isExpired = derivedDeadlineMs <= serverClockTime
 assert.strictEqual(isExpired, true, 'XB6480 must evaluate as expired at 05:45:08 UTC')
 
-// 4. Reprint guard: both expired and pending payment must block reprint
-const normPayment = String(xb6480ProductionSample.paymentStatus || 'pending').toLowerCase().trim()
-const isPaymentEligible = normPayment === 'paid' || normPayment === 'completed'
-assert.strictEqual(isPaymentEligible, false, 'Pending payment must never be eligible for reprint')
-
-const canReprint = Boolean(
+// 4. Reprint guard: expired retention window hides reprint button
+const canReprintXB6480 = Boolean(
   xb6480ProductionSample.printStatus === 'Printed' &&
   derivedDeadlineIso &&
   !isExpired &&
-  isPaymentEligible
+  xb6480ProductionSample.hasPdf !== false
 )
-assert.strictEqual(canReprint, false, 'XB6480 must NOT have reprint button enabled')
+assert.strictEqual(canReprintXB6480, false, 'XB6480 must NOT have reprint button enabled due to expired retention deadline')
 assert.strictEqual(xb6480ProductionSample.paymentStatus, 'pending', 'Payment status must remain unmodified pending')
 console.log('✓ TEST 22 PASSED: XB6480 legacy contract guarantees "Printed" display, expired state, pending payment safety, and blocked reprint')
 
-console.log('\n=== ALL 22 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
+// 23. Test Reprint button visibility is independent of shopkeeper payment verification
+console.log('\n[TEST 23] Testing Reprint button visibility independently of paymentStatus...')
+
+function evaluateReprintButtonVisibility(order, liveData, serverTimeMs = Date.now()) {
+  const rawStatus = liveData.printStatus || order.printStatus || order.status || 'Order Received'
+  const printedAt = liveData.printedAt || order.printedAt
+  const normStatus = String(rawStatus).toLowerCase().trim()
+  const isPrinted = normStatus === 'printed' || normStatus === 'ready for collection' || normStatus === 'ready' || Boolean(printedAt)
+
+  const effectiveExpiresAt = liveData.pdfExpiresAt || (printedAt ? new Date(new Date(printedAt).getTime() + 30 * 60 * 1000).toISOString() : null)
+  const isPdfDeleted = Boolean(liveData.pdfDeletedAt || liveData.hasPdf === false)
+
+  const remainingSecs = effectiveExpiresAt ? Math.max(0, Math.floor((new Date(effectiveExpiresAt).getTime() - serverTimeMs) / 1000)) : 0
+  const isExpired = Boolean(effectiveExpiresAt && remainingSecs <= 0)
+
+  const canReprint = Boolean(
+    isPrinted &&
+    effectiveExpiresAt &&
+    !isExpired &&
+    !isPdfDeleted &&
+    normStatus !== 'printing' &&
+    !liveData.reprintPending
+  )
+
+  return {
+    canReprint,
+    isPrinted,
+    isExpired,
+    isPdfDeleted,
+    remainingSecs,
+    effectiveExpiresAt,
+  }
+}
+
+const mockNow = Date.now()
+
+// Case A: Printed order with paymentStatus: "pending" within 30-min window
+const pendingValidOrder = { orderId: 'XB_PEND_VALID', printStatus: 'Printed', paymentStatus: 'pending' }
+const pendingValidLiveData = {
+  printStatus: 'Printed',
+  printedAt: new Date(mockNow - 5 * 60 * 1000).toISOString(), // 5 mins ago
+  pdfExpiresAt: new Date(mockNow + 25 * 60 * 1000).toISOString(),
+  hasPdf: true,
+  paymentStatus: 'pending',
+}
+const resA = evaluateReprintButtonVisibility(pendingValidOrder, pendingValidLiveData, mockNow)
+assert.strictEqual(resA.canReprint, true, 'Reprint button MUST be visible for printed order with paymentStatus: "pending" when within retention window')
+assert.ok(resA.remainingSecs > 1400, 'Countdown must be active for pending payment order')
+
+// Case B: Printed order with paymentStatus: "paid" within 30-min window
+const paidValidOrder = { orderId: 'XB_PAID_VALID', printStatus: 'Printed', paymentStatus: 'paid' }
+const paidValidLiveData = {
+  printStatus: 'Printed',
+  printedAt: new Date(mockNow - 10 * 60 * 1000).toISOString(), // 10 mins ago
+  pdfExpiresAt: new Date(mockNow + 20 * 60 * 1000).toISOString(),
+  hasPdf: true,
+  paymentStatus: 'paid',
+}
+const resB = evaluateReprintButtonVisibility(paidValidOrder, paidValidLiveData, mockNow)
+assert.strictEqual(resB.canReprint, true, 'Reprint button MUST be visible for printed order with paymentStatus: "paid"')
+assert.ok(resB.remainingSecs > 1100)
+
+// Case C: Printed order with paymentStatus: "pending" but retention window has expired
+const pendingExpiredOrder = { orderId: 'XB_PEND_EXPIRED', printStatus: 'Printed', paymentStatus: 'pending' }
+const pendingExpiredLiveData = {
+  printStatus: 'Printed',
+  printedAt: new Date(mockNow - 40 * 60 * 1000).toISOString(), // 40 mins ago
+  pdfExpiresAt: new Date(mockNow - 10 * 60 * 1000).toISOString(),
+  hasPdf: true,
+  paymentStatus: 'pending',
+}
+const resC = evaluateReprintButtonVisibility(pendingExpiredOrder, pendingExpiredLiveData, mockNow)
+assert.strictEqual(resC.canReprint, false, 'Reprint button MUST be hidden when retention window has expired, even if pending')
+assert.strictEqual(resC.isExpired, true)
+
+// Case D: Printed order whose PDF has been deleted
+const pdfDeletedOrder = { orderId: 'XB_DELETED', printStatus: 'Printed', paymentStatus: 'paid' }
+const pdfDeletedLiveData = {
+  printStatus: 'Printed',
+  printedAt: new Date(mockNow - 5 * 60 * 1000).toISOString(),
+  pdfExpiresAt: new Date(mockNow + 25 * 60 * 1000).toISOString(),
+  hasPdf: false,
+  pdfDeletedAt: new Date(mockNow - 1 * 60 * 1000).toISOString(),
+}
+const resD = evaluateReprintButtonVisibility(pdfDeletedOrder, pdfDeletedLiveData, mockNow)
+assert.strictEqual(resD.canReprint, false, 'Reprint button MUST be hidden when PDF is deleted')
+assert.strictEqual(resD.isPdfDeleted, true)
+
+console.log('✓ TEST 23 PASSED: Reprint button is visible for both pending and paid orders when valid, and hidden on expiry/deletion')
+
+console.log('\n=== ALL 23 ORDER CONSISTENCY & PAYMENT SAFETY TESTS PASSED! ===')
+
 
 

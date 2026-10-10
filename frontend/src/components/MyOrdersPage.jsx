@@ -183,7 +183,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
         setReprintMessage({
           orderId,
           type: 'error',
-          text: res?.error || 'Reprint window expired; document permanently deleted.',
+          text: res?.error || 'Reprint request could not be processed.',
         })
       }
     } catch (err) {
@@ -468,19 +468,14 @@ export default function MyOrdersPage({ onStartPrinting }) {
             const remainingSecs = effectiveExpiresAt ? Math.max(0, Math.floor((new Date(effectiveExpiresAt).getTime() - serverNow) / 1000)) : 0
             const isExpired = Boolean(effectiveExpiresAt && remainingSecs <= 0)
 
-            // Payment guard: reprint blocked if payment is pending, failed, rejected, or cancelled
-            const normPayment = String(liveData.paymentStatus || order.paymentStatus || 'pending').toLowerCase().trim()
-            const isPaymentEligible = normPayment === 'paid' || normPayment === 'completed'
-
+            // Show Reprint button and countdown independently of paymentStatus or shopkeeper verification
             const canReprint = Boolean(
               isPrinted &&
               effectiveExpiresAt &&
               !isExpired &&
               !isPdfDeleted &&
-              isPaymentEligible &&
               normStatus !== 'printing' &&
-              !liveData.reprintPending &&
-              (liveData.reprintEligible !== false)
+              !liveData.reprintPending
             )
 
             return (
@@ -706,7 +701,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   <div className="flex justify-between items-center pt-1 border-t border-gray-200">
                     <span className="text-gray-500 font-medium">Order Status:</span>
                     {(() => {
-                      const curStatus = STATUS_MAP[liveStatuses[selectedOrder.orderId] || selectedOrder.status || 'Order Received'] || STATUS_MAP['Order Received']
+                      const curStatus = getStatusInfo(liveStatuses[selectedOrder.orderId] || selectedOrder.printStatus || selectedOrder.status)
                       const CurIcon = curStatus.icon
                       return (
                         <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${curStatus.cls}`}>
@@ -716,28 +711,49 @@ export default function MyOrdersPage({ onStartPrinting }) {
                       )
                     })()}
                   </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                    <span className="text-gray-500 font-medium">Payment Status:</span>
+                    {(() => {
+                      const selData = liveOrderData[selectedOrder.orderId] || {}
+                      const rawPay = String(selData.paymentStatus || selectedOrder.paymentStatus || 'pending').trim().toLowerCase()
+                      const isPaid = rawPay === 'paid' || rawPay === 'completed'
+                      const isFailed = ['failed', 'rejected', 'cancelled'].includes(rawPay)
+                      const badgeCls = isPaid
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : isFailed
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                      const label = rawPay ? rawPay.charAt(0).toUpperCase() + rawPay.slice(1) : 'Pending'
+                      return (
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${badgeCls}`}>
+                          <span>{label}</span>
+                        </span>
+                      )
+                    })()}
+                  </div>
                 </div>
 
                 {/* Details Modal 30-Minute Retention & Reprint Guard */}
                 {(() => {
                   const selData = liveOrderData[selectedOrder.orderId] || {}
-                  const selStatus = selData.printStatus || liveStatuses[selectedOrder.orderId] || selectedOrder.status || 'Order Received'
-                  const isPrinted = selStatus === 'Printed' || selStatus === 'Ready for Collection' || selStatus === 'Ready' || Boolean(selData.printedAt)
-                  const pdfExpiresAt = selData.pdfExpiresAt
+                  const selRawStatus = selData.printStatus || liveStatuses[selectedOrder.orderId] || selectedOrder.printStatus || selectedOrder.status || 'Order Received'
+                  const selPrintedAt = selData.printedAt || selectedOrder.printedAt
+                  const selNormStatus = String(selRawStatus).toLowerCase().trim()
+                  const isPrinted = selNormStatus === 'printed' || selNormStatus === 'ready for collection' || selNormStatus === 'ready' || Boolean(selPrintedAt)
+
+                  const effectiveExpiresAt = selData.pdfExpiresAt || (selPrintedAt ? new Date(new Date(selPrintedAt).getTime() + 30 * 60 * 1000).toISOString() : null)
                   const isPdfDeleted = Boolean(selData.pdfDeletedAt || selData.hasPdf === false)
                   const serverNow = Date.now() - serverOffset
-                  const remainingSecs = pdfExpiresAt ? Math.max(0, Math.floor((new Date(pdfExpiresAt).getTime() - serverNow) / 1000)) : 0
-                  const isExpired = Boolean(pdfExpiresAt && remainingSecs <= 0)
+                  const remainingSecs = effectiveExpiresAt ? Math.max(0, Math.floor((new Date(effectiveExpiresAt).getTime() - serverNow) / 1000)) : 0
+                  const isExpired = Boolean(effectiveExpiresAt && remainingSecs <= 0)
 
+                  // Show Reprint button and remaining countdown independently of paymentStatus or shopkeeper verification
                   const canReprint = Boolean(
                     isPrinted &&
-                    pdfExpiresAt &&
+                    effectiveExpiresAt &&
                     !isExpired &&
                     !isPdfDeleted &&
-                    selData.paymentStatus !== 'failed' &&
-                    selData.paymentStatus !== 'rejected' &&
-                    selData.paymentStatus !== 'cancelled' &&
-                    selStatus !== 'Printing' &&
+                    selNormStatus !== 'printing' &&
                     !selData.reprintPending
                   )
 
@@ -773,7 +789,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     )
                   }
 
-                  if ((isExpired || isPdfDeleted) && (isPrinted || selData.printedAt)) {
+                  if ((isExpired || isPdfDeleted) && (isPrinted || selPrintedAt)) {
                     return (
                       <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0" />
