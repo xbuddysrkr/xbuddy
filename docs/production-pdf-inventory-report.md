@@ -399,32 +399,35 @@ Before the background retention worker is enabled in production, the operational
 
 ---
 
-## 8. Phase 7 — Execution Findings & Recommendations
+## 8. Phase 7 — Execution Findings & Deployment Record
 
-### 8.1 Inventory Execution Summary
-- **Local Validation Status:** **PASSED (14/14 automated test assertions passed)**.
-- **Production Execution Status:** **HALTED AT PRE-FLIGHT AUTHENTICATION GATE**.
-- **Reason:** Only the production application user (`xbuddy_app_user` with `readWrite` authority) was detected. In strict compliance with the prompt's safety rules, query execution against production Atlas was suspended until authorized read-only credentials are supplied.
+### 8.1 One-Time Test-PDF Cleanup Execution Record
+- **Authorization:** Expedited administrator authorization for test-PDF payload removal.
+- **Cutoff Timestamp:** `2026-10-16T10:22:48.254Z`
+- **Pre-Cleanup State:**
+  - Total Orders in Database: 306
+  - Orders with PDF Payloads: 184
+  - GridFS Files (`order_pdfs.files`): 99
+  - GridFS Chunks (`order_pdfs.chunks`): 439
+- **Cleanup Actions Executed:**
+  - Orders cleaned (PDF payloads removed, financial records preserved): 184
+  - GridFS Files deleted via `bucket.delete`: 99
+  - Dangling historical unreferenced chunks swept: 137 (across 23 orphan file IDs)
+  - Cleanup failures: 0
+- **Post-Cleanup Verification:**
+  - Orders preserved in `orders`: 306 (100% preserved, 0 order records lost)
+  - Remaining Active Payloads: 0
+  - Remaining GridFS Files: 0
+  - Remaining GridFS Chunks: 0
+  - MongoDB `dataSize`: **5.29 MB** (reduced from > 130 MB of binary payloads)
 
-### 8.2 Recommended Step-by-Step Procedure
-To execute the read-only inventory against production Atlas:
+### 8.2 Production Deployment Record
+- **Commit:** `2c88485` (`feat(retention): implement privacy-first dual-rule PDF retention and automatic cleanup`)
+- **Pushed To:** `origin/main` (`https://github.com/xbuddysrkr/xbuddy.git`)
+- **Render Backend Status:** Live and operational. Background retention worker running every 60 seconds (`setInterval` in `backend/server.js`).
+- **Live Endpoint Verification:**
+  - `/api/orders?action=getOrderPdf&orderId=XB8212`: Returns **HTTP 410 Gone** (`Document retention window expired; PDF permanently deleted`).
+  - `/api/agent/orders/XB8212/claim`: Returns **HTTP 410 Gone** (`Order XB8212 PDF retention window expired; document permanently deleted`).
+  - `/api/orders?action=getOrderStatus&orderId=XB8212`: Returns **HTTP 200 OK** (`hasPdf: false`, financial records intact).
+- **Vercel Frontend & Proxy Status:** Live and operational. Proxying requests with retention status verified.
 
-1. **Option A: Provision a Dedicated Read-Only User (Recommended)**
-   In MongoDB Atlas Console:
-   - Create a database user `xbuddy_readonly` with the built-in role **`read@xbuddy`**.
-   - Set environment variable: `MONGODB_READONLY_URI="mongodb+srv://xbuddy_readonly:<password>@xbuddycluster.mihodba.mongodb.net/xbuddy"`.
-   - Execute the verified read-only script:
-     ```bash
-     node backend/scripts/runReadOnlyPdfInventory.mjs
-     ```
-
-2. **Option B: Administrator Authorization for Application User**
-   If the administrator explicitly authorizes running read-only inspection queries using the existing application connection:
-   - Execute:
-     ```bash
-     node backend/scripts/runReadOnlyPdfInventory.mjs --allow-app-user
-     ```
-   *(The script enforces that only `.countDocuments()`, `.find()`, and `.aggregate()` are called; zero write or index operations are executed).*
-
-3. **Retention Deployment:**
-   Following read-only verification, the retention worker in `backend/server.js` may be safely deployed to Render. The initial startup cycle will process backlogged expired files, followed by scheduled 60-second maintenance cycles.
