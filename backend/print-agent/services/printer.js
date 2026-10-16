@@ -3,10 +3,15 @@ const fs = require('fs')
 const path = require('path')
 const { execFile } = require('child_process')
 const logger = require('../utils/logger')
-const { convertPdfToGrayscale } = require('./converter')
+const { convertPdfToGrayscale, getMutoolPath } = require('./converter')
 const { getConfig, saveConfig } = require('./config')
 
-const MUTOOL_BIN = path.join(__dirname, '..', 'bin', 'mutool.exe')
+function resolveMutoolBin() {
+  const p = getMutoolPath()
+  if (p && fs.existsSync(p)) return p
+  return path.join(__dirname, '..', 'bin', 'mutool.exe')
+}
+const MUTOOL_BIN = resolveMutoolBin()
 
 function runPowerShell(command) {
   return new Promise((resolve) => {

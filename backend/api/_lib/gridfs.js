@@ -9,6 +9,7 @@ export const GRIDFS_CHUNK_SIZE = 1024 * 1024 // 1 MB chunks to minimize network 
  */
 export function getGridFSBucket(db, bucketName = GRIDFS_BUCKET_NAME) {
   if (!db) throw new Error('Database instance required for GridFSBucket')
+  if (db._mockBucket) return db._mockBucket
   return new GridFSBucket(db, { bucketName })
 }
 
@@ -68,7 +69,8 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
         orderId: cleanId,
         fileName: metadata.fileName || filename,
         size: isBuffer ? pdfSource.length : (metadata.size || 0),
-        uploadedAt: new Date().toISOString(),
+        uploadedAt: metadata.uploadedAt || new Date().toISOString(),
+        expiresAt: metadata.expiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         ...metadata,
       },
     })
@@ -190,6 +192,9 @@ export async function deletePdfFromGridFS(db, orderId) {
       try {
         await bucket.delete(file._id)
       } catch (delErr) {
+        if (delErr.message && delErr.message.includes('FileNotFound')) {
+          continue
+        }
         console.error(`[GridFS delete error] File ${file._id} for ${cleanId}:`, delErr.message)
         anyErrors = true
       }

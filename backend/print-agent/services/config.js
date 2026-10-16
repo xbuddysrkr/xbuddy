@@ -97,6 +97,20 @@ function saveConfig(updates = {}) {
   }
 }
 
+/**
+ * Validates whether an order is authorized for release, staging, or update on the given station.
+ * Invariant: Station TEST-01 may ONLY ever interact with the exact order XB-TEST-01.
+ * Live stations (e.g. SRKR-XEROX-01) are unrestricted.
+ */
+function validateStationOrderAuthorization(stationId, orderId) {
+  const cleanStation = String(stationId || '').trim().toUpperCase()
+  const cleanOrder = String(orderId || '').trim().toUpperCase()
+  if (cleanStation === 'TEST-01') {
+    return cleanOrder === 'XB-TEST-01'
+  }
+  return true
+}
+
 module.exports = {
   DEFAULT_CONFIG,
   resolveConfigDir,
@@ -105,4 +119,5 @@ module.exports = {
   loadConfig,
   getConfig,
   saveConfig,
+  validateStationOrderAuthorization,
 }

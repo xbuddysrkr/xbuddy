@@ -2,7 +2,7 @@ const { google } = require('googleapis')
 const axios = require('axios')
 const logger = require('../utils/logger')
 
-const { getConfig } = require('./config')
+const { getConfig, validateStationOrderAuthorization } = require('./config')
 
 function getCandidateCloudUrls() {
   const primary = (process.env.CLOUD_API_URL || getConfig().cloudApiUrl || '').replace(/\/$/, '')
@@ -136,6 +136,12 @@ async function getWaitingOrders() {
 async function getOrderByIdForRelease(orderId) {
   const cleanId = (orderId || '').trim().toUpperCase()
   if (!cleanId) return null
+
+  const currentConfig = getConfig()
+  if (!validateStationOrderAuthorization(currentConfig.stationId, cleanId)) {
+    logger.warn(`[SAFETY_GUARD] Order lookup for release aborted: Station ${currentConfig.stationId} unauthorized for order ${cleanId}`)
+    return null
+  }
 
   const source = getOrderSource()
 
@@ -294,6 +300,16 @@ async function getOrderByIdForRelease(orderId) {
 async function claimOrder(orderId) {
   const cleanId = (orderId || '').trim().toUpperCase()
   if (!cleanId) return { success: false, error: 'orderId required' }
+
+  const currentConfig = getConfig()
+  if (!validateStationOrderAuthorization(currentConfig.stationId, cleanId)) {
+    logger.warn(`[SAFETY_GUARD] Cloud claim aborted: Station ${currentConfig.stationId} unauthorized for order ${cleanId}`)
+    return {
+      success: false,
+      error: `Station ${currentConfig.stationId} is not permitted to claim order ${cleanId}. Only exact order XB-TEST-01 is authorized.`,
+      blockedByStationGuard: true,
+    }
+  }
 
   const source = getOrderSource()
 

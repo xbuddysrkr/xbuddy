@@ -10,6 +10,10 @@ const MUTOOL_WINGET = 'C:\\Users\\SRKREC\\AppData\\Local\\Microsoft\\WinGet\\Pac
 function getMutoolPath() {
   if (process.env.MUTOOL_PATH && fs.existsSync(process.env.MUTOOL_PATH)) return process.env.MUTOOL_PATH
   if (fs.existsSync(MUTOOL_PRIMARY)) return MUTOOL_PRIMARY
+  const portablePath = path.join(process.cwd(), 'bin', 'mutool.exe')
+  if (fs.existsSync(portablePath)) return portablePath
+  const appPath = path.join(__dirname, '..', '..', 'bin', 'mutool.exe')
+  if (fs.existsSync(appPath)) return appPath
   if (fs.existsSync(MUTOOL_WINGET)) return MUTOOL_WINGET
   return null
 }

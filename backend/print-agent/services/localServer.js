@@ -8,7 +8,7 @@ const { updatePrintStatus, updateReleaseStatus } = require('./updater')
 const { printPdf, getDefaultPrinter, getAllWindowsPrinters, getActivePrinter } = require('./printer')
 const { downloadPdf, deletePdf } = require('./downloader')
 const { getTunnelUrl } = require('./tunnel')
-const { getConfig, saveConfig } = require('./config')
+const { getConfig, saveConfig, validateStationOrderAuthorization } = require('./config')
 const { getLastHeartbeat, startHeartbeat, sendHeartbeatNow } = require('./heartbeat')
 
 const app         = express()
@@ -156,6 +156,17 @@ app.post('/save-order', async (req, res) => {
     }
 
     const cleanId = orderId.trim().toUpperCase()
+    const currentConfig = getConfig()
+    if (!validateStationOrderAuthorization(currentConfig.stationId, cleanId)) {
+      logger.warn(`[SAFETY_GUARD] Station ${currentConfig.stationId} blocked from staging order ${cleanId}`)
+      return res.status(403).json({
+        success: false,
+        error: `Safety guard active: Station ${currentConfig.stationId} is restricted to exact test order XB-TEST-01. Staging order ${cleanId} is prohibited.`,
+        blockedByStationGuard: true,
+        orderId: cleanId,
+        stationId: currentConfig.stationId,
+      })
+    }
 
     // 1. Verify order exists in MongoDB Atlas
     const mongoOrder = await getOrderByIdForRelease(cleanId)
@@ -229,6 +240,18 @@ app.post('/save-order-meta', async (req, res) => {
     }
 
     const cleanId = orderId.trim().toUpperCase()
+    const currentConfig = getConfig()
+    if (!validateStationOrderAuthorization(currentConfig.stationId, cleanId)) {
+      logger.warn(`[SAFETY_GUARD] Station ${currentConfig.stationId} blocked from saving meta for order ${cleanId}`)
+      return res.status(403).json({
+        success: false,
+        error: `Safety guard active: Station ${currentConfig.stationId} is restricted to exact test order XB-TEST-01. Saving metadata for order ${cleanId} is prohibited.`,
+        blockedByStationGuard: true,
+        orderId: cleanId,
+        stationId: currentConfig.stationId,
+      })
+    }
+
     const mongoOrder = await getOrderByIdForRelease(cleanId)
     if (!mongoOrder) {
       logger.warn(`[SAVE_META_REJECTED] Order ${cleanId} not found in authoritative MongoDB`)
@@ -848,6 +871,18 @@ app.post('/release-print', async (req, res) => {
 
   const id = orderId.trim().toUpperCase()
   logger.info(`Booth release request: ${id}`)
+
+  const currentConfig = getConfig()
+  if (!validateStationOrderAuthorization(currentConfig.stationId, id)) {
+    logger.warn(`[SAFETY_GUARD] Release blocked: Station ${currentConfig.stationId} attempted to release order ${id}`)
+    return res.status(403).json({
+      success: false,
+      error: `Safety guard active: Station ${currentConfig.stationId} is restricted to exact test order XB-TEST-01. Release of live customer order ${id} is strictly prohibited.`,
+      blockedByStationGuard: true,
+      orderId: id,
+      stationId: currentConfig.stationId,
+    })
+  }
 
   // 1. Verify active printer availability BEFORE claiming (Requirement 7 & 15)
   const activePrinter = await getActivePrinter(true)

@@ -17,15 +17,15 @@ let indexesCreated = false
  * Strictly uses process.env.MONGODB_URI (never exposed to frontend/browser).
  */
 export async function connectToDatabase() {
+  if (cachedClient && cachedDb) {
+    return { client: cachedClient, db: cachedDb }
+  }
+
   const uri = process.env.MONGODB_URI
   if (!uri) {
     const error = new Error('MONGODB_URI environment variable is not defined')
     error.code = 'ERR_NO_URI'
     throw error
-  }
-
-  if (cachedClient && cachedDb) {
-    return { client: cachedClient, db: cachedDb }
   }
 
   try {
@@ -67,15 +67,24 @@ export async function connectToDatabase() {
 }
 
 /**
+ * Injects a mock client and database for unit tests without network calls.
+ */
+export function setCachedDatabase(client, db) {
+  cachedClient = client
+  cachedDb = db
+  indexesCreated = true
+}
+
+/**
  * Resets cached connection (useful for unit tests or retry logic).
  */
 export async function closeDatabaseConnection() {
-  if (cachedClient) {
+  if (cachedClient && typeof cachedClient.close === 'function') {
     try {
       await cachedClient.close()
     } catch {}
-    cachedClient = null
-    cachedDb = null
-    indexesCreated = false
   }
+  cachedClient = null
+  cachedDb = null
+  indexesCreated = false
 }

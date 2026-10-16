@@ -2,7 +2,7 @@ const { google } = require('googleapis')
 const axios = require('axios')
 const logger = require('../utils/logger')
 
-const { getConfig } = require('./config')
+const { getConfig, validateStationOrderAuthorization } = require('./config')
 
 function getCandidateCloudUrls() {
   const primary = (process.env.CLOUD_API_URL || getConfig().cloudApiUrl || '').replace(/\/$/, '')
@@ -55,6 +55,11 @@ async function updatePrintStatus(orderIdOrRowIndex, statusOrRow, statusParam) {
   }
 
   const cleanId = (orderId || '').trim().toUpperCase()
+  const currentConfig = getConfig()
+  if (cleanId && !validateStationOrderAuthorization(currentConfig.stationId, cleanId)) {
+    logger.warn(`[SAFETY_GUARD] Cloud status update aborted: Station ${currentConfig.stationId} unauthorized for order ${cleanId}`)
+    return
+  }
   const source = getOrderSource()
 
   // ── PRIMARY AUTHORITATIVE PATH: MONGODB AGENT API ───────────────

@@ -1,9 +1,10 @@
 import crypto from 'crypto'
 import { connectToDatabase } from '../_lib/mongodb.js'
-import { calculateExpiryTimestamp } from '../_lib/retention.js'
+import { calculatePrintedExpiryTimestamp, getEffectiveExpiryTimestamp } from '../_lib/retention.js'
 
 const AUTHORIZED_KEY_HASHES = new Set([
   'ea4af0179d15ec55173b299b18bbffb8b770589fe9df62b6239aee52eee4f04d',
+  '902e8dcb7609727cc887a27e612911d00d06474fac4673099fc4ae852b7f6ab0',
 ])
 
 const PENDING_PRINT_STATUSES = ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed']
@@ -240,7 +241,8 @@ export default async function handler(req, res) {
       }
 
       // 1.5. Reject claiming expired or deleted documents
-      if (existing.pdfDeletedAt || (existing.pdfExpiresAt && new Date(existing.pdfExpiresAt).getTime() <= Date.now())) {
+      const effectiveExpiry = getEffectiveExpiryTimestamp(existing)
+      if (existing.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
         console.warn(`[AGENT_CLAIM_EXPIRED] Order ${cleanId} claim rejected: retention window expired`)
         return res.status(410).json({
           success: false,
@@ -404,11 +406,11 @@ export default async function handler(req, res) {
       const mongoUpdates = { $set: updateDoc }
 
       if (newStatus === 'Printed') {
-        // Requirement 1: When an order first transitions to Printed, record immutable printedAt
+        // Rule 1: When an order first transitions to Printed, record immutable printedAt
         // and set pdfExpiresAt = printedAt + 30 minutes. Repeated updates or reprints must NOT reset it.
         if (!existing.printedAt) {
           updateDoc.printedAt = nowIso
-          updateDoc.pdfExpiresAt = calculateExpiryTimestamp(nowIso)
+          updateDoc.pdfExpiresAt = calculatePrintedExpiryTimestamp(nowIso)
         } else if (existing.reprintPending) {
           // Requirement 3: Reprint finished successfully
           updateDoc.reprintPending = false

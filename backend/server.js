@@ -149,7 +149,7 @@ app.listen(PORT, () => {
   setTimeout(async () => {
     try {
       const { connectToDatabase } = await import('./api/_lib/mongodb.js')
-      const { cleanupExpiredPdfs } = await import('./api/_lib/retention.js')
+      const { cleanupExpiredPdfs, getEffectiveExpiryTimestamp, RETENTION_MS_UNPRINTED } = await import('./api/_lib/retention.js')
       const { getPdfBufferFromGridFS } = await import('./api/_lib/gridfs.js')
       const { db } = await connectToDatabase()
 
@@ -176,7 +176,7 @@ app.listen(PORT, () => {
 
       // 3. Pre-warming strictly active, non-expired orders from authoritative MongoDB Atlas
       const nowIso = new Date().toISOString()
-      const thirtyMinsAgoIso = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+      const twentyFourHoursAgoIso = new Date(Date.now() - RETENTION_MS_UNPRINTED).toISOString()
       const activeOrders = await db.collection('orders')
         .find(
           {
@@ -186,19 +186,16 @@ app.listen(PORT, () => {
             $and: [
               {
                 $or: [
-                  { pdfExpiresAt: { $exists: false } },
                   { pdfExpiresAt: { $gt: nowIso } },
-                ],
-              },
-              {
-                $or: [
-                  { printedAt: { $exists: false } },
-                  { printedAt: { $gt: thirtyMinsAgoIso } },
+                  {
+                    pdfExpiresAt: { $exists: false },
+                    createdAt: { $gt: twentyFourHoursAgoIso },
+                  },
                 ],
               },
             ],
           },
-          { projection: { orderId: 1, pdfBase64: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, printedAt: 1, hasPdf: 1 } }
+          { projection: { orderId: 1, pdfBase64: 1, pdfExpiresAt: 1, pdfUploadedAt: 1, createdAt: 1, pdfDeletedAt: 1, printedAt: 1, hasPdf: 1 } }
         )
         .sort({ createdAt: -1 })
         .limit(10)
@@ -208,8 +205,8 @@ app.listen(PORT, () => {
       for (const order of activeOrders) {
         if (!order.orderId) continue
         // Prewarming audit: Never prewarm expired or deleted order (including legacy orders)
-        const effectiveExpiry = order.pdfExpiresAt || (order.printedAt ? new Date(new Date(order.printedAt).getTime() + 30 * 60 * 1000).toISOString() : null)
-        if (order.pdfDeletedAt || (effectiveExpiry && effectiveExpiry <= new Date().toISOString())) {
+        const effectiveExpiry = getEffectiveExpiryTimestamp(order)
+        if (order.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
           continue
         }
 

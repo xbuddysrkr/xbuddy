@@ -118,7 +118,10 @@ async function runRegressionSuite() {
 
     const doc1Initial = await ordersCol.findOne({ orderId: id1 })
     assert.strictEqual(doc1Initial.printedAt, undefined, 'printedAt must not exist before printing')
-    assert.strictEqual(doc1Initial.pdfExpiresAt, undefined, 'pdfExpiresAt must not exist before printing')
+    assert.ok(doc1Initial.pdfExpiresAt, 'pdfExpiresAt must be set upon upload')
+    const uploadExpiresAtMs = new Date(doc1Initial.pdfExpiresAt).getTime()
+    const uploadCreatedAtMs = new Date(doc1Initial.createdAt).getTime()
+    assert.strictEqual(uploadExpiresAtMs - uploadCreatedAtMs, 30 * 60 * 1000, 'pdfExpiresAt must be exactly 30 minutes after upload')
 
     // Transition status to Printed
     const beforePrintMs = Date.now()
@@ -130,15 +133,11 @@ async function runRegressionSuite() {
 
     const doc1Printed = await ordersCol.findOne({ orderId: id1 })
     assert.ok(doc1Printed.printedAt, 'printedAt must be set upon transition to Printed')
-    assert.ok(doc1Printed.pdfExpiresAt, 'pdfExpiresAt must be set upon transition to Printed')
+    assert.ok(doc1Printed.pdfExpiresAt, 'pdfExpiresAt must remain set upon transition to Printed')
+    assert.strictEqual(doc1Printed.pdfExpiresAt, doc1Initial.pdfExpiresAt, 'pdfExpiresAt must retain the upload-time expiration deadline')
+    assert.ok(new Date(doc1Printed.printedAt).getTime() >= beforePrintMs, 'printedAt must be a current server timestamp')
 
-    const printedAtMs = new Date(doc1Printed.printedAt).getTime()
-    const expiresAtMs = new Date(doc1Printed.pdfExpiresAt).getTime()
-    const diffMs = expiresAtMs - printedAtMs
-    assert.strictEqual(diffMs, 30 * 60 * 1000, 'pdfExpiresAt must be exactly 30 minutes after printedAt')
-    assert.ok(printedAtMs >= beforePrintMs, 'printedAt must be a current server timestamp')
-
-    console.log('✓ TEST 1 PASSED: Order transition to Printed starts immutable 30-min retention timer\n')
+    console.log('✓ TEST 1 PASSED: Upload starts immutable 30-min retention timer, preserved on Printed\n')
 
     // ── TEST 2: Reprint succeeds within window for eligible order ───────────
     console.log('[TEST 2] Testing reprint request succeeds within 30-minute window...')
@@ -214,15 +213,15 @@ async function runRegressionSuite() {
 
     console.log('✓ TEST 3 PASSED: Direct API reprint and getOrderPdf requests rejected after expiry with HTTP 410\n')
 
-    // ── TEST 4: Pending, failed, and unprinted orders are NOT deleted by timer ──
-    console.log('[TEST 4] Testing pending, failed, and unprinted orders are not deleted...')
-    const id4Pending = `XB741${Math.floor(1000 + Math.random() * 9000)}`
-    const id4Failed = `XB742${Math.floor(1000 + Math.random() * 9000)}`
-    testIdsToCleanup.push(id4Pending, id4Failed)
+    // ── TEST 4: Expired order PDFs are purged while order documents and recent PDFs are preserved ─
+    console.log('[TEST 4] Testing expired order PDFs are purged while order documents and recent PDFs are preserved...')
+    const id4PendingExpired = `XB741${Math.floor(1000 + Math.random() * 9000)}`
+    const id4PendingRecent = `XB742${Math.floor(1000 + Math.random() * 9000)}`
+    testIdsToCleanup.push(id4PendingExpired, id4PendingRecent)
 
     await ordersCol.insertMany([
       {
-        orderId: id4Pending,
+        orderId: id4PendingExpired,
         printStatus: 'waiting_for_shopkeeper',
         hasPdf: true,
         pdfStorage: 'inline',
@@ -231,29 +230,34 @@ async function runRegressionSuite() {
         createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       },
       {
-        orderId: id4Failed,
-        printStatus: 'Failed',
+        orderId: id4PendingRecent,
+        printStatus: 'waiting_for_shopkeeper',
         hasPdf: true,
         pdfStorage: 'inline',
         pdfBase64: SAMPLE_BASE64,
-        paymentStatus: 'paid',
-        createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        paymentStatus: 'pending',
+        createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
       },
     ])
 
     // Run cleanup job strictly scoped to these test IDs
-    const cleanupT4 = await cleanupExpiredPdfs(db, { orderIds: [id4Pending, id4Failed] })
+    const cleanupT4 = await cleanupExpiredPdfs(db, { orderIds: [id4PendingExpired, id4PendingRecent] })
     assert.strictEqual(cleanupT4.success, true)
+    assert.strictEqual(cleanupT4.cleanedCount, 1)
 
-    // Verify neither order was deleted
-    const doc4Pending = await ordersCol.findOne({ orderId: id4Pending })
-    const doc4Failed = await ordersCol.findOne({ orderId: id4Failed })
-    assert.strictEqual(doc4Pending.hasPdf, true, 'Pending order must retain its PDF')
-    assert.strictEqual(doc4Pending.pdfDeletedAt, undefined, 'Pending order must not have pdfDeletedAt')
-    assert.strictEqual(doc4Failed.hasPdf, true, 'Failed order must retain its PDF')
-    assert.strictEqual(doc4Failed.pdfDeletedAt, undefined, 'Failed order must not have pdfDeletedAt')
+    // Verify expired order PDF is purged while order document is retained
+    const doc4Expired = await ordersCol.findOne({ orderId: id4PendingExpired })
+    assert.ok(doc4Expired, 'Order document must not be deleted from collection')
+    assert.strictEqual(doc4Expired.hasPdf, false, 'Expired order PDF must be purged')
+    assert.ok(doc4Expired.pdfDeletedAt, 'Expired order must have pdfDeletedAt recorded')
+    assert.strictEqual(doc4Expired.printStatus, 'waiting_for_shopkeeper', 'Order printStatus must be preserved')
 
-    console.log('✓ TEST 4 PASSED: Pending, failed, and never-printed orders are safely preserved\n')
+    // Verify recent order retains its PDF
+    const doc4Recent = await ordersCol.findOne({ orderId: id4PendingRecent })
+    assert.strictEqual(doc4Recent.hasPdf, true, 'Recent order must retain its PDF')
+    assert.strictEqual(doc4Recent.pdfDeletedAt, undefined, 'Recent order must not have pdfDeletedAt')
+
+    console.log('✓ TEST 4 PASSED: Expired PDFs are automatically purged while order documents and recent PDFs are preserved\n')
 
     // ── TEST 5: Repeated and concurrent reprint requests prevent duplicate jobs ─
     console.log('[TEST 5] Testing atomic lock prevents concurrent duplicate reprints...')

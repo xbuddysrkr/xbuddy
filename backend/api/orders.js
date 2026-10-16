@@ -11,6 +11,9 @@ import {
 } from './_lib/gridfs.js'
 import {
   calculateExpiryTimestamp,
+  calculatePrintedExpiryTimestamp,
+  calculateUnprintedExpiryTimestamp,
+  getEffectiveExpiryTimestamp,
   calculateOrderPrice,
   isOrderReprintEligible,
   cleanupExpiredPdfs,
@@ -347,6 +350,8 @@ export default async function handler(req, res) {
         hasGridFsPdf:         false,
         pdfStorage:           'none',
         pdfSize:              pdfBuffer ? pdfBuffer.length : 0,
+        pdfUploadedAt:        nowIso,
+        pdfExpiresAt:         calculateUnprintedExpiryTimestamp(nowIso),
         // Store inline Base64 only if GridFS fails on small files (< 2MB)
         pdfBase64:            '',
         paymentStatus:        String(payload.paymentStatus || 'pending').trim().toLowerCase(),
@@ -869,7 +874,7 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const order = await db.collection('orders').findOne(
           { orderId },
-          { projection: { driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfDeletedAt: 1, printedAt: 1 } }
+          { projection: { driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfUploadedAt: 1, createdAt: 1, pdfDeletedAt: 1, printedAt: 1 } }
         )
         if (!order) {
           // If order does not exist in authoritative MongoDB, purge any stale disk cache file
@@ -880,14 +885,14 @@ export default async function handler(req, res) {
         }
 
         // RETENTION POLICY GATE: Document permanently expired or deleted
-        const effectiveExpiry = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : null)
+        const effectiveExpiry = getEffectiveExpiryTimestamp(order)
         if (order.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
           if (fs.existsSync(cachePath)) {
             try { fs.unlinkSync(cachePath) } catch {}
           }
           return res.status(410).json({
             success: false,
-            error: 'Reprint window expired; document permanently deleted.',
+            error: 'Document retention window expired; PDF permanently deleted.',
             expired: true,
             hasPdf: false,
           })
@@ -1225,15 +1230,14 @@ export default async function handler(req, res) {
           const mongoUpdates = { $set: updateFields }
 
           if (printStatus === 'Printed') {
-            const existing = await orders.findOne({ orderId }, { projection: { printedAt: 1, pdfExpiresAt: 1, reprintPending: 1 } })
+            const existing = await orders.findOne({ orderId }, { projection: { printedAt: 1, pdfExpiresAt: 1, pdfUploadedAt: 1, createdAt: 1, reprintPending: 1 } })
             if (existing) {
               if (!existing.printedAt) {
-                // Requirement 1: Only record immutable printedAt if not already recorded.
-                // Set pdfExpiresAt = printedAt + 30 minutes.
+                // Rule 1: When successfully printed, delete 30 minutes after confirmed print completion
                 updateFields.printedAt = nowIso
-                updateFields.pdfExpiresAt = calculateExpiryTimestamp(nowIso)
+                updateFields.pdfExpiresAt = calculatePrintedExpiryTimestamp(nowIso)
               } else if (existing.reprintPending) {
-                // Requirement 3: Reprint finished successfully
+                // Requirement 3: Reprint finished successfully; do not reset original print expiration
                 updateFields.reprintPending = false
                 updateFields.lastReprintAt = nowIso
                 mongoUpdates.$inc = { reprintCount: 1 }
@@ -1245,6 +1249,8 @@ export default async function handler(req, res) {
                 }
               }
             }
+          } else if (printStatus === 'Printing') {
+            updateFields.printingAt = nowIso
           } else if (printStatus.toLowerCase().includes('fail')) {
             updateFields.failedAt = nowIso
             if (req.body?.errorMessage) {
