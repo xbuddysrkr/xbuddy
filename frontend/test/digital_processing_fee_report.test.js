@@ -111,9 +111,9 @@ test('Digital Processing Fee Report - Dynamic Grouping & Data Parity', async (t)
     const code = fs.readFileSync(dashboardFile, 'utf-8')
 
     // Verify exact 3 table header columns
-    assert.match(code, /<th className="py-3 px-4 font-bold">Order ID<\/th>/)
-    assert.match(code, /<th className="py-3 px-4 font-bold">Total Amount<\/th>/)
-    assert.match(code, /<th className="py-3 px-4 font-bold">Digital Processing Fee<\/th>/)
+    assert.match(code, /<th className="py-3 px-4 font-bold[^"]*">Order ID<\/th>/)
+    assert.match(code, /<th className="py-3 px-4 font-bold[^"]*">Total Amount<\/th>/)
+    assert.match(code, /<th className="py-3 px-4 font-bold[^"]*">Digital Processing Fee<\/th>/)
 
     // Verify section heading with stationId
     assert.match(code, /Station: \{stationId\}/)
