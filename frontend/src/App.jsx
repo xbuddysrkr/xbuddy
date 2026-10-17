@@ -19,6 +19,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString()
 import { processFile, countPdfPagesFromBinary, countOfficeDocumentPages } from './utils/fileProcessor'
+import { fetchOrderPdfBlob } from './utils/api'
 
 import ResumeBuilder from './resume-builder/ResumeBuilder'
 import NavigationDrawer from './components/NavigationDrawer'
@@ -148,6 +149,14 @@ export default function App() {
       initialStep = STEP.RESUME
     } else if (currentPath.startsWith('/print') || currentHash === '#print') {
       initialStep = STEP.UPLOAD
+      try {
+        const urlParams = new URLSearchParams(window.location.search)
+        const qOrderId = urlParams.get('orderId')
+        if (qOrderId) {
+          initialStep = STEP.UPLOAD
+          orderIdRef.current = qOrderId
+        }
+      } catch {}
     }
 
     const state = window.history.state
@@ -236,13 +245,14 @@ export default function App() {
   // 3. Central Navigation Controller: pushes or replaces history entry
   function goToStep(nextStep, options = {}) {
     if (isNavigatingRef.current) return
-    const { replace = false, preserveScroll = false } = options
-    const targetUrl = getUrlForStep(nextStep)
+    const { replace = false, preserveScroll = false, query = '', orderId = orderIdRef.current } = options
+    const baseUrl = getUrlForStep(nextStep)
+    const targetUrl = query ? `${baseUrl}?${query}` : baseUrl
     const nextState = {
       step: nextStep,
       showPayment: false,
       isDrawerOpen: false,
-      orderId: orderIdRef.current,
+      orderId: orderId !== undefined ? orderId : orderIdRef.current,
     }
 
     try {
@@ -417,6 +427,70 @@ export default function App() {
     orderIdRef.current = id
     setShowPayment(false)
     goToStep(STEP.PRINTING, { replace: true })
+  }
+
+  async function handleStartPrinting(reprintOrder) {
+    if (reprintOrder && (reprintOrder.orderId || reprintOrder.fileName)) {
+      const targetOrderId = reprintOrder.orderId || reprintOrder.id || ''
+      if (targetOrderId) {
+        setOrderId(targetOrderId)
+        orderIdRef.current = targetOrderId
+      }
+
+      setSettings(prev => ({
+        ...prev,
+        colorMode: (reprintOrder.colorMode === 'color' || reprintOrder.printType === 'Color') ? 'color' : 'bw',
+        sideMode: (reprintOrder.duplex === true || reprintOrder.printSide === 'Double') ? 'double' : 'single',
+        copies: Number(reprintOrder.copies) || 1,
+        pageSize: reprintOrder.pageSize || reprintOrder.paperSize || 'A4',
+        orientation: reprintOrder.orientation || 'portrait',
+        pageRange: reprintOrder.pageRangeMode === 'custom' || (reprintOrder.pageRange && reprintOrder.pageRange !== 'all') ? 'custom' : 'all',
+        customPages: reprintOrder.customPages || (reprintOrder.pageRange !== 'all' ? (reprintOrder.pageRange || '') : ''),
+      }))
+
+      const query = targetOrderId ? `orderId=${encodeURIComponent(targetOrderId)}&reprint=true` : ''
+
+      if (targetOrderId) {
+        try {
+          const blob = await fetchOrderPdfBlob(targetOrderId)
+          if (blob && blob.size > 100) {
+            const file = new File([blob], reprintOrder.fileName || `${targetOrderId}.pdf`, { type: 'application/pdf' })
+            const result = await processFile(file)
+            setFileInfo({
+              file: result.pdfBlob,
+              originalFile: file,
+              name: file.name,
+              size: '',
+              totalPages: result.totalPages,
+              thumbnail: result.thumbnail,
+              reprintOrderId: targetOrderId,
+              isReprint: true,
+              typeInfo: { label: 'PDF', icon: 'pdf', category: 'document' },
+              requiresAgent: false,
+            })
+            goToStep(STEP.SETTINGS, { query, orderId: targetOrderId })
+            setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth' }), 200)
+            return
+          }
+        } catch (err) {
+          console.warn('[Reprint PDF Notice]:', err.message)
+        }
+      }
+
+      setFileInfo({
+        file: null,
+        name: reprintOrder.fileName || `${targetOrderId}.pdf`,
+        size: '',
+        totalPages: Number(reprintOrder.totalPages || reprintOrder.printableCount || 1),
+        reprintOrderId: targetOrderId,
+        isReprint: true,
+        typeInfo: { label: 'PDF', icon: 'pdf', category: 'document' },
+      })
+      goToStep(STEP.UPLOAD, { query, orderId: targetOrderId })
+      return
+    }
+
+    goToStep(STEP.UPLOAD)
   }
 
   function handleReset() {
@@ -599,7 +673,7 @@ export default function App() {
 
           {step === STEP.MY_ORDERS && (
             <motion.div key="my_orders" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <MyOrdersPage onStartPrinting={() => goToStep(STEP.UPLOAD)} />
+              <MyOrdersPage onStartPrinting={(reprintOrder) => handleStartPrinting(reprintOrder)} />
             </motion.div>
           )}
 

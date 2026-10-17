@@ -1059,11 +1059,49 @@ export async function createCampusAd(adData) {
 }
 
 /**
- * Returns direct URL for streaming/downloading order PDF from cloud
+ * Returns direct URL for streaming/downloading order PDF from cloud with optional authorization token
  */
-export function getOrderPdfUrl(orderId) {
+export function getOrderPdfUrl(orderId, token = '') {
   const cleanId = String(orderId || '').trim().toUpperCase()
-  return `${ORDERS_ENDPOINT}?action=getPdf&orderId=${encodeURIComponent(cleanId)}`
+  let url = `${ORDERS_ENDPOINT}?action=getPdf&orderId=${encodeURIComponent(cleanId)}`
+  if (token) {
+    url += `&token=${encodeURIComponent(token)}`
+  }
+  return url
+}
+
+/**
+ * Server-side verification for booth Preview PDF password
+ */
+export async function verifyPreviewPassword({ orderId, password }) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  const endpoints = getCandidateOrdersEndpoints()
+  let lastErr = 'Password verification failed'
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verifyPreviewPassword',
+          orderId: cleanId,
+          password,
+        }),
+        signal: AbortSignal.timeout(10000),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        return data
+      }
+      if (data && data.error) {
+        return { success: false, error: data.error }
+      }
+    } catch (err) {
+      lastErr = err.message
+    }
+  }
+  return { success: false, error: lastErr }
 }
 
 /**

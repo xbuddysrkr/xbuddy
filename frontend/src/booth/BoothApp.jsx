@@ -35,7 +35,8 @@ import {
   fetchOrderPdfBlob,
   getOrderPdfUrl,
   prepareOrderPdfForPrint,
-  isAgentAvailable
+  isAgentAvailable,
+  verifyPreviewPassword
 } from '../utils/api'
 
 const SESSION_KEY = 'xbuddy_booth_auth'
@@ -157,10 +158,6 @@ function PinLogin({ onSuccess }) {
               </>
             )}
           </button>
-
-          <p className="text-[11px] text-center text-slate-400 font-medium">
-            Default Station PIN: <span className="font-mono font-bold text-slate-600">4921</span>
-          </p>
         </motion.form>
       </motion.div>
     </div>
@@ -244,6 +241,176 @@ function KioskHelpModal({ isOpen, onClose }) {
   )
 }
 
+// ── Password-Protected Preview PDF Modal ──────────────────────────────────────
+function PreviewPdfModal({ isOpen, onClose, initialOrderId }) {
+  const [targetOrderId, setTargetOrderId] = useState(initialOrderId || '')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      setTargetOrderId(initialOrderId || '')
+      setPassword('')
+      setError('')
+      setLoading(false)
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [isOpen, initialOrderId])
+
+  if (!isOpen) return null
+
+  async function handleSubmit(e) {
+    e?.preventDefault()
+    const cleanId = String(targetOrderId || '').trim().toUpperCase()
+    if (!cleanId) {
+      setError('Please enter an Order ID.')
+      return
+    }
+    if (!password) {
+      setError('Password is required.')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    try {
+      const res = await verifyPreviewPassword({ orderId: cleanId, password })
+      if (res?.success) {
+        const finalUrl = res.previewUrl || getOrderPdfUrl(cleanId, res.previewToken)
+        window.open(finalUrl, '_blank')
+        setPassword('')
+        onClose()
+      } else {
+        setError(res?.error || 'Incorrect password. Access denied.')
+      }
+    } catch (err) {
+      setError(err.message || 'Verification failed. Please retry.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Escape') {
+      onClose()
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+      onKeyDown={handleKeyDown}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="relative z-10 bg-white border border-orange-200 rounded-3xl p-6 w-full max-w-md shadow-2xl"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-orange-100 text-[#EA580C] flex items-center justify-center">
+              <Eye className="w-4 h-4" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">Preview PDF</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-4">
+          Enter the order ID and shopkeeper authorization password to preview the customer document.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Order ID
+            </label>
+            <input
+              type="text"
+              value={targetOrderId}
+              onChange={(e) => {
+                setTargetOrderId(e.target.value.toUpperCase())
+                setError('')
+              }}
+              placeholder="e.g. XB1024"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono font-bold text-sm uppercase placeholder:font-sans placeholder:font-normal focus:outline-none focus:border-orange-500 focus:bg-white transition-all"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Password
+            </label>
+            <input
+              ref={inputRef}
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value)
+                setError('')
+              }}
+              placeholder="Enter authorization password"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white transition-all"
+              required
+              autoFocus
+            />
+          </div>
+
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2 font-medium"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+              <span>{error}</span>
+            </motion.div>
+          )}
+
+          <div className="flex items-center justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !password}
+              className="px-5 py-2.5 bg-gradient-to-r from-[#EA580C] to-[#F78C25] hover:brightness-105 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Preview Document</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  )
+}
+
 // ── Main Booth Release Station ────────────────────────────────────────────────
 function ReleasePrintStation({ onLock }) {
   const [activeTab, setActiveTab] = useState('lookup') // 'lookup' | 'queue'
@@ -258,9 +425,17 @@ function ReleasePrintStation({ onLock }) {
   const [pendingOrders, setPendingOrders] = useState([])
   const [queueLoading, setQueueLoading] = useState(false)
   const [showKioskModal, setShowKioskModal] = useState(false)
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [previewTargetOrderId, setPreviewTargetOrderId] = useState('')
   const [agentOnline, setAgentOnline] = useState(false)
   const [time, setTime] = useState(new Date())
   const inputRef = useRef()
+
+  function handleOpenPreviewModal(targetId) {
+    const defaultId = targetId || selectedOrder?.orderId || selectedOrder?.id || (orderId && orderId !== 'XB' ? orderId : '')
+    setPreviewTargetOrderId(defaultId)
+    setShowPreviewModal(true)
+  }
 
   // Real-time Clock
   useEffect(() => {
@@ -662,7 +837,18 @@ function ReleasePrintStation({ onLock }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => handleOpenPreviewModal()}
+            id="booth-header-preview-pdf-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-50 hover:bg-orange-100 text-[#EA580C] transition-colors border border-orange-200 shadow-xs cursor-pointer"
+            title="Preview PDF (Password Protected)"
+          >
+            <Eye className="w-3.5 h-3.5 shrink-0" />
+            <span>Preview PDF</span>
+          </button>
+
           <button
             onClick={() => setShowKioskModal(true)}
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-orange-50 text-[#EA580C] hover:bg-orange-100 transition-colors border border-orange-200"
@@ -1260,17 +1446,6 @@ function ReleasePrintStation({ onLock }) {
                             </>
                           )}
                         </button>
-
-                        <a
-                          href={getOrderPdfUrl(selectedOrder.orderId || selectedOrder.id)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-5 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-2xl transition-colors flex items-center justify-center gap-2"
-                          title="Inspect PDF in browser tab before printing"
-                        >
-                          <Eye className="w-4 h-4 text-slate-500" />
-                          <span>Preview PDF</span>
-                        </a>
                       </div>
                     </div>
                   )}
@@ -1405,16 +1580,6 @@ function ReleasePrintStation({ onLock }) {
                           >
                             <RotateCcw className="w-4 h-4" />
                           </button>
-
-                          <a
-                            href={getOrderPdfUrl(id)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
-                            title="Preview in new tab"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </a>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
@@ -1446,16 +1611,6 @@ function ReleasePrintStation({ onLock }) {
                           >
                             <FileText className="w-4 h-4" />
                           </button>
-
-                          <a
-                            href={getOrderPdfUrl(id)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"
-                            title="Preview in new tab"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </a>
                         </div>
                       )}
                     </motion.div>
@@ -1477,6 +1632,13 @@ function ReleasePrintStation({ onLock }) {
       <KioskHelpModal
         isOpen={showKioskModal}
         onClose={() => setShowKioskModal(false)}
+      />
+
+      {/* Password-Protected Preview PDF Modal */}
+      <PreviewPdfModal
+        isOpen={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        initialOrderId={previewTargetOrderId}
       />
     </div>
   )

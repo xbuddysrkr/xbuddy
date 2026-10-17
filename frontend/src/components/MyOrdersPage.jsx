@@ -160,44 +160,15 @@ export default function MyOrdersPage({ onStartPrinting }) {
     return () => clearInterval(pollRef.current)
   }, [orders])
 
-  async function handleReprint(orderId) {
-    if (!orderId || reprintingId) return
-    setReprintingId(orderId)
-    setReprintMessage(null)
-    try {
-      const ord = (liveOrderData && liveOrderData[orderId]) || orders.find(o => o.orderId === orderId) || {}
-      const res = await initiateReprint(orderId)
-      if (res?.success && res.attemptId) {
-        setReprintPaymentMeta({
-          ...ord,
-          orderId,
-          attemptId: res.attemptId,
-          isReprint: true,
-          originalTransactionId: ord.transactionId || '',
-          amount: res.amount,
-          printingCost: res.printingCost,
-          serviceFee: res.serviceFee,
-          ratePerPage: res.ratePerPage,
-          copies: res.copies,
-          effectivePages: res.effectivePages,
-          effectiveExpiresAt: res.effectiveExpiresAt,
-          fileName: ord.fileName || `${orderId}.pdf`,
-        })
-      } else {
-        setReprintMessage({
-          orderId,
-          type: 'error',
-          text: res?.error || 'Reprint request could not be initiated.',
-        })
-      }
-    } catch (err) {
-      setReprintMessage({
-        orderId,
-        type: 'error',
-        text: `Network error: ${err.message}`,
-      })
-    } finally {
-      setReprintingId(null)
+  function handleReprint(orderId) {
+    if (!orderId) return
+    const ord = orders.find(o => o.orderId === orderId) || (liveOrderData && liveOrderData[orderId]) || { orderId }
+    setSelectedOrder(null)
+
+    if (typeof onStartPrinting === 'function') {
+      onStartPrinting(ord)
+    } else {
+      window.location.href = `/print?orderId=${encodeURIComponent(orderId)}&reprint=true`
     }
   }
 
@@ -308,7 +279,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
   })
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-8 overflow-x-hidden">
       {/* Ready for Collection Notification Banner */}
       <AnimatePresence>
         {readyOrders.length > 0 && (
@@ -316,24 +287,24 @@ export default function MyOrdersPage({ onStartPrinting }) {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-sm flex items-center justify-between gap-3"
+            className="mb-6 p-3.5 sm:p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 flex-shrink-0">
+            <div className="flex items-start sm:items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
                 <Bell className="w-5 h-5 animate-bounce" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-emerald-900 font-bold text-sm">
                   Your X Buddy order is ready for collection!
                 </p>
-                <p className="text-emerald-700 text-xs mt-0.5">
+                <p className="text-emerald-700 text-xs mt-0.5 break-words">
                   Order ID{readyOrders.length > 1 ? 's' : ''}: <span className="font-mono font-extrabold">{readyOrders.map(o => o.orderId).join(', ')}</span> — Collect from the campus Xerox shop.
                 </p>
               </div>
             </div>
             <button
               onClick={() => setShopModalOrder(readyOrders[0])}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors whitespace-nowrap shadow-xs"
+              className="self-end sm:self-auto px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors whitespace-nowrap shadow-xs cursor-pointer"
             >
               Show ID →
             </button>
@@ -342,18 +313,18 @@ export default function MyOrdersPage({ onStartPrinting }) {
       </AnimatePresence>
 
       {/* Header & Title */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#222222] tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-[#222222] tracking-tight">
             My Print Orders
           </h1>
-          <p className="text-gray-500 text-xs sm:text-sm mt-1">
+          <p className="text-gray-500 text-xs sm:text-sm mt-1 max-w-xl">
             Track live print status and access your Order IDs for Xerox shop collection.
           </p>
         </div>
         <button
           onClick={onStartPrinting}
-          className="self-start md:self-auto px-4 py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg transition-all"
+          className="self-start sm:self-auto px-3.5 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg transition-all cursor-pointer whitespace-nowrap"
         >
           + New Print Order
         </button>
@@ -511,22 +482,22 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 key={order.orderId}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-white border border-orange-200/80 hover:border-orange-300 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                className="bg-white border border-orange-200/80 hover:border-orange-300 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 w-full overflow-hidden"
               >
-                <div className="space-y-1 min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-bold text-[#F78C25] text-base">
+                <div className="space-y-1 min-w-0 flex-1 w-full">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="font-mono font-bold text-[#F78C25] text-sm sm:text-base shrink-0">
                       {order.orderId}
                     </span>
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${statusInfo.cls}`}>
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[11px] sm:text-xs font-semibold shrink-0 max-w-full ${statusInfo.cls}`}>
                       <StatusIcon className="w-3.5 h-3.5 shrink-0" />
                       <span>{statusInfo.label}</span>
                     </span>
                   </div>
-                  <p className="text-[#222222] font-semibold text-sm truncate">
+                  <p className="text-[#222222] font-semibold text-xs sm:text-sm break-all sm:truncate max-w-full">
                     {order.fileName}
                   </p>
-                  <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                  <div className="flex items-center gap-1.5 sm:gap-3 text-[11px] sm:text-xs text-gray-500 flex-wrap">
                     <span>{order.printableCount || order.totalPages} {Number(order.printableCount || order.totalPages) === 1 ? 'page' : 'pages'}</span>
                     <span>•</span>
                     <span>{order.copies} {order.copies === 1 ? 'copy' : 'copies'}</span>
@@ -541,7 +512,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
 
                   {/* 30-Minute Retention Countdown & Status Badges */}
                   {canReprint && (
-                    <div className="inline-flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-xl mt-1">
+                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
                       <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
                       <span>Reprint available: <strong className="font-mono font-bold text-amber-900">{formatRemainingCountdown(remainingSecs)}</strong></span>
                       {liveData.reprintCount > 0 && (
@@ -553,21 +524,21 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   )}
 
                   {(isExpired || isPdfDeleted) && (isPrinted || printedAt) && (
-                    <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl mt-1">
+                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
                       <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span>Reprint window expired; document permanently deleted.</span>
                     </div>
                   )}
 
                   {liveData.reprintPending && (
-                    <div className="inline-flex items-center gap-1.5 text-xs text-blue-800 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl mt-1">
+                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-blue-800 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
                       <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
                       <span>Reprint queued — waiting for Xerox shop dispatch</span>
                     </div>
                   )}
 
                   {reprintMessage && reprintMessage.orderId === order.orderId && (
-                    <div className={`mt-2 p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${
+                    <div className={`mt-2 p-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 max-w-full flex-wrap ${
                       reprintMessage.type === 'success'
                         ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                         : 'bg-rose-50 text-rose-800 border border-rose-200'
@@ -582,13 +553,13 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-orange-100 flex-wrap">
+                <div className="flex flex-col min-[420px]:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-orange-100 flex-wrap">
                   {canReprint && (
                     <button
                       id={`reprint-btn-${order.orderId}`}
                       disabled={reprintingId === order.orderId}
                       onClick={() => handleReprint(order.orderId)}
-                      className="px-3.5 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      className="px-3.5 py-2.5 sm:py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 flex-1 min-[420px]:flex-initial text-center"
                       title="Reprint order using existing stored PDF within 30 minutes"
                     >
                       {reprintingId === order.orderId ? (
@@ -606,14 +577,14 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   )}
                   <button
                     onClick={() => setShopModalOrder(order)}
-                    className="px-3.5 py-2 bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                    className="px-3.5 py-2.5 sm:py-2 bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer flex-1 min-[420px]:flex-initial text-center"
                   >
                     <Store className="w-3.5 h-3.5 shrink-0" />
                     <span>Show Order ID</span>
                   </button>
                   <button
                     onClick={() => setSelectedOrder(order)}
-                    className="px-3.5 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                    className="px-3.5 py-2.5 sm:py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-semibold text-xs rounded-xl transition-colors cursor-pointer flex-1 min-[420px]:flex-initial text-center"
                   >
                     View Details
                   </button>
@@ -639,10 +610,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative z-10 bg-white border border-orange-200 rounded-3xl p-6 w-full max-w-md shadow-xl"
+              className="relative z-10 bg-white border border-orange-200 rounded-3xl p-5 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-xl mx-2 sm:mx-auto"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-[#222222]">Order Details</h3>
+                <h3 className="text-base sm:text-lg font-bold text-[#222222]">Order Details</h3>
                 <button
                   onClick={() => setSelectedOrder(null)}
                   className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 text-gray-400 flex items-center justify-center transition-colors cursor-pointer"
@@ -654,16 +625,16 @@ export default function MyOrdersPage({ onStartPrinting }) {
 
               <div className="space-y-4">
                 {/* Order ID Banner */}
-                <div className="p-4 bg-[#FFF8F2] border border-orange-200 rounded-2xl flex items-center justify-between">
+                <div className="p-3.5 sm:p-4 bg-[#FFF8F2] border border-orange-200 rounded-2xl flex items-center justify-between gap-2">
                   <div>
                     <p className="text-xs text-gray-500">Order ID</p>
-                    <p className="font-mono text-xl font-extrabold text-[#F78C25]">
+                    <p className="font-mono text-lg sm:text-xl font-extrabold text-[#F78C25]">
                       {selectedOrder.orderId}
                     </p>
                   </div>
                   <button
                     onClick={() => handleCopyId(selectedOrder.orderId)}
-                    className="px-3 py-1.5 bg-white border border-orange-200 text-[#F78C25] font-bold text-xs rounded-lg hover:bg-orange-50 transition-colors cursor-pointer inline-flex items-center gap-1"
+                    className="px-3 py-1.5 bg-white border border-orange-200 text-[#F78C25] font-bold text-xs rounded-lg hover:bg-orange-50 transition-colors cursor-pointer inline-flex items-center gap-1 shrink-0"
                   >
                     {copied ? (
                       <>
@@ -677,10 +648,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 </div>
 
                 {/* Details Breakdown */}
-                <div className="bg-gray-50/70 border border-gray-100 rounded-2xl p-4 space-y-2.5 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">File Name:</span>
-                    <span className="font-semibold text-gray-800 text-right truncate max-w-[200px]">
+                <div className="bg-gray-50/70 border border-gray-100 rounded-2xl p-3.5 sm:p-4 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="text-gray-500 shrink-0">File Name:</span>
+                    <span className="font-semibold text-gray-800 text-right break-words max-w-[65%]">
                       {selectedOrder.fileName}
                     </span>
                   </div>
@@ -787,7 +758,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
 
                   if (canReprint) {
                     return (
-                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2">
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                         <div className="flex items-center gap-2">
                           <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                           <div className="text-xs">
@@ -799,7 +770,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                           id={`modal-reprint-btn-${selectedOrder.orderId}`}
                           disabled={reprintingId === selectedOrder.orderId}
                           onClick={() => handleReprint(selectedOrder.orderId)}
-                          className="px-3.5 py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                          className="px-3.5 py-2 sm:py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 w-full sm:w-auto text-center"
                         >
                           {reprintingId === selectedOrder.orderId ? (
                             <>

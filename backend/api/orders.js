@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 import Busboy from 'busboy'
 import { connectToDatabase } from './_lib/mongodb.js'
 import {
@@ -285,6 +286,33 @@ export default async function handler(req, res) {
   const action = (req.body?.action || req.query?.action || (method === 'POST' ? 'saveOrder' : 'listOrders')).trim()
 
   try {
+    // ── 0. BOOTH PREVIEW PASSWORD VERIFICATION ───────────────────────────
+    if (action === 'verifyPreviewPassword') {
+      const password = String(req.body?.password || req.query?.password || '')
+      const expectedPassword = process.env.BOOTH_PREVIEW_PASSWORD || 'XBuddy@4921'
+      const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
+
+      if (password === expectedPassword) {
+        const secret = process.env.JWT_SECRET || process.env.AGENT_SECRET || 'xbuddy_preview_token_secret_4921'
+        const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes validity
+        const hmac = crypto.createHmac('sha256', secret).update(`${orderId}:${expiresAt}`).digest('hex')
+        const previewToken = `${expiresAt}.${hmac}`
+
+        return res.status(200).json({
+          success: true,
+          message: 'Preview access granted',
+          orderId,
+          previewToken,
+          previewUrl: `/api/orders?action=getPdf&orderId=${encodeURIComponent(orderId)}&token=${previewToken}`,
+        })
+      }
+
+      return res.status(401).json({
+        success: false,
+        error: 'Incorrect preview password. Access denied.',
+      })
+    }
+
     // ── 1. SAVE ORDER (DUAL-WRITE + IDEMPOTENCY + RECOVERY) ──────────────────
     if (action === 'saveOrder') {
       const tServerStart = performance.now()
@@ -862,6 +890,36 @@ export default async function handler(req, res) {
       const orderId = String(req.query?.orderId || req.body?.orderId || '').trim().toUpperCase()
       if (!orderId) {
         return res.status(400).json({ success: false, error: 'orderId is required' })
+      }
+
+      // Password / Token gate for browser Preview requests ('getPdf' / 'downloadPdf')
+      // Note: action === 'getOrderPdf' is preserved for automated Print Agent syncing without password
+      if (action === 'getPdf' || action === 'downloadPdf') {
+        const token = String(req.query?.token || req.body?.token || '').trim()
+        const rawPass = String(req.query?.password || req.body?.password || '')
+        const expectedPassword = process.env.BOOTH_PREVIEW_PASSWORD || 'XBuddy@4921'
+        let authorized = false
+
+        if (rawPass && rawPass === expectedPassword) {
+          authorized = true
+        } else if (token && token.includes('.')) {
+          const [expiresAtStr, hmac] = token.split('.')
+          const expiresAt = Number(expiresAtStr)
+          if (!isNaN(expiresAt) && expiresAt > Date.now()) {
+            const secret = process.env.JWT_SECRET || process.env.AGENT_SECRET || 'xbuddy_preview_token_secret_4921'
+            const expectedHmac = crypto.createHmac('sha256', secret).update(`${orderId}:${expiresAt}`).digest('hex')
+            if (hmac === expectedHmac) {
+              authorized = true
+            }
+          }
+        }
+
+        if (!authorized) {
+          return res.status(401).json({
+            success: false,
+            error: 'Password verification required to preview PDF. Access denied.',
+          })
+        }
       }
 
       const tStart = Date.now()
