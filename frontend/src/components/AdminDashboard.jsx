@@ -21,6 +21,7 @@ import {
   Eye,
   Download,
   Filter,
+  Receipt,
 } from 'lucide-react'
 import {
   fetchAdminOrders,
@@ -51,6 +52,7 @@ const formatCurrency = value => `₹${Number(value || 0).toLocaleString()}`
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [activeView, setActiveView] = useState('orders') // 'orders' | 'feeReport'
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [selectedOrder, setSelectedOrder] = useState(null)
@@ -124,8 +126,15 @@ export default function AdminDashboard() {
             let currentStatus = o.status || o.printStatus || 'Waiting'
             if (currentStatus === 'waiting_for_shopkeeper') currentStatus = 'Order Received'
 
+            const cleanOrderId = String(o.id || o.orderId || '').trim().toUpperCase()
+            const dynamicStation = String(
+              o.stationId ||
+              o.station ||
+              (cleanOrderId === 'XB-TEST-01' || cleanOrderId.startsWith('XB-TEST-') ? 'TEST-01' : 'SRKR-XEROX-01')
+            ).trim().toUpperCase()
+
             return {
-              id: o.id || o.orderId,
+              id: cleanOrderId,
               studentName,
               phone,
               fileName: o.fileName || 'Document.pdf',
@@ -135,6 +144,8 @@ export default function AdminDashboard() {
               printSide: o.printSide || 'Single',
               customPages: o.customPages || '',
               amount: Number(o.amount || 0),
+              digitalProcessingFee: Number(o.digitalProcessingFee ?? o.serviceFee ?? 0),
+              stationId: dynamicStation,
               paymentStatus: o.paymentStatus || 'Pending',
               status: currentStatus,
               time: timeStr || 'Just now',
@@ -168,12 +179,51 @@ export default function AdminDashboard() {
   const stats = useMemo(() => {
     const total = orders.length
     const revenue = orders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0)
+    const totalProcessingFee = orders.reduce((sum, o) => sum + (Number(o.digitalProcessingFee) || 0), 0)
     const pending = orders.filter(o => o.status === 'Pending' || o.status === 'Payment Submitted' || o.status === 'Waiting' || o.status === 'Accepted' || o.status === 'Order Received').length
     const printing = orders.filter(o => o.status === 'Printing').length
     const ready = orders.filter(o => o.status === 'Ready for Collection' || o.status === 'Ready' || o.status === 'Printed').length
     const collected = orders.filter(o => o.status === 'Collected').length
-    return { total, revenue, pending, printing, ready, collected }
+    return { total, revenue, totalProcessingFee, pending, printing, ready, collected }
   }, [orders])
+
+  // Group orders dynamically by station ID
+  const stationGroups = useMemo(() => {
+    const groups = {}
+
+    // Dynamic grouping based on existing order data
+    orders.forEach(order => {
+      const sId = String(
+        order.stationId ||
+        (order.id === 'XB-TEST-01' || String(order.id).startsWith('XB-TEST-') ? 'TEST-01' : 'SRKR-XEROX-01')
+      ).trim().toUpperCase()
+
+      if (!groups[sId]) {
+        groups[sId] = []
+      }
+      groups[sId].push(order)
+    })
+
+    // Ensure known station IDs are present dynamically even before first order is placed
+    const knownStations = ['SRKR-XEROX-01', 'TEST-01']
+    knownStations.forEach(s => {
+      if (!groups[s]) {
+        groups[s] = []
+      }
+    })
+
+    return groups
+  }, [orders])
+
+  const sortedStationIds = useMemo(() => {
+    return Object.keys(stationGroups).sort((a, b) => {
+      if (a === 'SRKR-XEROX-01') return -1
+      if (b === 'SRKR-XEROX-01') return 1
+      if (a === 'TEST-01') return -1
+      if (b === 'TEST-01') return 1
+      return a.localeCompare(b)
+    })
+  }, [stationGroups])
 
   // Filtered & Searched Orders (newest first)
   const filteredOrders = useMemo(() => {
@@ -308,11 +358,45 @@ export default function AdminDashboard() {
 
       {/* Main Container */}
       <main className="max-w-[1500px] mx-auto px-4 sm:px-6 pt-6">
+        {/* View Navigation Tabs */}
+        <div className="flex items-center gap-2 mb-6 border-b border-white/10 pb-4">
+          <button
+            onClick={() => setActiveView('orders')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              activeView === 'orders'
+                ? 'bg-[#F7931E] text-white shadow-lg shadow-orange-500/20'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5'
+            }`}
+          >
+            <Printer className="w-4 h-4" />
+            <span>Campus Queue &amp; Fulfillment</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${activeView === 'orders' ? 'bg-black/25 text-white' : 'bg-white/10 text-slate-300'}`}>
+              {orders.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('feeReport')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              activeView === 'feeReport'
+                ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/20'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            <span>Digital Processing Fee Report</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+              {formatCurrency(stats.totalProcessingFee)}
+            </span>
+          </button>
+        </div>
+
         {/* Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3.5 mb-6">
           {[
             { label: 'Total Orders', value: stats.total, icon: <Layers className="w-4 h-4" />, color: 'text-orange-400' },
             { label: 'Revenue', value: formatCurrency(stats.revenue), icon: <DollarSign className="w-4 h-4" />, color: 'text-emerald-400' },
+            { label: 'Processing Fees', value: formatCurrency(stats.totalProcessingFee), icon: <Receipt className="w-4 h-4" />, color: 'text-cyan-400' },
             { label: 'Pending / Intake', value: stats.pending, icon: <Clock3 className="w-4 h-4" />, color: 'text-amber-400' },
             { label: 'Printing Queue', value: stats.printing, icon: <Printer className="w-4 h-4" />, color: 'text-violet-400' },
             { label: 'Ready for Pickup', value: stats.ready, icon: <Store className="w-4 h-4" />, color: 'text-emerald-400' },
@@ -328,232 +412,349 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Filter & Search Bar */}
-        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          {/* Search */}
-          <div className="relative w-full md:w-96">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search Order ID, file, phone, student..."
-              className="w-full rounded-xl border border-white/10 bg-slate-950/80 pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:border-[#F7931E] focus:outline-none"
-            />
-            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-xs text-slate-400 hover:text-white absolute right-3 top-2.5 cursor-pointer"
-                aria-label="Clear Search"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+        {activeView === 'feeReport' ? (
+          <div className="space-y-8">
+            {/* Report Header Banner */}
+            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="text-lg font-bold text-white tracking-tight">Digital Processing Fee Report</h2>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    Station Grouped
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Audited report of actual stored digital processing fees and total order amounts grouped by print station.
+                </p>
+              </div>
 
-          {/* Status Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 text-xs">
-            {[
-              { key: 'ALL', label: 'All Orders' },
-              { key: 'PENDING', label: 'Pending / Accepted' },
-              { key: 'PRINTING', label: 'Printing' },
-              { key: 'READY', label: 'Ready for Collection' },
-              { key: 'COLLECTED', label: 'Collected' },
-              { key: 'CANCELLED', label: 'Cancelled' },
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setStatusFilter(tab.key)}
-                className={`px-3 py-1.5 rounded-xl font-semibold transition-colors whitespace-nowrap ${
-                  statusFilter === tab.key
-                    ? 'bg-[#F7931E] text-white shadow-sm'
-                    : 'bg-white/5 hover:bg-white/10 text-slate-400'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
+              <div className="flex items-center gap-4 text-xs font-mono">
+                <div className="px-3.5 py-2 rounded-xl bg-slate-950/80 border border-white/10">
+                  <span className="text-slate-400 text-[10px] block uppercase font-sans">Active Stations</span>
+                  <span className="text-sm font-bold text-white">{sortedStationIds.length}</span>
+                </div>
+                <div className="px-3.5 py-2 rounded-xl bg-slate-950/80 border border-white/10">
+                  <span className="text-slate-400 text-[10px] block uppercase font-sans">Total Collected Fees</span>
+                  <span className="text-sm font-bold text-cyan-400">{formatCurrency(stats.totalProcessingFee)}</span>
+                </div>
+              </div>
+            </div>
 
-        {/* Orders Table */}
-        <div className="rounded-3xl border border-white/10 bg-slate-950/90 overflow-hidden shadow-xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-slate-400 bg-slate-900/80">
-                  <th className="py-3.5 px-4 font-bold">Order ID</th>
-                  <th className="py-3.5 px-4 font-bold">Student / File</th>
-                  <th className="py-3.5 px-4 font-bold text-center">Pages</th>
-                  <th className="py-3.5 px-4 font-bold text-center">Copies</th>
-                  <th className="py-3.5 px-4 font-bold">Print Type</th>
-                  <th className="py-3.5 px-4 font-bold">Amount</th>
-                  <th className="py-3.5 px-4 font-bold">Payment</th>
-                  <th className="py-3.5 px-4 font-bold">Order Status</th>
-                  <th className="py-3.5 px-4 font-bold">Time</th>
-                  <th className="py-3.5 px-4 font-bold text-right">Staff Workflow</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-xs text-slate-200">
-                {loading && orders.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-16 text-center text-slate-400">
-                      <div className="w-8 h-8 border-3 border-orange-500/30 border-t-orange-500 rounded-full animate-spin mx-auto mb-3" />
-                      <p className="font-semibold text-slate-300">Fetching live campus print orders...</p>
-                      <p className="text-[11px] text-slate-500 mt-1">Connecting to Xerox print agent &amp; Google Sheets</p>
-                    </td>
-                  </tr>
-                ) : filteredOrders.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-12 text-center text-slate-500">
-                      No matching orders found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredOrders.map(order => {
-                    const badgeCls = STATUS_BADGES[order.status] || STATUS_BADGES['Order Received']
-                    const isBusy = actionLoading === order.id
+            {/* Dynamic Station Sections */}
+            {sortedStationIds.map(stationId => {
+              const stationOrders = stationGroups[stationId] || []
+              const stationTotalAmount = stationOrders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0)
+              const stationTotalFee = stationOrders.reduce((sum, o) => sum + (Number(o.digitalProcessingFee) || 0), 0)
 
-                    return (
-                      <tr key={order.id} className="hover:bg-white/[0.03] transition-colors">
-                        {/* Order ID */}
-                        <td className="py-3.5 px-4 font-mono font-bold text-orange-400 text-sm">
-                          {order.id}
-                        </td>
-
-                        {/* Student / File */}
-                        <td className="py-3.5 px-4">
-                          <p className="font-semibold text-white truncate max-w-[200px]" title={order.fileName}>
-                            {order.fileName}
-                          </p>
-                          <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                            <span>{order.studentName}</span>
-                            {order.phone && <span>• {order.phone}</span>}
-                          </p>
-                        </td>
-
-                        {/* Pages */}
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="font-bold text-slate-100">{order.pages}</span>
-                          {order.customPages && (
-                            <span className="block text-[10px] text-orange-400">({order.customPages})</span>
-                          )}
-                        </td>
-
-                        {/* Copies */}
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-100">
-                          {order.copies}
-                        </td>
-
-                        {/* Print Type */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-1">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${order.printType === 'Color' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-800 text-slate-300'}`}>
-                              {order.printType}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px]">
-                              {order.printSide || 'Single'}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Amount */}
-                        <td className="py-3.5 px-4 font-bold text-emerald-400">
-                          {formatCurrency(order.amount)}
-                        </td>
-
-                        {/* Payment */}
-                        <td className="py-3.5 px-4">
-                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
-                            <Check className="w-3 h-3" /> Paid
+              return (
+                <section key={stationId} className="rounded-3xl border border-white/10 bg-slate-950/90 overflow-hidden shadow-xl">
+                  {/* Station Section Heading */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-slate-900/90 border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#F7931E]/20 to-amber-500/20 border border-orange-500/30 text-orange-400 flex items-center justify-center font-bold">
+                        <Store className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white tracking-tight font-mono">
+                            Station: {stationId}
+                          </h3>
+                          <span className="text-[10px] font-sans font-bold px-2 py-0.5 rounded-full bg-white/10 text-slate-300">
+                            {stationOrders.length} {stationOrders.length === 1 ? 'order' : 'orders'}
                           </span>
-                        </td>
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          {stationId === 'SRKR-XEROX-01' ? 'SRKR Engineering College Main Shop Station' : (stationId === 'TEST-01' ? 'Isolated Test Station' : `Campus Print Station ${stationId}`)}
+                        </p>
+                      </div>
+                    </div>
 
-                        {/* Order Status */}
-                        <td className="py-3.5 px-4">
-                          <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] ${badgeCls}`}>
-                            {order.status}
-                          </span>
-                        </td>
+                    <div className="flex items-center gap-4 text-xs">
+                      <div className="text-right">
+                        <span className="text-slate-400 text-[10px] block uppercase">Total Amount</span>
+                        <span className="font-bold text-emerald-400 text-sm">{formatCurrency(stationTotalAmount)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-400 text-[10px] block uppercase">Total Processing Fee</span>
+                        <span className="font-bold text-cyan-400 text-sm">{formatCurrency(stationTotalFee)}</span>
+                      </div>
+                    </div>
+                  </div>
 
-                        {/* Time */}
-                        <td className="py-3.5 px-4 text-slate-400 text-[11px]">
-                          {order.time}
-                        </td>
+                  {/* Station Orders Table: EXACTLY THREE COLUMNS */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-slate-400 bg-slate-900/50">
+                          <th className="py-3 px-4 font-bold">Order ID</th>
+                          <th className="py-3 px-4 font-bold">Total Amount</th>
+                          <th className="py-3 px-4 font-bold">Digital Processing Fee</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-xs text-slate-200">
+                        {stationOrders.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="py-8 text-center text-slate-500 italic">
+                              No orders currently recorded for station {stationId}.
+                            </td>
+                          </tr>
+                        ) : (
+                          stationOrders.map(order => (
+                            <tr key={order.id} className="hover:bg-white/[0.03] transition-colors">
+                              {/* Column 1: Order ID */}
+                              <td className="py-3 px-4 font-mono font-bold text-orange-400 text-sm">
+                                {order.id}
+                              </td>
 
-                        {/* Staff Actions */}
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            <button
-                              onClick={() => setSelectedOrder(order)}
-                              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors flex items-center gap-1"
-                              title="View Document Details"
-                            >
-                              <Eye className="w-3 h-3" /> Details
-                            </button>
+                              {/* Column 2: Total Amount */}
+                              <td className="py-3 px-4 font-bold text-emerald-400">
+                                {formatCurrency(order.amount)}
+                              </td>
 
-                            {/* Workflow buttons */}
-                            {(order.status === 'Pending' || order.status === 'Waiting' || order.status === 'Payment Submitted') && (
-                              <button
-                                disabled={isBusy}
-                                onClick={() => handleStatusChange(order.id, 'Accepted')}
-                                className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition-all shadow-xs"
-                              >
-                                Accept Order
-                              </button>
-                            )}
+                              {/* Column 3: Digital Processing Fee */}
+                              <td className="py-3 px-4 font-bold text-cyan-400">
+                                {formatCurrency(order.digitalProcessingFee)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+        ) : (
+          <>
+            {/* Filter & Search Bar */}
+            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
+              {/* Search */}
+              <div className="relative w-full md:w-96">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search Order ID, file, phone, student..."
+                  className="w-full rounded-xl border border-white/10 bg-slate-950/80 pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:border-[#F7931E] focus:outline-none"
+                />
+                <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="text-xs text-slate-400 hover:text-white absolute right-3 top-2.5 cursor-pointer"
+                    aria-label="Clear Search"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
 
-                            {(order.status === 'Accepted' || order.status === 'Order Received') && (
-                              <button
-                                disabled={isBusy}
-                                onClick={() => handlePrintTrigger(order)}
-                                className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold transition-all shadow-xs flex items-center gap-1"
-                              >
-                                <Printer className="w-3 h-3" /> Start Printing
-                              </button>
-                            )}
+              {/* Status Tabs */}
+              <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 text-xs">
+                {[
+                  { key: 'ALL', label: 'All Orders' },
+                  { key: 'PENDING', label: 'Pending / Accepted' },
+                  { key: 'PRINTING', label: 'Printing' },
+                  { key: 'READY', label: 'Ready for Collection' },
+                  { key: 'COLLECTED', label: 'Collected' },
+                  { key: 'CANCELLED', label: 'Cancelled' },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setStatusFilter(tab.key)}
+                    className={`px-3 py-1.5 rounded-xl font-semibold transition-colors whitespace-nowrap ${
+                      statusFilter === tab.key
+                        ? 'bg-[#F7931E] text-white shadow-sm'
+                        : 'bg-white/5 hover:bg-white/10 text-slate-400'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                            {order.status === 'Printing' && (
-                              <button
-                                disabled={isBusy}
-                                onClick={() => handleStatusChange(order.id, 'Ready for Collection')}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-xs flex items-center gap-1"
-                              >
-                                <Check className="w-3 h-3" /> Mark Ready
-                              </button>
-                            )}
-
-                            {(order.status === 'Ready for Collection' || order.status === 'Ready' || order.status === 'Printed') && (
-                              <button
-                                disabled={isBusy}
-                                onClick={() => handleStatusChange(order.id, 'Collected')}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-extrabold transition-all shadow-xs flex items-center gap-1"
-                              >
-                                <PackageCheck className="w-3.5 h-3.5" /> Mark Collected
-                              </button>
-                            )}
-
-                            {order.status !== 'Collected' && order.status !== 'Cancelled' && (
-                              <button
-                                disabled={isBusy}
-                                onClick={() => handleStatusChange(order.id, 'Cancelled')}
-                                className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[11px] transition-colors cursor-pointer"
-                                title="Cancel Order"
-                                aria-label="Cancel Order"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
+            {/* Orders Table */}
+            <div className="rounded-3xl border border-white/10 bg-slate-950/90 overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-slate-400 bg-slate-900/80">
+                      <th className="py-3.5 px-4 font-bold">Order ID</th>
+                      <th className="py-3.5 px-4 font-bold">Student / File</th>
+                      <th className="py-3.5 px-4 font-bold text-center">Pages</th>
+                      <th className="py-3.5 px-4 font-bold text-center">Copies</th>
+                      <th className="py-3.5 px-4 font-bold">Print Type</th>
+                      <th className="py-3.5 px-4 font-bold">Amount</th>
+                      <th className="py-3.5 px-4 font-bold">Payment</th>
+                      <th className="py-3.5 px-4 font-bold">Order Status</th>
+                      <th className="py-3.5 px-4 font-bold">Time</th>
+                      <th className="py-3.5 px-4 font-bold text-right">Staff Workflow</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 text-xs text-slate-200">
+                    {loading && orders.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-16 text-center text-slate-400">
+                          <div className="w-8 h-8 border-3 border-orange-500/30 border-t-orange-500 rounded-full animate-spin mx-auto mb-3" />
+                          <p className="font-semibold text-slate-300">Fetching live campus print orders...</p>
+                          <p className="text-[11px] text-slate-500 mt-1">Connecting to Xerox print agent &amp; Google Sheets</p>
                         </td>
                       </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                    ) : filteredOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center text-slate-500">
+                          No matching orders found.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOrders.map(order => {
+                        const badgeCls = STATUS_BADGES[order.status] || STATUS_BADGES['Order Received']
+                        const isBusy = actionLoading === order.id
+
+                        return (
+                          <tr key={order.id} className="hover:bg-white/[0.03] transition-colors">
+                            {/* Order ID */}
+                            <td className="py-3.5 px-4 font-mono font-bold text-orange-400 text-sm">
+                              {order.id}
+                            </td>
+
+                            {/* Student / File */}
+                            <td className="py-3.5 px-4">
+                              <p className="font-semibold text-white truncate max-w-[200px]" title={order.fileName}>
+                                {order.fileName}
+                              </p>
+                              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                <span>{order.studentName}</span>
+                                {order.phone && <span>• {order.phone}</span>}
+                              </p>
+                            </td>
+
+                            {/* Pages */}
+                            <td className="py-3.5 px-4 text-center">
+                              <span className="font-bold text-slate-100">{order.pages}</span>
+                              {order.customPages && (
+                                <span className="block text-[10px] text-orange-400">({order.customPages})</span>
+                              )}
+                            </td>
+
+                            {/* Copies */}
+                            <td className="py-3.5 px-4 text-center font-bold text-slate-100">
+                              {order.copies}
+                            </td>
+
+                            {/* Print Type */}
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-1">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${order.printType === 'Color' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-800 text-slate-300'}`}>
+                                  {order.printType}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px]">
+                                  {order.printSide || 'Single'}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Amount */}
+                            <td className="py-3.5 px-4 font-bold text-emerald-400">
+                              {formatCurrency(order.amount)}
+                            </td>
+
+                            {/* Payment */}
+                            <td className="py-3.5 px-4">
+                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
+                                <Check className="w-3 h-3" /> Paid
+                              </span>
+                            </td>
+
+                            {/* Order Status */}
+                            <td className="py-3.5 px-4">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] ${badgeCls}`}>
+                                {order.status}
+                              </span>
+                            </td>
+
+                            {/* Time */}
+                            <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                              {order.time}
+                            </td>
+
+                            {/* Staff Actions */}
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                <button
+                                  onClick={() => setSelectedOrder(order)}
+                                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-semibold transition-colors flex items-center gap-1"
+                                  title="View Document Details"
+                                >
+                                  <Eye className="w-3 h-3" /> Details
+                                </button>
+
+                                {/* Workflow buttons */}
+                                {(order.status === 'Pending' || order.status === 'Waiting' || order.status === 'Payment Submitted') && (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => handleStatusChange(order.id, 'Accepted')}
+                                    className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition-all shadow-xs"
+                                  >
+                                    Accept Order
+                                  </button>
+                                )}
+
+                                {(order.status === 'Accepted' || order.status === 'Order Received') && (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => handlePrintTrigger(order)}
+                                    className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold transition-all shadow-xs flex items-center gap-1"
+                                  >
+                                    <Printer className="w-3 h-3" /> Start Printing
+                                  </button>
+                                )}
+
+                                {order.status === 'Printing' && (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => handleStatusChange(order.id, 'Ready for Collection')}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all shadow-xs flex items-center gap-1"
+                                  >
+                                    <Check className="w-3 h-3" /> Mark Ready
+                                  </button>
+                                )}
+
+                                {(order.status === 'Ready for Collection' || order.status === 'Ready' || order.status === 'Printed') && (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => handleStatusChange(order.id, 'Collected')}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-extrabold transition-all shadow-xs flex items-center gap-1"
+                                  >
+                                    <PackageCheck className="w-3.5 h-3.5" /> Mark Collected
+                                  </button>
+                                )}
+
+                                {order.status !== 'Collected' && order.status !== 'Cancelled' && (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => handleStatusChange(order.id, 'Cancelled')}
+                                    className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[11px] transition-colors cursor-pointer"
+                                    title="Cancel Order"
+                                    aria-label="Cancel Order"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
       </main>
 
       {/* Order Details & Print File Modal */}
