@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { CircleDot, Palette, FileText, Copy, Check, Settings, ChevronDown, ArrowUpDown, ArrowLeftRight } from 'lucide-react'
 import FileTypeIcon from './FileTypeIcon'
 import { parsePageRange } from '../utils/pageRangeParser'
+import { useLanguage } from '../i18n/LanguageContext'
 
 function OptionButton({ active, onClick, children }) {
   return (
@@ -32,6 +33,7 @@ function SettingCard({ title, children }) {
 }
 
 export default function PrintSettings({ fileInfo, settings, onChange }) {
+  const { t } = useLanguage()
   const { colorMode, sideMode, copies, pageSize, orientation, margins, pageRange, customPages, imageFit } = settings
   const [showMoreOptions, setShowMoreOptions] = useState(false)
 
@@ -64,7 +66,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
               {fileInfo.typeInfo?.label || 'FILE'}
             </span>
             {fileInfo.requiresAgent && (
-              <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-600 text-xs">Agent Required</span>
+              <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-600 text-xs">{t('upload.agentRequired', 'Agent Required')}</span>
             )}
           </div>
           <p className="text-[#222222] font-medium truncate text-sm">{fileInfo.name}</p>
@@ -72,53 +74,53 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
         </div>
         <div className="text-right flex-shrink-0">
           <p className="text-[#F78C25] font-bold text-xl">{fileInfo.totalPages}</p>
-          <p className="text-gray-400 text-xs">pages</p>
+          <p className="text-gray-400 text-xs">{t('common.pages', 'pages')}</p>
         </div>
       </div>
 
-      <h2 className="text-2xl font-bold text-[#222222] mb-5">Print Settings</h2>
+      <h2 className="text-2xl font-bold text-[#222222] mb-5">{t('settings.title', 'Print Settings')}</h2>
 
       <div className="space-y-4">
         {/* Color Mode */}
-        <SettingCard title="Print Type">
+        <SettingCard title={t('settings.printType', 'Print Type')}>
           <div className="flex gap-2">
             <OptionButton active={colorMode === 'bw'} onClick={() => set('colorMode', 'bw')}>
               <span className="inline-flex items-center justify-center gap-1.5">
-                <CircleDot className="w-3.5 h-3.5" /> B&amp;W — ₹2/page
+                <CircleDot className="w-3.5 h-3.5" /> {t('settings.bwRate', 'B&W — ₹2/page')}
               </span>
             </OptionButton>
             <OptionButton active={colorMode === 'color'} onClick={() => set('colorMode', 'color')}>
               <span className="inline-flex items-center justify-center gap-1.5">
-                <Palette className="w-3.5 h-3.5" /> Color — ₹5/page
+                <Palette className="w-3.5 h-3.5" /> {t('settings.colorRate', 'Color — ₹5/page')}
               </span>
             </OptionButton>
           </div>
         </SettingCard>
 
         {/* Side Mode */}
-        <SettingCard title="Print Side">
+        <SettingCard title={t('settings.printSide', 'Print Side')}>
           <div className="flex gap-2">
             <OptionButton active={sideMode === 'single'} onClick={() => set('sideMode', 'single')}>
               <span className="inline-flex items-center justify-center gap-1.5">
-                <FileText className="w-3.5 h-3.5" /> Single Side
+                <FileText className="w-3.5 h-3.5" /> {t('settings.singleSide', 'Single Side')}
               </span>
             </OptionButton>
             <OptionButton active={sideMode === 'double'} onClick={() => set('sideMode', 'double')}>
               <span className="inline-flex items-center justify-center gap-1.5">
-                <Copy className="w-3.5 h-3.5" /> Double Side
+                <Copy className="w-3.5 h-3.5" /> {t('settings.doubleSide', 'Double Side')}
               </span>
             </OptionButton>
           </div>
           {sideMode === 'double' && (
             <p className="text-[#F78C25] text-xs mt-2 flex items-center gap-1.5">
               <Check className="w-3.5 h-3.5 shrink-0" />
-              <span>Double side prints both sides — halves paper sheets!</span>
+              <span>{t('settings.doubleSideNotice', 'Double side prints both sides — halves paper sheets!')}</span>
             </p>
           )}
         </SettingCard>
 
         {/* Copies */}
-        <SettingCard title="Number of Copies">
+        <SettingCard title={t('settings.numCopies', 'Number of Copies')}>
           <div className="flex items-center gap-4">
             <button
               type="button"
@@ -131,13 +133,15 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
               onClick={() => set('copies', Math.min(99, copies + 1))}
               className="w-10 h-10 rounded-xl bg-orange-50 hover:bg-orange-100 border border-orange-200 text-[#F78C25] font-bold text-lg transition-all flex items-center justify-center"
             >+</button>
-            <span className="text-gray-400 text-sm ml-2">{copies > 1 ? `${copies} copies` : '1 copy'}</span>
+            <span className="text-gray-400 text-sm ml-2">
+              {copies > 1 ? t('settings.copiesLabel', { count: copies }) : t('settings.singleCopyLabel', '1 copy')}
+            </span>
           </div>
         </SettingCard>
 
         {/* Page Range (Optional) */}
         {(Number(fileInfo?.totalPages) || 1) >= 1 && (
-          <SettingCard title="Page Range (Optional)">
+          <SettingCard title={t('settings.pageRange', 'Page Range (Optional)')}>
             <div className="flex gap-2">
               <OptionButton
                 active={pageRange !== 'custom'}
@@ -149,7 +153,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                   }))
                 }}
               >
-                All Pages
+                {t('settings.allPages', 'All Pages')}
               </OptionButton>
               <OptionButton
                 active={pageRange === 'custom'}
@@ -161,7 +165,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                   }))
                 }}
               >
-                Custom Range
+                {t('settings.customRange', 'Custom Range')}
               </OptionButton>
             </div>
 
@@ -178,7 +182,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                     type="text"
                     value={customPages}
                     onChange={e => set('customPages', e.target.value)}
-                    placeholder="e.g. 1-3, 5, 8-10"
+                    placeholder={t('settings.customPlaceholder', 'e.g. 1-3, 5, 8-10')}
                     className={`w-full bg-[#FFF8F2] border rounded-xl px-4 py-2.5 text-sm text-[#222222] focus:outline-none transition-colors ${
                       customPages.trim() && !customParse.valid
                         ? 'border-rose-400 focus:border-rose-500'
@@ -187,7 +191,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                   />
                   {customPages.trim().length === 0 && (
                     <p className="text-amber-600 text-xs font-medium">
-                      Enter page numbers or ranges (e.g. 1-3, 5, 8-10). Total pages: {fileInfo?.totalPages || 1}.
+                      {t('settings.customEmptyPrompt', { total: fileInfo?.totalPages || 1 })}
                     </p>
                   )}
                   {customPages.trim().length > 0 && !customParse.valid && (
@@ -197,7 +201,13 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                     <div className="flex items-center justify-between px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
                       <span className="font-semibold flex items-center gap-1.5">
                         <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>Selected: <strong>{customParse.selectedPages.length}</strong> {customParse.selectedPages.length === 1 ? 'page' : 'pages'} (of {fileInfo?.totalPages || 1})</span>
+                        <span>
+                          {t('settings.customSelected', {
+                            count: customParse.selectedPages.length,
+                            unit: customParse.selectedPages.length === 1 ? t('common.page', 'page') : t('common.pages', 'pages'),
+                            total: fileInfo?.totalPages || 1
+                          })}
+                        </span>
                       </span>
                       <span className="font-mono text-emerald-700 text-[11px] font-bold">
                         [{customParse.pageRangeString}]
@@ -205,7 +215,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
                     </div>
                   )}
                   <p className="text-gray-400 text-xs">
-                    Enter page numbers or ranges separated by commas (e.g. 1-3, 5, 8-10)
+                    {t('settings.customHint', 'Enter page numbers or ranges separated by commas (e.g. 1-3, 5, 8-10)')}
                   </p>
                 </motion.div>
               )}
@@ -220,10 +230,10 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
           className="w-full py-3.5 px-5 rounded-2xl bg-white border border-orange-200 text-[#F78C25] font-bold text-sm flex items-center justify-between shadow-xs hover:bg-orange-50/70 transition-all duration-200"
         >
           <span className="flex items-center gap-2">
-            <Settings className="w-4 h-4 text-[#F78C25]" /> More Options
+            <Settings className="w-4 h-4 text-[#F78C25]" /> {t('settings.moreOptions', 'More Options')}
             {hasCustomAdvanced && (
               <span className="px-2 py-0.5 rounded-full bg-orange-100 text-[#F78C25] text-[10px] font-extrabold uppercase tracking-wide">
-                Custom
+                {t('settings.customBadge', 'Custom')}
               </span>
             )}
           </span>
@@ -244,23 +254,23 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
             >
               {/* Page Size + Orientation */}
               <div className="grid grid-cols-2 gap-4">
-                <SettingCard title="Page Size">
+                <SettingCard title={t('settings.pageSize', 'Page Size')}>
                   <div className="flex flex-col gap-2">
                     {['A4', 'Letter', 'Legal'].map(s => (
                       <OptionButton key={s} active={pageSize === s} onClick={() => set('pageSize', s)}>{s}</OptionButton>
                     ))}
                   </div>
                 </SettingCard>
-                <SettingCard title="Orientation">
+                <SettingCard title={t('settings.orientation', 'Orientation')}>
                   <div className="flex flex-col gap-2">
                     <OptionButton active={orientation === 'portrait'} onClick={() => set('orientation', 'portrait')}>
                       <span className="inline-flex items-center justify-center gap-1.5">
-                        <ArrowUpDown className="w-3.5 h-3.5" /> Portrait
+                        <ArrowUpDown className="w-3.5 h-3.5" /> {t('settings.portrait', 'Portrait')}
                       </span>
                     </OptionButton>
                     <OptionButton active={orientation === 'landscape'} onClick={() => set('orientation', 'landscape')}>
                       <span className="inline-flex items-center justify-center gap-1.5">
-                        <ArrowLeftRight className="w-3.5 h-3.5" /> Landscape
+                        <ArrowLeftRight className="w-3.5 h-3.5" /> {t('settings.landscape', 'Landscape')}
                       </span>
                     </OptionButton>
                   </div>
@@ -268,13 +278,13 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
               </div>
 
               {/* Margins */}
-              <SettingCard title="Margins">
+              <SettingCard title={t('settings.margins', 'Margins')}>
                 <div className="flex gap-2">
                   {[
-                    { key: 'normal',  label: 'Normal' },
-                    { key: 'narrow',  label: 'Narrow' },
-                    { key: 'wide',    label: 'Wide'   },
-                    { key: 'none',    label: 'None'   },
+                    { key: 'normal',  label: t('settings.normal', 'Normal') },
+                    { key: 'narrow',  label: t('settings.narrow', 'Narrow') },
+                    { key: 'wide',    label: t('settings.wide', 'Wide')   },
+                    { key: 'none',    label: t('settings.none', 'None')   },
                   ].map(m => (
                     <OptionButton key={m.key} active={margins === m.key} onClick={() => set('margins', m.key)}>{m.label}</OptionButton>
                   ))}
@@ -283,11 +293,11 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
 
               {/* Image Fit — only for images */}
               {isImage && (
-                <SettingCard title="Image Fit">
+                <SettingCard title={t('settings.imageFit', 'Image Fit')}>
                   <div className="flex gap-2">
-                    <OptionButton active={imageFit === 'fit'}     onClick={() => set('imageFit', 'fit')}>Fit to Page</OptionButton>
-                    <OptionButton active={imageFit === 'fill'}    onClick={() => set('imageFit', 'fill')}>Crop to Fill</OptionButton>
-                    <OptionButton active={imageFit === 'stretch'} onClick={() => set('imageFit', 'stretch')}>Stretch</OptionButton>
+                    <OptionButton active={imageFit === 'fit'}     onClick={() => set('imageFit', 'fit')}>{t('settings.fit', 'Fit to Page')}</OptionButton>
+                    <OptionButton active={imageFit === 'fill'}    onClick={() => set('imageFit', 'fill')}>{t('settings.fill', 'Crop to Fill')}</OptionButton>
+                    <OptionButton active={imageFit === 'stretch'} onClick={() => set('imageFit', 'stretch')}>{t('settings.stretch', 'Stretch')}</OptionButton>
                   </div>
                 </SettingCard>
               )}

@@ -1,38 +1,41 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { Clock, ShieldCheck, Wallet, Store, Layers, CheckCircle2 } from 'lucide-react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function WhyXBuddy() {
+  const { t } = useLanguage()
+
   const features = [
     {
       icon: Layers,
-      title: 'Academic Toolkit',
-      description: 'Generate resumes, leave letters, bonafide requests, and format lab manuals in seconds.',
+      title: t('whyXBuddy.f1Title', 'Academic Toolkit'),
+      description: t('whyXBuddy.f1Desc', 'Generate resumes, leave letters, bonafide requests, and format lab manuals in seconds.'),
     },
     {
       icon: Clock,
-      title: 'Zero Waiting Lines',
-      description: 'Order prints directly from your classroom or hostel and skip the crowd at the Xerox shop.',
+      title: t('whyXBuddy.f2Title', 'Zero Waiting Lines'),
+      description: t('whyXBuddy.f2Desc', 'Order prints directly from your classroom or hostel and skip the crowd at the Xerox shop.'),
     },
     {
       icon: Store,
-      title: 'Xerox Shop Integration',
-      description: 'Connects directly with campus print shops for organized queue management and fast fulfillment.',
+      title: t('whyXBuddy.f3Title', 'Xerox Shop Integration'),
+      description: t('whyXBuddy.f3Desc', 'Connects directly with campus print shops for organized queue management and fast fulfillment.'),
     },
     {
       icon: Wallet,
-      title: 'Transparent Pricing',
-      description: 'Clear per-page rates and transparent digital processing fees with instant UPI verification.',
+      title: t('whyXBuddy.f4Title', 'Transparent Pricing'),
+      description: t('whyXBuddy.f4Desc', 'Clear per-page rates and transparent digital processing fees with instant UPI verification.'),
     },
     {
       icon: ShieldCheck,
-      title: 'Live Order Tracking',
-      description: 'Track your print job status in real-time from Order Received to Ready for Collection.',
+      title: t('whyXBuddy.f5Title', 'Live Order Tracking'),
+      description: t('whyXBuddy.f5Desc', 'Track your print job status in real-time from Order Received to Ready for Collection.'),
     },
     {
       icon: CheckCircle2,
-      title: 'Custom Page Selection',
-      description: 'Print only specific pages or ranges with automated accurate page-level pricing calculations.',
+      title: t('whyXBuddy.f6Title', 'Custom Page Selection'),
+      description: t('whyXBuddy.f6Desc', 'Print only specific pages or ranges with automated accurate page-level pricing calculations.'),
     },
   ]
 
@@ -47,7 +50,7 @@ export default function WhyXBuddy() {
             viewport={{ once: true }}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-100/70 border border-orange-200 text-[#F7931E] text-xs font-bold uppercase tracking-wider mb-3"
           >
-            Software Platform Advantage
+            {t('whyXBuddy.badge', 'Software Platform Advantage')}
           </motion.div>
           <motion.h2
             initial={{ opacity: 0, y: 15 }}
@@ -56,7 +59,7 @@ export default function WhyXBuddy() {
             transition={{ delay: 0.1 }}
             className="text-3xl md:text-5xl font-extrabold text-slate-900 tracking-tight"
           >
-            Why <span className="gradient-text-orange">X Buddy?</span>
+            {t('whyXBuddy.title', 'Why X Buddy?')}
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 15 }}
@@ -65,7 +68,7 @@ export default function WhyXBuddy() {
             transition={{ delay: 0.2 }}
             className="text-slate-500 text-base md:text-lg mt-3"
           >
-            The digital layer that modernizes campus Xerox shops and eliminates printing hassle for students.
+            {t('whyXBuddy.subtitle', 'The digital layer that modernizes campus Xerox shops and eliminates printing hassle for students.')}
           </motion.p>
         </div>
 

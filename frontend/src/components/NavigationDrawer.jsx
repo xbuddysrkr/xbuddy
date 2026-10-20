@@ -1,11 +1,13 @@
 import React, { useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Home, ClipboardList, Store, Megaphone, Info, HelpCircle, X } from 'lucide-react'
+import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext'
 
 export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentStep }) {
   const drawerRef = useRef(null)
   const previousFocusRef = useRef(null)
   const shouldReduceMotion = useReducedMotion()
+  const { t } = useLanguage()
 
   useEffect(() => {
     if (isOpen) {
@@ -59,12 +61,12 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
   const activeId = getActiveItem()
 
   const menuItems = [
-    { id: 'home', label: 'Home', icon: Home, action: () => onNavigate('home') },
-    { id: 'my_orders', label: 'My Orders', icon: ClipboardList, action: () => onNavigate('my_orders') },
-    { id: 'admin', label: 'Shop Dashboard', icon: Store, action: () => onNavigate('admin') },
-    { id: 'ads', label: 'Campus Ads', icon: Megaphone, action: () => onNavigate('ads') },
-    { id: 'about', label: 'About X Buddy', icon: Info, action: () => onNavigate('about') },
-    { id: 'help', label: 'Help', icon: HelpCircle, action: () => onNavigate('help') },
+    { id: 'home', label: t('nav.drawerHome', 'Home'), icon: Home, action: () => onNavigate('home') },
+    { id: 'my_orders', label: t('nav.drawerMyOrders', 'My Orders'), icon: ClipboardList, action: () => onNavigate('my_orders') },
+    { id: 'admin', label: t('nav.drawerShopDashboard', 'Shop Dashboard'), icon: Store, action: () => onNavigate('admin') },
+    { id: 'ads', label: t('nav.drawerCampusAds', 'Campus Ads'), icon: Megaphone, action: () => onNavigate('ads') },
+    { id: 'about', label: t('nav.drawerAbout', 'About X Buddy'), icon: Info, action: () => onNavigate('about') },
+    { id: 'help', label: t('nav.drawerHelp', 'Help'), icon: HelpCircle, action: () => onNavigate('help') },
   ]
 
   return (
@@ -88,7 +90,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
           key="drawer-content"
           role="dialog"
           aria-modal="true"
-          aria-label="Navigation Menu"
+          aria-label={t('nav.openMenu', 'Navigation Menu')}
           tabIndex={-1}
           initial={{ x: '-100%' }}
           animate={{ x: 0 }}
@@ -125,7 +127,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
               transition={{ type: 'spring', stiffness: 350, damping: 20 }}
               onClick={onClose}
               className="w-9 h-9 rounded-full bg-orange-50/80 hover:bg-orange-100 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-colors border border-orange-200/70 shadow-2xs cursor-pointer shrink-0"
-              aria-label="Close Navigation Menu"
+              aria-label={t('nav.closeMenu', 'Close Navigation Menu')}
             >
               <X className="w-4 h-4 text-slate-700" strokeWidth={2.2} />
             </motion.button>
@@ -134,7 +136,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
           {/* Navigation Section */}
           <div className="flex-1 overflow-y-auto px-4 py-5 space-y-1.5">
             <p className="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 select-none">
-              NAVIGATION
+              {t('nav.drawerNavigation', 'NAVIGATION')}
             </p>
             {menuItems.map((item, index) => {
               const isActive = activeId === item.id
@@ -172,8 +174,10 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
             })}
           </div>
 
-          {/* Fixed Bottom Information Card */}
-          <div className="p-4 border-t border-orange-100 bg-[#FFFDF9] shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {/* Fixed Bottom Section with Language Switcher and Information Card */}
+          <div className="p-4 border-t border-orange-100 bg-[#FFFDF9] shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3">
+            <LanguageSwitcher variant="drawer" />
+
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -181,10 +185,10 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
               className="p-3.5 bg-white border border-orange-200/80 rounded-2xl text-center shadow-2xs"
             >
               <p className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
-                Campus Xerox Ordering
+                {t('nav.drawerCardTitle', 'Campus Xerox Ordering')}
               </p>
               <p className="text-[11px] sm:text-xs text-slate-500 mt-1 leading-relaxed">
-                Show Order ID at the Xerox shop to collect.
+                {t('nav.drawerCardDesc', 'Show Order ID at the Xerox shop to collect.')}
               </p>
             </motion.div>
           </div>
@@ -193,3 +197,4 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
     </AnimatePresence>
   )
 }
+

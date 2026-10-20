@@ -1,42 +1,45 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { Zap, GraduationCap, ShieldCheck, CreditCard, Sparkles } from 'lucide-react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function TrustStats() {
+  const { t } = useLanguage()
+
   const stats = [
     {
       icon: Sparkles,
-      title: 'Academic',
-      label: 'Toolkit',
-      description: 'Academic toolkit, form generation & utilities',
-      tag: 'Coming Soon',
+      title: t('trustStats.stat1Title', 'Academic'),
+      label: t('trustStats.stat1Label', 'Toolkit'),
+      description: t('trustStats.stat1Desc', 'Academic toolkit, form generation & utilities'),
+      tag: t('trustStats.stat1Tag', 'Coming Soon'),
     },
     {
       icon: Zap,
-      title: '30 sec',
-      label: 'Average Print',
-      description: 'Lightning-fast document retrieval and printing',
+      title: t('trustStats.stat2Title', '30 sec'),
+      label: t('trustStats.stat2Label', 'Average Print'),
+      description: t('trustStats.stat2Desc', 'Lightning-fast document retrieval and printing'),
       tag: null,
     },
     {
       icon: GraduationCap,
-      title: 'Built for',
-      label: 'Campuses',
-      description: 'Designed specifically for university ecosystems',
+      title: t('trustStats.stat3Title', 'Built for'),
+      label: t('trustStats.stat3Label', 'Campuses'),
+      description: t('trustStats.stat3Desc', 'Designed specifically for university ecosystems'),
       tag: null,
     },
     {
       icon: ShieldCheck,
-      title: '100%',
-      label: 'Secure Collection',
-      description: 'Encrypted QR pickup with zero privacy leaks',
+      title: t('trustStats.stat4Title', '100%'),
+      label: t('trustStats.stat4Label', 'Secure Collection'),
+      description: t('trustStats.stat4Desc', 'Encrypted QR pickup with zero privacy leaks'),
       tag: null,
     },
     {
       icon: CreditCard,
-      title: 'Instant',
-      label: 'Digital Payments',
-      description: 'Unified UPI, Cards & Wallet payment checkout',
+      title: t('trustStats.stat5Title', 'Instant'),
+      label: t('trustStats.stat5Label', 'Digital Payments'),
+      description: t('trustStats.stat5Desc', 'Unified UPI, Cards & Wallet payment checkout'),
       tag: null,
     },
   ]

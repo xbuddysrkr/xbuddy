@@ -16,20 +16,21 @@ import {
   ClipboardList,
 } from 'lucide-react'
 import { getOrderStatus } from '../utils/api'
+import { useLanguage } from '../i18n/LanguageContext'
 import PermissionCourier from './PermissionCourier'
 import CampusPromotionAd from './CampusPromotionAd'
 
 const POLL_INTERVAL_MS = 4000
 
 // Complete customer flow steps matching the Xerox shop workflow
-const FLOW_STEPS = [
-  { id: 'confirmed', label: 'Order Confirmed',        icon: CheckCircle2, desc: 'Order received successfully by Xerox shop' },
-  { id: 'show_id',   label: 'Show ID to Shopkeeper',  icon: Tag,          desc: 'Present Order ID at the Xerox counter' },
-  { id: 'waiting',   label: 'Waiting for Shopkeeper', icon: Clock,        desc: 'Shopkeeper verifies order & payment' },
-  { id: 'verified',  label: 'Payment Verified',       icon: CreditCard,   desc: 'Payment approved by shopkeeper' },
-  { id: 'sending',   label: 'Sending to Printer',     icon: Radio,        desc: 'Document sent to Xerox print station' },
-  { id: 'printing',  label: 'Printing',               icon: Printer,      desc: 'Xerox machine printing your pages' },
-  { id: 'completed', label: 'Completed',              icon: PartyPopper,  desc: 'Collect printed documents at counter!' },
+const FLOW_STEP_CONFIG = [
+  { id: 'confirmed', labelKey: 'status.statusConfirmed', icon: CheckCircle2, descKey: 'status.statusConfirmedDesc' },
+  { id: 'show_id',   labelKey: 'status.statusShowId',   icon: Tag,          descKey: 'status.statusShowIdDesc' },
+  { id: 'waiting',   labelKey: 'status.statusWaiting',  icon: Clock,        descKey: 'status.statusWaitingDesc' },
+  { id: 'verified',  labelKey: 'status.statusPaymentVerified', icon: CreditCard, descKey: 'status.statusPaymentVerifiedDesc' },
+  { id: 'sending',   labelKey: 'status.statusSending',  icon: Radio,        descKey: 'status.statusSendingDesc' },
+  { id: 'printing',  labelKey: 'status.statusPrinting', icon: Printer,      descKey: 'status.statusPrintingDesc' },
+  { id: 'completed', labelKey: 'status.statusCompleted', icon: PartyPopper, descKey: 'status.statusCompletedDesc' },
 ]
 
 function statusToStep(status) {
@@ -55,6 +56,14 @@ function statusToStep(status) {
 
 export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onReset, onViewMyOrders }) {
   if (!orderId) return null
+
+  const { t } = useLanguage()
+
+  const flowSteps = FLOW_STEP_CONFIG.map(step => ({
+    ...step,
+    label: t(step.labelKey),
+    desc: t(step.descKey),
+  }))
 
   const [currentStep, setCurrentStep] = useState(2) // 2 = Waiting for Shopkeeper
   const [progress, setProgress] = useState(33)
@@ -121,7 +130,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
   }, [orderId])
 
   useEffect(() => {
-    const target = Math.min(100, Math.round(((currentStep + 1) / FLOW_STEPS.length) * 100))
+    const target = Math.min(100, Math.round(((currentStep + 1) / flowSteps.length) * 100))
     const step = (target - progress) / 15
     let current = progress
     const interval = setInterval(() => {
@@ -134,7 +143,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
       }
     }, 25)
     return () => clearInterval(interval)
-  }, [currentStep])
+  }, [currentStep, flowSteps.length])
 
   const isDone = currentStep >= 6
 
@@ -146,7 +155,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 shadow-xs">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
           <span className="text-emerald-800 text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1">
-            <Check className="w-3.5 h-3.5 text-emerald-600" /> Order Confirmed
+            <Check className="w-3.5 h-3.5 text-emerald-600" /> {t('status.orderConfirmedBadge', 'Order Confirmed')}
           </span>
         </div>
         <div className="flex justify-center my-2">
@@ -160,7 +169,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#F78C25] via-[#ffb347] to-[#F78C25]" />
 
         <p className="text-xs sm:text-sm font-black tracking-widest text-[#F78C25] uppercase mb-1">
-          YOUR ORDER ID
+          {t('status.yourOrderId', 'YOUR ORDER ID')}
         </p>
 
         {/* Dynamic Big Order ID with Copy Button */}
@@ -172,11 +181,11 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             type="button"
             onClick={handleCopyId}
             className="p-2.5 sm:p-3 rounded-2xl bg-white border border-orange-200 text-gray-600 hover:text-[#F78C25] hover:border-[#F78C25] hover:bg-orange-50 transition-all shadow-xs active:scale-95 cursor-pointer"
-            title="Copy Order ID"
+            title={t('status.copyTitle', 'Copy Order ID')}
           >
             {copied ? (
               <span className="text-emerald-600 text-xs font-bold flex items-center gap-1">
-                <Check className="w-3.5 h-3.5 text-emerald-600" /> Copied
+                <Check className="w-3.5 h-3.5 text-emerald-600" /> {t('status.copied', 'Copied')}
               </span>
             ) : (
               <svg className="w-5 h-5 text-gray-500 hover:text-[#F78C25]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -191,11 +200,11 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
 
         {/* Primary Instruction */}
         <h3 className="text-lg sm:text-2xl font-black text-[#222222] leading-snug">
-          Show this Order ID to the shopkeeper
-          <span className="block text-[#F78C25]">at the Xerox counter.</span>
+          {t('status.showIdToShopkeeper', 'Show this Order ID to the shopkeeper')}
+          <span className="block text-[#F78C25]">{t('status.atCounter', 'at the Xerox counter.')}</span>
         </h3>
         <p className="text-xs sm:text-sm font-medium text-slate-600 mt-2 max-w-md mx-auto">
-          The shopkeeper will use this ID to find your order and verify your payment.
+          {t('status.idPurpose', 'The shopkeeper will use this ID to find your order and verify your payment.')}
         </p>
       </div>
 
@@ -213,11 +222,11 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           >
             <div className="inline-flex items-center justify-center gap-2 text-amber-900 font-extrabold text-base sm:text-lg mb-1.5">
               <Clock className="w-5 h-5 text-amber-700 animate-pulse" />
-              <span>Waiting for Shopkeeper</span>
+              <span>{t('status.waitingForShopkeeper', 'Waiting for Shopkeeper')}</span>
             </div>
             <p className="text-xs sm:text-sm text-amber-800 leading-relaxed max-w-lg mx-auto">
-              Your order has been received successfully.
-              <span className="block font-semibold mt-0.5">Please keep this screen open while the shopkeeper verifies your order.</span>
+              {t('status.receivedKeepOpen', 'Your order has been received successfully.')}
+              <span className="block font-semibold mt-0.5">{t('status.keepScreenOpen', 'Please keep this screen open while the shopkeeper verifies your order.')}</span>
             </p>
           </motion.div>
         )}
@@ -230,11 +239,11 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           >
             <div className="inline-flex items-center justify-center gap-2 text-emerald-900 font-extrabold text-base sm:text-lg mb-1.5">
               <CreditCard className="w-5 h-5 text-emerald-600" />
-              <span>Payment Verified!</span>
+              <span>{t('status.paymentVerifiedTitle', 'Payment Verified!')}</span>
             </div>
             <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed max-w-lg mx-auto">
-              Your payment has been verified by the shopkeeper.
-              <span className="block font-semibold mt-0.5">Preparing to send document to Xerox printer station...</span>
+              {t('status.paymentVerifiedNotice', 'Your payment has been verified by the shopkeeper.')}
+              <span className="block font-semibold mt-0.5">{t('status.preparingToSend', 'Preparing to send document to Xerox printer station...')}</span>
             </p>
           </motion.div>
         )}
@@ -247,10 +256,10 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           >
             <div className="inline-flex items-center justify-center gap-2 text-blue-900 font-extrabold text-base sm:text-lg mb-1.5">
               <Radio className="w-5 h-5 text-blue-600 animate-pulse" />
-              <span>Sending to Printer...</span>
+              <span>{t('status.sendingToPrinter', 'Sending to Printer...')}</span>
             </div>
             <p className="text-xs sm:text-sm text-blue-800 leading-relaxed max-w-lg mx-auto">
-              Transmitting your documents to the Xerox print station.
+              {t('status.transmittingDocs', 'Transmitting your documents to the Xerox print station.')}
             </p>
           </motion.div>
         )}
@@ -263,10 +272,10 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           >
             <div className="inline-flex items-center justify-center gap-2 text-blue-900 font-extrabold text-base sm:text-lg mb-1.5">
               <Printer className="w-5 h-5 text-blue-600 animate-pulse" />
-              <span>Printing Document...</span>
+              <span>{t('status.printingDocument', 'Printing Document...')}</span>
             </div>
             <p className="text-xs sm:text-sm text-blue-800 leading-relaxed max-w-lg mx-auto">
-              Your document is currently printing on the Xerox machine.
+              {t('status.printingOnMachine', 'Your document is currently printing on the Xerox machine.')}
             </p>
           </motion.div>
         )}
@@ -279,11 +288,11 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           >
             <div className="inline-flex items-center justify-center gap-2 text-emerald-900 font-extrabold text-lg sm:text-xl mb-1.5">
               <PartyPopper className="w-6 h-6 text-emerald-600" />
-              <span>Printing Completed!</span>
+              <span>{t('status.printingCompleted', 'Printing Completed!')}</span>
             </div>
             <p className="text-xs sm:text-sm text-emerald-800 leading-relaxed max-w-lg mx-auto">
-              Your document has been printed successfully.
-              <span className="block font-bold mt-0.5">Please collect your printout from the counter!</span>
+              {t('status.printedSuccess', 'Your document has been printed successfully.')}
+              <span className="block font-bold mt-0.5">{t('status.collectAtCounter', 'Please collect your printout from the counter!')}</span>
             </p>
           </motion.div>
         )}
@@ -302,8 +311,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-amber-800 font-bold text-sm">Print Station Notice</p>
-              <p className="text-amber-700 text-xs mt-0.5">The print station is reconnecting. Please show Order ID <span className="font-mono font-bold text-[#F78C25]">{orderId}</span> to the shopkeeper directly.</p>
+              <p className="text-amber-800 font-bold text-sm">{t('status.printStationNotice', 'Print Station Notice')}</p>
+              <p className="text-amber-700 text-xs mt-0.5">{t('status.reconnectingNotice', 'The print station is reconnecting. Please show Order ID {id} to the shopkeeper directly.', { id: orderId })}</p>
             </div>
           </motion.div>
         )}
@@ -316,8 +325,8 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-red-600 font-bold text-sm">Print Issue Reported</p>
-              <p className="text-gray-600 text-xs mt-0.5">There was an issue at the printer. Please inform the shopkeeper with Order ID <span className="font-mono font-bold text-[#F78C25]">{orderId}</span>.</p>
+              <p className="text-red-600 font-bold text-sm">{t('status.printIssueNotice', 'Print Issue Reported')}</p>
+              <p className="text-gray-600 text-xs mt-0.5">{t('status.printIssueDesc', 'There was an issue at the printer. Please inform the shopkeeper with Order ID {id}.', { id: orderId })}</p>
             </div>
           </motion.div>
         )}
@@ -330,9 +339,9 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             <FileText className="w-5 h-5 text-[#F78C25]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[#222222] font-bold truncate text-sm sm:text-base">{fileInfo?.name || 'Document'}</p>
+            <p className="text-[#222222] font-bold truncate text-sm sm:text-base">{fileInfo?.name || t('common.document', 'Document')}</p>
             <p className="text-gray-500 text-xs mt-0.5">
-              {fileInfo?.totalPages || 1} {fileInfo?.totalPages === 1 ? 'page' : 'pages'} · {settings?.colorMode === 'color' ? 'Color' : 'B&W'} · {settings?.sideMode === 'double' ? 'Double sided' : 'Single sided'} · {settings?.copies || 1} {settings?.copies > 1 ? 'copies' : 'copy'}
+              {fileInfo?.totalPages || 1} {fileInfo?.totalPages === 1 ? t('settings.page', 'page') : t('settings.pages', 'pages')} · {settings?.colorMode === 'color' ? t('settings.colorOption', 'Color') : t('settings.bwOption', 'B&W')} · {settings?.sideMode === 'double' ? t('settings.doubleSided', 'Double sided') : t('settings.singleSided', 'Single sided')} · {settings?.copies || 1} {settings?.copies > 1 ? t('settings.copies', 'copies') : t('settings.copy', 'copy')}
             </p>
           </div>
         </div>
@@ -340,7 +349,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
         {/* Progress Bar */}
         <div className="mb-6">
           <div className="flex justify-between text-xs font-semibold text-gray-500 mb-2">
-            <span>Customer Order Flow</span>
+            <span>{t('status.customerOrderFlow', 'Customer Order Flow')}</span>
             <span className="text-[#F78C25] font-bold">{Math.round(progress)}%</span>
           </div>
           <div className="h-2.5 bg-orange-100/70 rounded-full overflow-hidden">
@@ -354,10 +363,10 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
 
         {/* Visual Customer Flow Stages (Connected Pipeline) */}
         <div className="space-y-1 relative">
-          {FLOW_STEPS.map((step, i) => {
+          {flowSteps.map((step, i) => {
             const isCompleted = i < currentStep || isDone
             const isActive = i === currentStep && !isDone
-            const isLast = i === FLOW_STEPS.length - 1
+            const isLast = i === flowSteps.length - 1
             const StepIcon = step.icon
 
             return (
@@ -418,14 +427,14 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
 
         {lastChecked && (
           <p className="text-gray-400 text-[11px] mt-4 text-right">
-            Status updated: {lastChecked}
+            {t('status.statusUpdated', 'Status updated: {time}', { time: lastChecked })}
           </p>
         )}
       </div>
 
       {/* Collection Preference Option */}
       <div className="p-4 bg-white border border-orange-100 rounded-2xl text-center shadow-xs mb-6">
-        <p className="text-xs font-bold text-gray-700 mb-2">Need to leave or collect later?</p>
+        <p className="text-xs font-bold text-gray-700 mb-2">{t('status.collectPreferenceTitle', 'Need to leave or collect later?')}</p>
         <div className="flex gap-2 max-w-xs mx-auto">
           <button
             type="button"
@@ -437,7 +446,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             }`}
           >
             <UserCheck className="w-3.5 h-3.5" />
-            <span>Collecting Now</span>
+            <span>{t('status.collectingNow', 'Collecting Now')}</span>
           </button>
           <button
             type="button"
@@ -449,16 +458,16 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             }`}
           >
             <Timer className="w-3.5 h-3.5" />
-            <span>Collect Later</span>
+            <span>{t('status.collectLater', 'Collect Later')}</span>
           </button>
         </div>
 
         {collectionChoice === 'later' && (
           <div className="mt-3 p-3 bg-orange-50 rounded-xl border border-orange-100 text-xs text-gray-600">
             <span className="font-bold text-emerald-700 inline-flex items-center gap-1">
-              <Check className="w-3.5 h-3.5" /> Saved in My Orders!
+              <Check className="w-3.5 h-3.5" /> {t('status.savedInOrders', 'Saved in My Orders!')}
             </span>
-            <p className="mt-0.5 text-gray-500">You can safely close this browser window. Just give Order ID <span className="font-mono font-bold text-[#F78C25]">{orderId}</span> to the shopkeeper when you arrive.</p>
+            <p className="mt-0.5 text-gray-500">{t('status.closeWindowNotice', 'You can safely close this browser window. Just give Order ID {id} to the shopkeeper when you arrive.', { id: orderId })}</p>
             {onViewMyOrders && (
               <button
                 type="button"
@@ -466,7 +475,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
                 className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#F78C25] text-white font-bold rounded-lg text-xs hover:bg-[#e07010] transition-colors cursor-pointer"
               >
                 <ClipboardList className="w-3.5 h-3.5" />
-                <span>View in My Orders →</span>
+                <span>{t('status.viewInMyOrders', 'View in My Orders →')}</span>
               </button>
             )}
           </div>
@@ -481,7 +490,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
               onClick={onReset}
               className="w-full sm:w-auto px-8 py-3.5 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold rounded-2xl transition-all shadow-md shadow-orange-500/20 active:scale-98 cursor-pointer"
             >
-              Print Another Document
+              {t('status.printAnother', 'Print Another Document')}
             </button>
           </motion.div>
         )}

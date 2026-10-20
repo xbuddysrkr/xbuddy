@@ -1,6 +1,17 @@
 import React from 'react'
 import { Check, Trash2 } from 'lucide-react'
 import { useResume, SECTIONS, getSectionCompletion } from '../resumeStore.jsx'
+import { useLanguage } from '../../i18n/LanguageContext'
+
+const SECTION_KEY_MAP = {
+  personal: 'resume.secPersonal',
+  education: 'resume.secEducation',
+  skills: 'resume.secSkills',
+  experience: 'resume.secExperience',
+  projects: 'resume.secProjects',
+  certifications: 'resume.secCertifications',
+  achievements: 'resume.secAchievements',
+}
 
 const inputCls = 'w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#F78C25] focus:ring-2 focus:ring-orange-500/20 transition-all shadow-2xs'
 const labelCls = 'text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between'
@@ -31,6 +42,7 @@ function Field({ label, field, section, placeholder, type = 'text', hint }) {
 }
 
 function ListSection({ section, items = [], template, renderItem, addLabel }) {
+  const { t } = useLanguage()
   const { addListItem, removeListItem } = useResume()
 
   return (
@@ -51,7 +63,7 @@ function ListSection({ section, items = [], template, renderItem, addLabel }) {
                 className="px-2 py-0.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-semibold flex items-center gap-1 transition-all active:scale-95"
                 title="Remove entry"
               >
-                <Trash2 className="w-3 h-3" /> Remove
+                <Trash2 className="w-3 h-3" /> {t('resume.remove')}
               </button>
             )}
           </div>
@@ -72,6 +84,7 @@ function ListSection({ section, items = [], template, renderItem, addLabel }) {
 }
 
 export default function ResumeForm({ activeSection = 'personal', onSelectSection }) {
+  const { t } = useLanguage()
   const { resume, updateListItem } = useResume()
 
   const currentIndex = SECTIONS.findIndex(s => s.id === activeSection)
@@ -142,7 +155,7 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
           section="education"
           items={resume.education}
           template={{ college: '', degree: '', department: '', cgpa: '', year: '', intermediate: '', schooling: '' }}
-          addLabel="Add Another Degree / School"
+          addLabel={t('resume.addEducation')}
           renderItem={(item) => (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
@@ -218,7 +231,7 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
           section="experience"
           items={resume.experience}
           template={{ role: '', company: '', duration: '', description: '' }}
-          addLabel="Add Another Experience / Internship"
+          addLabel={t('resume.addExperience')}
           renderItem={(item) => (
             <div className="space-y-2.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -255,7 +268,7 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
           section="projects"
           items={resume.projects}
           template={{ title: '', description: '', tech: '', link: '' }}
-          addLabel="Add Another Project"
+          addLabel={t('resume.addProject')}
           renderItem={(item) => (
             <div className="space-y-2.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -292,7 +305,7 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
           section="certifications"
           items={resume.certifications}
           template={{ course: '', platform: '', year: '' }}
-          addLabel="Add Another Certification"
+          addLabel={t('resume.addCertification')}
           renderItem={(item) => (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div className="sm:col-span-1">
@@ -326,7 +339,7 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
             className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
           >
             <span>←</span>
-            <span>{prevSection.label}</span>
+            <span>{SECTION_KEY_MAP[prevSection.id] ? t(SECTION_KEY_MAP[prevSection.id]) : prevSection.label}</span>
           </button>
         ) : <div />}
 
@@ -336,7 +349,7 @@ export default function ResumeForm({ activeSection = 'personal', onSelectSection
             onClick={() => onSelectSection && onSelectSection(nextSection.id)}
             className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white text-xs font-bold shadow-md shadow-orange-500/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 ml-auto"
           >
-            <span>Next: {nextSection.label}</span>
+            <span>Next: {SECTION_KEY_MAP[nextSection.id] ? t(SECTION_KEY_MAP[nextSection.id]) : nextSection.label}</span>
             <span>→</span>
           </button>
         )}

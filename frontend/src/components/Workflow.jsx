@@ -1,31 +1,34 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { UploadCloud, Sliders, CreditCard, Store, ArrowRight } from 'lucide-react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Workflow({ onStartPrint }) {
+  const { t } = useLanguage()
+
   const steps = [
     {
-      step: 'Step 1',
-      title: 'Upload Document',
-      description: 'Upload PDF, documents, or images directly from your phone or laptop.',
+      step: t('workflow.step1', 'Step 1'),
+      title: t('workflow.step1Title', 'Upload Document'),
+      description: t('workflow.step1Desc', 'Upload PDF, documents, or images directly from your phone or laptop.'),
       icon: UploadCloud,
     },
     {
-      step: 'Step 2',
-      title: 'Configure Print',
-      description: 'Select B&W/Color, single/double side, custom pages & transparent pricing.',
+      step: t('workflow.step2', 'Step 2'),
+      title: t('workflow.step2Title', 'Configure Print'),
+      description: t('workflow.step2Desc', 'Select B&W/Color, single/double side, custom pages & transparent pricing.'),
       icon: Sliders,
     },
     {
-      step: 'Step 3',
-      title: 'Pay & Get Order ID',
-      description: 'Pay securely via UPI (PhonePe, GPay, Paytm) and generate your unique Order ID.',
+      step: t('workflow.step3', 'Step 3'),
+      title: t('workflow.step3Title', 'Pay & Get Order ID'),
+      description: t('workflow.step3Desc', 'Pay securely via UPI (PhonePe, GPay, Paytm) and generate your unique Order ID.'),
       icon: CreditCard,
     },
     {
-      step: 'Step 4',
-      title: 'Collect at Xerox Shop',
-      description: 'Head to your campus Xerox shop, show your Order ID, and collect your fresh prints.',
+      step: t('workflow.step4', 'Step 4'),
+      title: t('workflow.step4Title', 'Collect at Xerox Shop'),
+      description: t('workflow.step4Desc', 'Head to your campus Xerox shop, show your Order ID, and collect your fresh prints.'),
       icon: Store,
     },
   ]
@@ -44,7 +47,7 @@ export default function Workflow({ onStartPrint }) {
             viewport={{ once: true }}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-[#F7931E] text-xs font-bold uppercase tracking-wider mb-3"
           >
-            Digital Ordering Workflow
+            {t('workflow.badge', 'Digital Ordering Workflow')}
           </motion.div>
           <motion.h2
             initial={{ opacity: 0, y: 15 }}
@@ -53,7 +56,7 @@ export default function Workflow({ onStartPrint }) {
             transition={{ delay: 0.1 }}
             className="text-3xl md:text-5xl font-extrabold text-slate-900 tracking-tight"
           >
-            How <span className="gradient-text-orange">X Buddy</span> Works
+            {t('workflow.title', 'How X Buddy Works')}
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 15 }}
@@ -62,7 +65,7 @@ export default function Workflow({ onStartPrint }) {
             transition={{ delay: 0.2 }}
             className="text-slate-500 text-base md:text-lg mt-3"
           >
-            From phone upload to Xerox shop collection in 4 seamless digital steps.
+            {t('workflow.subtitle', 'From phone upload to Xerox shop collection in 4 seamless digital steps.')}
           </motion.p>
         </div>
 

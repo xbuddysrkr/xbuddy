@@ -1,13 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, XCircle, Clock, RotateCcw } from 'lucide-react'
 import PerfectStackGame from './PerfectStackGame'
-
-// Steps that map 1-to-1 with real network calls / backend responses
-const STEPS = [
-  { id: 'upload_file', label: 'Preparing Document',   desc: 'Reading & preparing document' },
-  { id: 'save_order',  label: 'Saving Order',        desc: 'Securing order in cloud database' },
-  { id: 'confirmed',   label: 'Order Confirmed',      desc: 'Order verified & queued for shopkeeper' },
-]
+import { useLanguage } from '../i18n/LanguageContext'
 
 function StepIcon({ status }) {
   if (status === 'active')
@@ -42,32 +36,39 @@ export default function OrderProgress({
   onRetry,
   onCancel,
 }) {
+  const { t } = useLanguage()
   const hasFailed = !!failedStep
   const isSuccess = !!result
+
+  const steps = [
+    { id: 'upload_file', label: t('orderProgress.stepUploadLabel', 'Preparing Document'),   desc: t('orderProgress.stepUploadDesc', 'Reading & preparing document') },
+    { id: 'save_order',  label: t('orderProgress.stepSaveLabel', 'Saving Order'),        desc: t('orderProgress.stepSaveDesc', 'Securing order in cloud database') },
+    { id: 'confirmed',   label: t('orderProgress.stepConfirmLabel', 'Order Confirmed'),      desc: t('orderProgress.stepConfirmDesc', 'Order verified & queued for shopkeeper') },
+  ]
 
   // Truthful progress state evaluation (never shows fake static 33%)
   let displayPercent = null
   let isIndeterminate = false
-  let headerLabel = 'Processing Order…'
+  let headerLabel = t('orderProgress.processingOrder', 'Processing Order…')
 
   if (isSuccess) {
     displayPercent = 100
-    headerLabel = 'Order Confirmed!'
+    headerLabel = t('orderProgress.orderConfirmed', 'Order Confirmed!')
   } else if (hasFailed) {
     displayPercent = null
-    headerLabel = 'Order Failed'
+    headerLabel = t('orderProgress.orderFailed', 'Order Failed')
   } else if (submissionPhase === 'reconciling') {
     isIndeterminate = true
-    headerLabel = 'Still saving; checking order status…'
+    headerLabel = t('orderProgress.stillSaving', 'Still saving; checking order status…')
   } else if (submissionPhase === 'saving' || (stepStatuses.save_order === 'active' && !hasFailed)) {
     // Honest indeterminate indicator during backend MongoDB Atlas & GridFS persistence
     isIndeterminate = true
-    headerLabel = 'Securing in Cloud Database…'
+    headerLabel = t('orderProgress.securingDb', 'Securing in Cloud Database…')
   } else if (submissionPhase === 'uploading' || (stepStatuses.upload_file === 'active' && uploadProgress?.percent > 0)) {
     displayPercent = Math.min(99, Math.max(0, uploadProgress?.percent || 0))
-    headerLabel = `Uploading Document (${displayPercent}%)…`
+    headerLabel = t('orderProgress.uploadingPercent', { percent: displayPercent })
   } else if (submissionPhase === 'preparing' || stepStatuses.upload_file === 'active') {
-    headerLabel = 'Preparing Document…'
+    headerLabel = t('orderProgress.preparingDoc', 'Preparing Document…')
   }
 
   return (
@@ -115,12 +116,12 @@ export default function OrderProgress({
             {isSuccess ? (
               <>
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Order Confirmed!</span>
+                <span>{t('orderProgress.orderConfirmed', 'Order Confirmed!')}</span>
               </>
             ) : hasFailed ? (
               <>
                 <XCircle className="w-4 h-4 text-red-500 shrink-0" />
-                <span>Order Failed</span>
+                <span>{t('orderProgress.orderFailed', 'Order Failed')}</span>
               </>
             ) : isIndeterminate ? (
               <>
@@ -137,16 +138,16 @@ export default function OrderProgress({
           {isSuccess ? (
             <span className="text-xs text-emerald-600 font-mono font-bold">100%</span>
           ) : hasFailed ? (
-            <span className="text-xs text-red-500 font-mono font-semibold">Failed</span>
+            <span className="text-xs text-red-500 font-mono font-semibold">{t('common.error', 'Failed')}</span>
           ) : isIndeterminate ? (
             <span className="text-xs text-amber-600 font-semibold flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-              Saving…
+              {t('common.loading', 'Saving…')}
             </span>
           ) : displayPercent !== null ? (
             <span className="text-xs text-[#F7931E] font-mono font-bold">{displayPercent}%</span>
           ) : (
-            <span className="text-xs text-gray-400 font-mono">Preparing…</span>
+            <span className="text-xs text-gray-400 font-mono">{t('common.loading', 'Preparing…')}</span>
           )}
         </div>
 
@@ -159,7 +160,7 @@ export default function OrderProgress({
 
         {/* Steps */}
         <div className="space-y-2">
-          {STEPS.map((step) => {
+          {steps.map((step) => {
             const status = stepStatuses[step.id] ?? 'pending'
             const isFailed = step.id === failedStep
 
@@ -217,13 +218,13 @@ export default function OrderProgress({
               className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 space-y-1"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Order ID</span>
+                <span className="text-xs text-gray-500">{t('status.yourOrderId', 'Order ID')}</span>
                 <span className="font-mono font-bold text-[#F7931E] text-sm">{result.orderId}</span>
               </div>
               {result.message && (
                 <p className="text-xs text-green-600">{result.message}</p>
               )}
-              <p className="text-xs text-gray-400">Show this ID to the shopkeeper to collect your print.</p>
+              <p className="text-xs text-gray-400">{t('status.showIdInstruction', 'Show this ID to the shopkeeper to collect your print.')}</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -237,13 +238,13 @@ export default function OrderProgress({
                 className="flex-1 py-2 bg-[#F7931E] hover:bg-[#e07010] text-white text-xs font-bold rounded-xl transition-colors inline-flex items-center justify-center gap-1.5"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Retry</span>
+                <span>{t('common.retry', 'Retry')}</span>
               </button>
               <button
                 onClick={onCancel}
                 className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold rounded-xl transition-colors"
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </button>
             </motion.div>
           )}
@@ -252,3 +253,4 @@ export default function OrderProgress({
     </motion.div>
   )
 }
+

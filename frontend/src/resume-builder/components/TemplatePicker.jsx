@@ -2,6 +2,7 @@ import React from 'react'
 import { Check, Lightbulb } from 'lucide-react'
 import { useResume } from '../resumeStore.jsx'
 import { TEMPLATES } from '../templates'
+import { useLanguage } from '../../i18n/LanguageContext'
 
 /**
  * Miniature visual silhouette representation of each resume template.
@@ -137,6 +138,7 @@ function MiniVisualResume({ templateId, accent }) {
  * - 'vertical' (desktop sidebar list)
  */
 export default function TemplatePicker({ layout = 'vertical' }) {
+  const { t } = useLanguage()
   const { resume, setTemplate } = useResume()
 
   if (layout === 'horizontal') {
@@ -144,7 +146,7 @@ export default function TemplatePicker({ layout = 'vertical' }) {
       <div className="w-full">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-            Choose Template ({TEMPLATES.length})
+            {t('resume.templates')} ({TEMPLATES.length})
           </span>
           <span className="text-[11px] text-orange-600 font-medium">Swipe to browse →</span>
         </div>
@@ -188,7 +190,7 @@ export default function TemplatePicker({ layout = 'vertical' }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Templates & Design</p>
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">{t('resume.templates')}</p>
         <span className="text-xs text-[#F78C25] font-semibold">{TEMPLATES.length} Styles</span>
       </div>
 
@@ -230,10 +232,10 @@ export default function TemplatePicker({ layout = 'vertical' }) {
       {/* ATS Tip Banner */}
       <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-slate-700">
         <p className="text-emerald-700 text-xs font-bold mb-1 flex items-center gap-1.5">
-          <Lightbulb className="w-3.5 h-3.5 text-emerald-600" /> ATS Tip
+          <Lightbulb className="w-3.5 h-3.5 text-emerald-600" /> {t('resume.atsTipTitle')}
         </p>
         <p className="text-slate-600 text-[11px] leading-relaxed">
-          Use <strong className="text-emerald-800">Minimal ATS</strong> or <strong className="text-emerald-800">ATS-Safe Elegant</strong> when applying to major corporations with automated scanners.
+          {t('resume.atsTipDesc')}
         </p>
       </div>
     </div>

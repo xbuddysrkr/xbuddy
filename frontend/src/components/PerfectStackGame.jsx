@@ -10,8 +10,10 @@ import {
   getStoredBestScore,
   saveStoredBestScore,
 } from '../utils/perfectStackLogic'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function PerfectStackGame() {
+  const { t } = useLanguage()
   const [gameState, setGameState] = useState(createInitialGameState)
   const [bestScore, setBestScore] = useState(() => getStoredBestScore())
   const [feedback, setFeedback] = useState(null)
@@ -245,7 +247,7 @@ export default function PerfectStackGame() {
       <div className="absolute top-0 left-0 right-0 z-30 px-4 py-3 flex items-center justify-between pointer-events-none">
         <div className="flex items-center gap-2">
           <span className="font-extrabold text-white/95 text-xs sm:text-sm tracking-wider uppercase font-sans drop-shadow-xs">
-            BUILD YOUR TOWER
+            {t('game.title', 'BUILD YOUR TOWER')}
           </span>
           {gameState.score > 0 && (
             <span className="px-2 py-0.5 rounded-full bg-white/10 border border-white/10 text-[#F8A548] font-mono text-[11px] font-extrabold">
@@ -257,11 +259,11 @@ export default function PerfectStackGame() {
         <div className="flex items-center gap-2">
           {bestScore > 0 && (
             <span className="text-[10px] text-white/40 font-mono font-medium tracking-wide hidden min-[360px]:inline">
-              BEST: {bestScore}
+              {t('game.bestScore', { score: bestScore })}
             </span>
           )}
           <span className="text-white/60 font-bold text-[11px] sm:text-xs tracking-wider uppercase transition-opacity">
-            TAP TO DROP
+            {t('game.tapPrompt', 'TAP TO DROP')}
           </span>
         </div>
       </div>
@@ -390,16 +392,16 @@ export default function PerfectStackGame() {
           className="absolute inset-0 z-50 bg-[#121E17]/80 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-white text-center cursor-default"
           onClick={e => e.stopPropagation()}
         >
-          <p className="font-extrabold text-base tracking-wider uppercase mb-0.5 text-white">Tower Toppled!</p>
+          <p className="font-extrabold text-base tracking-wider uppercase mb-0.5 text-white">{t('game.towerToppled', 'Tower Toppled!')}</p>
           <p className="text-xs text-[#F8A548] font-mono mb-3">
-            Height: <strong>{gameState.stack.length - 1}</strong> sheets
+            {t('game.heightSheets', { count: gameState.stack.length - 1 })}
           </p>
           <button
             type="button"
             onClick={handleRestart}
             className="py-2 px-5 bg-gradient-to-r from-[#F8A548] to-[#EA7C1C] hover:from-[#fba23c] hover:to-[#db6d0e] active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center gap-1.5 cursor-pointer uppercase tracking-wider"
           >
-            <RotateCcw className="w-3.5 h-3.5" /> Try Again
+            <RotateCcw className="w-3.5 h-3.5" /> {t('game.tryAgain', 'Try Again')}
           </button>
         </motion.div>
       )}

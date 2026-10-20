@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { Megaphone } from 'lucide-react'
 import XBuddyLogo from './XBuddyLogo'
+import { useLanguage } from '../i18n/LanguageContext'
 
 /**
  * Footer
@@ -16,6 +17,8 @@ export default function Footer({
   onShopStaff,
   onCampusAds,
 }) {
+  const { t } = useLanguage()
+
   return (
     <footer className="border-t border-orange-100/80 bg-[#FFFDF9] text-slate-800 pt-16 pb-10 px-4 sm:px-6 relative overflow-hidden">
       {/* Soft Ambient Background Glow */}
@@ -41,25 +44,25 @@ export default function Footer({
                   XBuddy
                 </p>
                 <p className="text-xs font-bold text-[#F7931E] mt-0.5">
-                  Smart Digital Printing for Campus
+                  {t('footer.tagline', 'Smart Digital Printing for Campus')}
                 </p>
               </div>
             </div>
 
             <p className="text-slate-600 text-xs sm:text-sm leading-relaxed max-w-sm">
-              Digital printing and campus document tools designed to make student workflows faster, simpler, and more convenient.
+              {t('footer.description', 'Digital printing and campus document tools designed to make student workflows faster, simpler, and more convenient.')}
             </p>
 
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-50/80 border border-orange-200/70 text-slate-700 text-xs font-semibold">
               <span className="w-2 h-2 rounded-full bg-[#F7931E] shrink-0" />
-              <span>Built for students at <strong>SRKR Engineering College</strong></span>
+              <span>{t('footer.builtForSrkr', 'Built for students at SRKR Engineering College')}</span>
             </div>
           </div>
 
           {/* ── SECTION 2: PLATFORM ── */}
           <div className="space-y-3.5">
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
-              Platform
+              {t('footer.platform', 'Platform')}
             </h4>
             <ul className="space-y-2.5 text-xs font-semibold text-slate-600">
               <li>
@@ -67,7 +70,7 @@ export default function Footer({
                   href="#how-it-works"
                   className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm inline-block"
                 >
-                  How It Works
+                  {t('nav.howItWorks', 'How It Works')}
                 </a>
               </li>
               <li>
@@ -75,7 +78,7 @@ export default function Footer({
                   href="#why-x-buddy"
                   className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm inline-block"
                 >
-                  Why X Buddy
+                  {t('nav.whyXBuddy', 'Why X Buddy')}
                 </a>
               </li>
               <li>
@@ -83,7 +86,7 @@ export default function Footer({
                   href="#perfect-for"
                   className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm inline-block"
                 >
-                  Who Is It For
+                  {t('nav.whoIsItFor', 'Who Is It For')}
                 </a>
               </li>
               {onStartPrinting && (
@@ -93,7 +96,7 @@ export default function Footer({
                     onClick={onStartPrinting}
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
                   >
-                    Start Printing
+                    {t('orders.startPrinting', 'Start Printing')}
                   </button>
                 </li>
               )}
@@ -104,7 +107,7 @@ export default function Footer({
                     onClick={onMyOrders}
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
                   >
-                    Track My Orders
+                    {t('orders.title', 'Track My Orders')}
                   </button>
                 </li>
               )}
@@ -114,7 +117,7 @@ export default function Footer({
           {/* ── SECTION 3: STUDENT TOOLS ── */}
           <div className="space-y-3.5">
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
-              Student Tools
+              {t('footer.studentTools', 'Student Tools')}
             </h4>
             <ul className="space-y-2.5 text-xs font-semibold text-slate-600">
               <li>
@@ -122,7 +125,7 @@ export default function Footer({
                   href="#academic-toolkit"
                   className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm inline-block"
                 >
-                  Academic Toolkit
+                  {t('nav.toolkit', 'Academic Toolkit')}
                 </a>
               </li>
               {onResumeBuilder && (
@@ -132,7 +135,7 @@ export default function Footer({
                     onClick={onResumeBuilder}
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
                   >
-                    Resume Builder
+                    {t('nav.resume', 'Resume Builder')}
                   </button>
                 </li>
               )}
@@ -143,7 +146,7 @@ export default function Footer({
                     onClick={onMyOrders}
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
                   >
-                    My Orders
+                    {t('nav.orders', 'My Orders')}
                   </button>
                 </li>
               )}
@@ -154,7 +157,7 @@ export default function Footer({
                     onClick={onStartPrinting}
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
                   >
-                    Start Printing
+                    {t('orders.startPrinting', 'Start Printing')}
                   </button>
                 </li>
               )}
@@ -165,7 +168,7 @@ export default function Footer({
                     onClick={onShopStaff}
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer"
                   >
-                    Shop Staff Login
+                    {t('footer.shopStaffLogin', 'Shop Staff Login')}
                   </button>
                 </li>
               )}
@@ -176,7 +179,7 @@ export default function Footer({
                     onClick={onCampusAds}
                     className="hover:text-[#F7931E] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded-sm text-left cursor-pointer flex items-center gap-1.5"
                   >
-                    <Megaphone className="w-3.5 h-3.5 text-[#F7931E]" /> Campus Ads Manager
+                    <Megaphone className="w-3.5 h-3.5 text-[#F7931E]" /> {t('footer.campusAdsManager', 'Campus Ads Manager')}
                   </button>
                 </li>
               )}
@@ -186,11 +189,11 @@ export default function Footer({
           {/* ── SECTION 4: PROJECT & NEXTGEN LABS ── */}
           <div className="space-y-3.5">
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900">
-              Project
+              {t('footer.project', 'Project')}
             </h4>
             <div className="space-y-3 text-xs">
               <p className="text-slate-600 leading-relaxed">
-                A project by <strong className="text-slate-900 font-bold">NextGen Labs</strong>
+                {t('footer.projectBy', 'A project by NextGen Labs')}
               </p>
 
               <a
@@ -200,7 +203,7 @@ export default function Footer({
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-orange-50 to-amber-50 hover:from-[#F7931E] hover:to-[#FF6B00] text-[#F7931E] hover:text-white border border-orange-200 hover:border-transparent font-bold text-xs transition-all duration-200 shadow-2xs hover:shadow-md hover:shadow-orange-500/20 group cursor-pointer"
                 aria-label="Visit NextGen Labs (opens in a new tab)"
               >
-                <span>Visit NextGen Labs</span>
+                <span>{t('footer.visitNextGen', 'Visit NextGen Labs')}</span>
                 <span className="transition-transform group-hover:translate-x-0.5">→</span>
               </a>
             </div>
@@ -211,19 +214,19 @@ export default function Footer({
         <div className="pt-8 pb-6 border-t border-orange-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 bg-orange-50/30 rounded-2xl p-6 sm:p-7 border border-orange-100/80">
           <div>
             <p className="text-[11px] font-extrabold uppercase tracking-wider text-[#F7931E] mb-1">
-              Designed &amp; Developed by
+              {t('footer.designedAndDeveloped', 'Designed & Developed by')}
             </p>
             <p className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-              Lokesh Thanala <span className="text-slate-400 font-semibold">&amp;</span> Jagadeesh Illa
+              {t('footer.creators', 'Lokesh Thanala & Jagadeesh Illa')}
             </p>
             <p className="text-xs font-medium text-slate-600 mt-1 max-w-xl">
-              Built as a campus-focused digital printing project at SRKR Engineering College.
+              {t('footer.campusMission', 'Built as a campus-focused digital printing project at SRKR Engineering College.')}
             </p>
           </div>
 
           <div className="shrink-0 flex items-center gap-3">
             <div className="text-left md:text-right">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Innovation Partner</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('footer.innovationPartner', 'Innovation Partner')}</p>
               <p className="text-xs font-extrabold text-slate-800">NextGen Labs</p>
             </div>
             <a
@@ -243,9 +246,9 @@ export default function Footer({
 
         {/* ── BOTTOM COPYRIGHT BAR ── */}
         <div className="mt-8 pt-6 border-t border-orange-100/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 text-center sm:text-left">
-          <p>© {new Date().getFullYear()} XBuddy · SRKR Engineering College. All Rights Reserved.</p>
+          <p>{t('footer.copyright', '© {year} XBuddy · SRKR Engineering College. All Rights Reserved.', { year: new Date().getFullYear() })}</p>
           <p className="font-semibold text-slate-600">
-            Made for students. Built at SRKR.
+            {t('footer.madeForStudents', 'Made for students. Built at SRKR.')}
           </p>
         </div>
       </div>

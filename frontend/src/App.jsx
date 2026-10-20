@@ -30,6 +30,7 @@ import XBuddyIntro from './components/XBuddyIntro'
 import XBuddyLogo from './components/XBuddyLogo'
 import Footer from './components/Footer'
 import { Menu, ClipboardList, Check } from 'lucide-react'
+import { useLanguage, LanguageSwitcher } from './i18n/LanguageContext'
 
 const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin', ADS: 'ads' }
 const DEFAULT_SETTINGS = {
@@ -79,6 +80,7 @@ async function getPageCountFromFile(file) {
 }
 
 export default function App() {
+  const { t } = useLanguage()
   const [step, setStep]               = useState(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname.toLowerCase()
@@ -542,70 +544,77 @@ export default function App() {
             </div>
 
             {step === STEP.HERO ? (
-              <div className="flex items-center gap-4 sm:gap-6">
-                <div className="hidden md:flex items-center gap-5 lg:gap-6 text-xs font-semibold text-slate-600">
-                  <a href="#how-it-works" className="hover:text-[#F7931E] transition-colors">How It Works</a>
-                  <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors">Why X Buddy</a>
-                  <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors">Who Is It For</a>
-                  <a href="#academic-toolkit" className="hover:text-[#F7931E] transition-colors">Academic Toolkit</a>
+              <div className="flex items-center gap-2.5 sm:gap-4 md:gap-6">
+                <div className="hidden md:flex items-center gap-4 lg:gap-6 text-xs font-semibold text-slate-600">
+                  <a href="#how-it-works" className="hover:text-[#F7931E] transition-colors">{t('nav.howItWorks', 'How It Works')}</a>
+                  <a href="#why-x-buddy" className="hover:text-[#F7931E] transition-colors">{t('nav.whyXBuddy', 'Why X Buddy')}</a>
+                  <a href="#perfect-for" className="hover:text-[#F7931E] transition-colors">{t('nav.whoIsItFor', 'Who Is It For')}</a>
+                  <a href="#academic-toolkit" className="hover:text-[#F7931E] transition-colors">{t('nav.academicToolkit', 'Academic Toolkit')}</a>
                   <button onClick={() => goToStep(STEP.RESUME)} className="hover:text-[#F7931E] transition-colors cursor-pointer">
-                    Resume Builder
+                    {t('nav.resumeBuilder', 'Resume Builder')}
                   </button>
                   <button onClick={() => goToStep(STEP.MY_ORDERS)} className="hover:text-[#F7931E] transition-colors flex items-center gap-1.5 cursor-pointer">
-                    <ClipboardList className="w-4 h-4 text-[#F7931E]" /> My Orders
+                    <ClipboardList className="w-4 h-4 text-[#F7931E]" /> {t('nav.myOrders', 'My Orders')}
                   </button>
                 </div>
+                <LanguageSwitcher />
                 <button
                   onClick={() => goToStep(STEP.UPLOAD)}
                   className="px-3.5 min-[360px]:px-4 sm:px-5 py-1.5 sm:py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-lg sm:rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer shrink-0"
                 >
-                  Print Now →
+                  {t('nav.printNow', 'Print Now →')}
                 </button>
               </div>
             ) : step === STEP.MY_ORDERS || step === STEP.ADMIN || step === STEP.ADS ? (
-              <button
-                onClick={handleReset}
-                className="px-3 min-[360px]:px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
-              >
-                ← Back to Home
-              </button>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <LanguageSwitcher />
+                <button
+                  onClick={handleReset}
+                  className="px-3 min-[360px]:px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                >
+                  {t('common.backToHome', '← Back to Home')}
+                </button>
+              </div>
             ) : (
-              <div className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-3 text-[10px] min-[360px]:text-[11px] sm:text-xs font-semibold shrink-0">
-                {[
-                  { key: STEP.UPLOAD, label: 'Upload', short: 'Upload' },
-                  { key: STEP.SETTINGS, label: 'Settings', short: 'Settings' },
-                  { key: STEP.PRINTING, label: 'Pay & Print', short: 'Pay' }
-                ].map(({ key, label, short }, i) => {
-                  const stepKeys = [STEP.UPLOAD, STEP.SETTINGS, STEP.PRINTING]
-                  const isPast   = (step === STEP.SETTINGS && i === 0) || (step === STEP.PRINTING && i < 2)
-                  const isActive = step === stepKeys[i]
-                  return (
-                    <div key={label} className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-2 shrink-0">
-                      <span className={`px-1.5 min-[360px]:px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
-                        isPast
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                          : isActive
-                            ? 'bg-orange-50 text-[#F7931E] border border-orange-200 font-bold'
-                            : 'text-slate-400 border border-transparent'
-                      }`}>
-                        {isPast ? <Check className="w-3 h-3 text-emerald-600 inline" /> : `${i + 1}.`}{' '}
-                        {short === label ? (
-                          label
-                        ) : (
-                          <>
-                            <span className="inline min-[430px]:hidden">{short}</span>
-                            <span className="hidden min-[430px]:inline">{label}</span>
-                          </>
-                        )}
-                      </span>
-                      {i < 2 && (
-                        <span className="text-slate-300 text-[9px] min-[360px]:text-[10px] sm:text-xs select-none">
-                          ›
+              <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                <div className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-2.5 text-[10px] min-[360px]:text-[11px] sm:text-xs font-semibold shrink-0">
+                  {[
+                    { key: STEP.UPLOAD, label: t('nav.stepUpload', 'Upload'), short: t('nav.stepUpload', 'Upload') },
+                    { key: STEP.SETTINGS, label: t('nav.stepSettings', 'Settings'), short: t('nav.stepSettings', 'Settings') },
+                    { key: STEP.PRINTING, label: t('nav.stepPay', 'Pay & Print'), short: t('nav.stepPayShort', 'Pay') }
+                  ].map(({ key, label, short }, i) => {
+                    const stepKeys = [STEP.UPLOAD, STEP.SETTINGS, STEP.PRINTING]
+                    const isPast   = (step === STEP.SETTINGS && i === 0) || (step === STEP.PRINTING && i < 2)
+                    const isActive = step === stepKeys[i]
+                    return (
+                      <div key={key} className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-2 shrink-0">
+                        <span className={`px-1.5 min-[360px]:px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg whitespace-nowrap transition-colors flex items-center gap-1 ${
+                          isPast
+                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                            : isActive
+                              ? 'bg-orange-50 text-[#F7931E] border border-orange-200 font-bold'
+                              : 'text-slate-400 border border-transparent'
+                        }`}>
+                          {isPast ? <Check className="w-3 h-3 text-emerald-600 inline" /> : `${i + 1}.`}{' '}
+                          {short === label ? (
+                            label
+                          ) : (
+                            <>
+                              <span className="inline min-[430px]:hidden">{short}</span>
+                              <span className="hidden min-[430px]:inline">{label}</span>
+                            </>
+                          )}
                         </span>
-                      )}
-                    </div>
-                  )
-                })}
+                        {i < 2 && (
+                          <span className="text-slate-300 text-[9px] min-[360px]:text-[10px] sm:text-xs select-none">
+                            ›
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <LanguageSwitcher />
               </div>
             )}
           </div>

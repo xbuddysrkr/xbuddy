@@ -62,9 +62,12 @@ function PinLogin({ onSuccess }) {
     const res = await boothLogin(pin)
     if (res.success) {
       sessionStorage.setItem(SESSION_KEY, 'true')
+      if (res.boothToken) {
+        sessionStorage.setItem('xbuddy_booth_token', res.boothToken)
+      }
       onSuccess()
     } else {
-      setError(res.error || 'Wrong PIN. Try 4921')
+      setError(res.error || 'Incorrect station PIN. Access denied.')
       setPin('')
       setShake(true)
       setTimeout(() => setShake(false), 500)
@@ -803,6 +806,7 @@ function ReleasePrintStation({ onLock }) {
 
   function handleLock() {
     sessionStorage.removeItem(SESSION_KEY)
+    sessionStorage.removeItem('xbuddy_booth_token')
     onLock()
   }
 

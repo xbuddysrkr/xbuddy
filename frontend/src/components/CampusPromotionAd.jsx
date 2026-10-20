@@ -10,6 +10,7 @@ import {
   NEXTGEN_FALLBACK_POSTER_URL,
 } from '../utils/campusAds'
 import { fetchCampusAds } from '../utils/api'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // Session cache so component remounts during active session do not flash fallback if a real ad is already active
 let cachedLiveAd = null
@@ -22,6 +23,7 @@ let cachedLiveAd = null
  * Features immediate NextGen Labs poster fallback while async API fetch is in-flight.
  */
 export default function CampusPromotionAd({ placement = 'order-status', customAd = null }) {
+  const { t } = useLanguage()
   const [ad, setAd] = useState(() => {
     if (customAd) return customAd
     if (cachedLiveAd) return cachedLiveAd
@@ -179,7 +181,7 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-100/80 border border-orange-200 text-orange-900 text-[10px] sm:text-[11px] font-black tracking-wider uppercase">
           <span className="w-1.5 h-1.5 rounded-full bg-[#F78C25] animate-pulse" />
-          <span>{activeAd.badgeText || 'CAMPUS PROMOTION'}</span>
+          <span>{activeAd.badgeText || t('ads.campusPromotion')}</span>
         </div>
 
         {activeAd.clubName && (
@@ -220,8 +222,8 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
               <button
                 type="button"
                 onClick={toggleMute}
-                aria-label={isMuted ? 'Unmute video' : 'Mute video'}
-                title={isMuted ? 'Unmute video' : 'Mute video'}
+                aria-label={isMuted ? t('ads.unmute') : t('ads.mute')}
+                title={isMuted ? t('ads.unmute') : t('ads.mute')}
                 className="absolute bottom-2.5 right-2.5 z-10 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/65 hover:bg-black/85 text-white text-[11px] font-semibold backdrop-blur-md shadow-md border border-white/20 transition-all active:scale-95 cursor-pointer select-none"
               >
                 {isMuted ? (
@@ -231,7 +233,7 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
                       <line x1="23" y1="9" x2="17" y2="15" />
                       <line x1="17" y1="9" x2="23" y2="15" />
                     </svg>
-                    <span>Unmute</span>
+                    <span>{t('ads.unmute')}</span>
                   </>
                 ) : (
                   <>
@@ -240,7 +242,7 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
                       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
                       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
                     </svg>
-                    <span>Mute</span>
+                    <span>{t('ads.mute')}</span>
                   </>
                 )}
               </button>
@@ -290,7 +292,7 @@ export default function CampusPromotionAd({ placement = 'order-status', customAd
             onClick={handleActionClick}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white text-xs font-bold shadow-xs hover:shadow-md transition-all active:scale-95 cursor-pointer"
           >
-            <span>{activeAd.buttonText || 'View Details'}</span>
+            <span>{activeAd.buttonText || t('ads.viewDetails')}</span>
             <svg
               viewBox="0 0 24 24"
               fill="none"

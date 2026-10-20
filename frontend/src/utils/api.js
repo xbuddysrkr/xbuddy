@@ -386,9 +386,17 @@ export async function boothLogin(pin) {
       })
       if (res.ok) {
         const data = await res.json()
-        if (data.success) return data
+        if (data.success) {
+          if (data.boothToken && typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('xbuddy_booth_token', data.boothToken)
+          }
+          return data
+        }
+      } else if (res.status === 429) {
+        const data = await res.json().catch(() => ({}))
+        return { success: false, error: data.error || 'Too many PIN attempts. Please wait 5 minutes.' }
       } else if (res.status === 401) {
-        return { success: false, error: 'Wrong PIN. Try again.' }
+        return { success: false, error: 'Incorrect station PIN. Access denied.' }
       }
     } catch {
       // Fall through to tunnel and local agent
@@ -403,7 +411,13 @@ export async function boothLogin(pin) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }), signal: AbortSignal.timeout(4000),
       })
-      if (res.ok) return await res.json()
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.boothToken && typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('xbuddy_booth_token', data.boothToken)
+        }
+        return data
+      }
     } catch { continue }
   }
   return { success: false, error: 'Could not connect to booth service. Check internet or print agent.' }
@@ -518,12 +532,16 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
   const cleanId = String(orderId || '').trim().toUpperCase()
   if (!cleanId) return { success: false, error: 'orderId is required' }
 
+  const boothToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
+  const headers = { 'Content-Type': 'application/json' }
+  if (boothToken) headers['X-Booth-Token'] = boothToken
+
   const endpoints = getCandidateOrdersEndpoints()
   for (const endpoint of endpoints) {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ action: 'updatePaymentStatus', orderId: cleanId, paymentStatus }),
         signal: AbortSignal.timeout(10000),
       })
@@ -621,6 +639,10 @@ export async function verifyReprintPayment({ orderId, attemptId, paymentStatus }
     return { success: false, error: 'orderId, attemptId, and paymentStatus are required' }
   }
 
+  const boothToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
+  const headers = { 'Content-Type': 'application/json' }
+  if (boothToken) headers['X-Booth-Token'] = boothToken
+
   const candidateEndpoints = getCandidateOrdersEndpoints()
   let lastError = 'Failed to verify reprint payment'
 
@@ -628,7 +650,7 @@ export async function verifyReprintPayment({ orderId, attemptId, paymentStatus }
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           action: 'verifyReprintPayment',
           orderId: cleanId,

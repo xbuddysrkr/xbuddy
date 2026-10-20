@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getMyOrders, saveOrder, updateOrder } from '../utils/orderStore'
 import { getOrderStatus, initiateReprint, reprintOrder } from '../utils/api'
+import { useLanguage } from '../i18n/LanguageContext'
 import PaymentModal from './PaymentModal'
 import {
   Bell,
@@ -26,34 +27,43 @@ import {
 
 // Status mappings for comprehensive lifecycle
 export const STATUS_MAP = {
-  'pending':                { label: 'Pending',              cls: 'bg-slate-100 text-slate-700 border-slate-200', icon: Clock },
-  'payment submitted':      { label: 'Payment Submitted',    cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: CreditCard },
-  'order received':         { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'waiting_for_shopkeeper': { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'waiting':                { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'accepted':               { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'queued':                 { label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
-  'printing':               { label: 'Printing...',          cls: 'bg-violet-50 text-violet-700 border-violet-200 animate-pulse', icon: Printer },
-  'ready for collection':   { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
-  'ready':                  { label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
-  'printed':                { label: 'Printed',              cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: CheckCircle2 },
-  'collected':              { label: 'Collected',            cls: 'bg-slate-100 text-slate-600 border-slate-200', icon: CheckCircle2 },
-  'cancelled':              { label: 'Cancelled',            cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
-  'failed':                 { label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
+  'pending':                { key: 'orders.statusPending', label: 'Pending',              cls: 'bg-slate-100 text-slate-700 border-slate-200', icon: Clock },
+  'payment submitted':      { key: 'orders.statusPaymentSubmitted', label: 'Payment Submitted',    cls: 'bg-amber-50 text-amber-700 border-amber-200', icon: CreditCard },
+  'order received':         { key: 'orders.statusOrderReceived', label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'waiting_for_shopkeeper': { key: 'orders.statusOrderReceived', label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'waiting':                { key: 'orders.statusOrderReceived', label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'accepted':               { key: 'orders.statusOrderReceived', label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'queued':                 { key: 'orders.statusOrderReceived', label: 'Order Received',       cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: Inbox },
+  'printing':               { key: 'orders.statusPrinting', label: 'Printing...',          cls: 'bg-violet-50 text-violet-700 border-violet-200 animate-pulse', icon: Printer },
+  'ready for collection':   { key: 'orders.statusReady', label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
+  'ready':                  { key: 'orders.statusReady', label: 'Ready for Collection', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: Store },
+  'printed':                { key: 'orders.statusPrinted', label: 'Printed',              cls: 'bg-emerald-50 text-emerald-700 border-emerald-300 font-bold', icon: CheckCircle2 },
+  'collected':              { key: 'orders.statusCollected', label: 'Collected',            cls: 'bg-slate-100 text-slate-600 border-slate-200', icon: CheckCircle2 },
+  'cancelled':              { key: 'orders.statusCancelled', label: 'Cancelled',            cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
+  'failed':                 { key: 'orders.statusFailed', label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
 }
 
-export function getStatusInfo(rawStatus) {
-  if (!rawStatus) return STATUS_MAP['order received']
-  const key = String(rawStatus).toLowerCase().trim().replace(/[\s-]+/g, ' ')
-  if (STATUS_MAP[key]) return STATUS_MAP[key]
-  const underscoredKey = key.replace(/\s+/g, '_')
-  if (STATUS_MAP[underscoredKey]) return STATUS_MAP[underscoredKey]
-  if (key.includes('print') && !key.includes('not')) {
-    if (key === 'printed') return STATUS_MAP['printed']
-    return STATUS_MAP['printing']
+export function getStatusInfo(rawStatus, t) {
+  let info = STATUS_MAP['order received']
+  if (rawStatus) {
+    const key = String(rawStatus).toLowerCase().trim().replace(/[\s-]+/g, ' ')
+    if (STATUS_MAP[key]) {
+      info = STATUS_MAP[key]
+    } else {
+      const underscoredKey = key.replace(/\s+/g, '_')
+      if (STATUS_MAP[underscoredKey]) {
+        info = STATUS_MAP[underscoredKey]
+      } else if (key.includes('print') && !key.includes('not')) {
+        info = key === 'printed' ? STATUS_MAP['printed'] : STATUS_MAP['printing']
+      } else if (key.includes('ready')) {
+        info = STATUS_MAP['ready for collection']
+      }
+    }
   }
-  if (key.includes('ready')) return STATUS_MAP['ready for collection']
-  return STATUS_MAP['order received']
+  return {
+    ...info,
+    label: (t && info.key) ? t(info.key, info.label) : info.label,
+  }
 }
 
 function formatRemainingCountdown(seconds) {
@@ -64,6 +74,7 @@ function formatRemainingCountdown(seconds) {
 }
 
 export default function MyOrdersPage({ onStartPrinting }) {
+  const { t } = useLanguage()
   const [orders, setOrders] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   const [liveStatuses, setLiveStatuses] = useState({})
@@ -295,10 +306,13 @@ export default function MyOrdersPage({ onStartPrinting }) {
               </div>
               <div className="min-w-0">
                 <p className="text-emerald-900 font-bold text-sm">
-                  Your X Buddy order is ready for collection!
+                  {t('orders.readyBannerTitle', 'Your X Buddy order is ready for collection!')}
                 </p>
                 <p className="text-emerald-700 text-xs mt-0.5 break-words">
-                  Order ID{readyOrders.length > 1 ? 's' : ''}: <span className="font-mono font-extrabold">{readyOrders.map(o => o.orderId).join(', ')}</span> — Collect from the campus Xerox shop.
+                  {t('orders.readyBannerDesc', 'Order ID{plural}: {ids} — Collect from the campus Xerox shop.', {
+                    plural: readyOrders.length > 1 ? 's' : '',
+                    ids: readyOrders.map(o => o.orderId).join(', '),
+                  })}
                 </p>
               </div>
             </div>
@@ -306,7 +320,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
               onClick={() => setShopModalOrder(readyOrders[0])}
               className="self-end sm:self-auto px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors whitespace-nowrap shadow-xs cursor-pointer"
             >
-              Show ID →
+              {t('orders.showIdBtn', 'Show ID →')}
             </button>
           </motion.div>
         )}
@@ -316,17 +330,17 @@ export default function MyOrdersPage({ onStartPrinting }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 mb-6">
         <div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-[#222222] tracking-tight">
-            My Print Orders
+            {t('orders.myPrintOrders', 'My Print Orders')}
           </h1>
           <p className="text-gray-500 text-xs sm:text-sm mt-1 max-w-xl">
-            Track live print status and access your Order IDs for Xerox shop collection.
+            {t('orders.trackLiveSubtitle', 'Track live print status and access your Order IDs for Xerox shop collection.')}
           </p>
         </div>
         <button
           onClick={onStartPrinting}
           className="self-start sm:self-auto px-3.5 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg transition-all cursor-pointer whitespace-nowrap"
         >
-          + New Print Order
+          {t('orders.newPrintOrder', '+ New Print Order')}
         </button>
       </div>
 
@@ -349,7 +363,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 setSearchQuery(e.target.value)
                 setCloudSearchError('')
               }}
-              placeholder="Search by Order ID (e.g. XB8709) or file name..."
+              placeholder={t('orders.searchPlaceholder', 'Search by Order ID (e.g. XB8709) or file name...')}
               className="w-full bg-[#FAFAFA] border border-orange-200 rounded-xl pl-10 pr-9 py-2.5 text-[#222222] text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all uppercase"
             />
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
@@ -377,12 +391,12 @@ export default function MyOrdersPage({ onStartPrinting }) {
               {cloudSearching ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Looking up...</span>
+                  <span>{t('orders.lookingUp', 'Looking up...')}</span>
                 </>
               ) : (
                 <>
                   <Search className="w-3.5 h-3.5" />
-                  <span>Find Order</span>
+                  <span>{t('orders.findOrder', 'Find Order')}</span>
                 </>
               )}
             </button>
@@ -408,25 +422,25 @@ export default function MyOrdersPage({ onStartPrinting }) {
             <ClipboardList className="w-9 h-9" />
           </div>
           <h3 className="text-lg font-bold text-[#222222] mb-1">
-            No local orders stored yet.
+            {t('orders.noOrdersTitle', 'No local orders stored yet.')}
           </h3>
           <p className="text-gray-500 text-xs mb-6 max-w-xs mx-auto leading-relaxed">
-            Placed an order on another device or phone? Enter your Order ID above (e.g. <strong>XB8709</strong>) to track it live!
+            {t('orders.noOrdersDesc', 'Placed an order on another device or phone? Enter your Order ID above (e.g. XB8709) to track it live!')}
           </p>
           <button
             onClick={onStartPrinting}
             className="px-6 py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-sm rounded-xl shadow-md shadow-orange-500/20 hover:shadow-lg transition-all cursor-pointer"
           >
-            Start Printing
+            {t('orders.startPrinting', 'Start Printing')}
           </button>
         </motion.div>
       ) : filteredOrders.length === 0 ? (
         <div className="bg-[#FFFDF9] border border-orange-100 rounded-2xl p-8 text-center my-6 max-w-lg">
           <p className="text-gray-600 text-sm font-semibold">
-            No saved order matches "{searchQuery}"
+            {t('orders.noMatchTitle', 'No saved order matches "{query}"', { query: searchQuery })}
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            Check the Google Sheets database to pull this order into your tracking dashboard:
+            {t('orders.noMatchDesc', 'Check the database to pull this order into your tracking dashboard:')}
           </p>
           <div className="mt-4 flex items-center justify-center gap-3">
             <button
@@ -435,13 +449,13 @@ export default function MyOrdersPage({ onStartPrinting }) {
               className="px-4 py-2 bg-[#F78C25] hover:bg-[#e07010] text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               {cloudSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-              <span>Find "{searchQuery.toUpperCase()}" on Server</span>
+              <span>{t('orders.findOnServer', 'Find "{query}" on Server', { query: searchQuery.toUpperCase() })}</span>
             </button>
             <button
               onClick={() => setSearchQuery('')}
               className="px-3 py-2 text-slate-500 hover:text-slate-800 text-xs font-semibold"
             >
-              Clear Filter
+              {t('orders.clearFilter', 'Clear Filter')}
             </button>
           </div>
         </div>
@@ -451,7 +465,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
           {filteredOrders.map((order) => {
             const liveData = liveOrderData[order.orderId] || {}
             const rawStatus = liveData.printStatus || liveStatuses[order.orderId] || order.printStatus || order.status || 'Order Received'
-            const statusInfo = getStatusInfo(rawStatus)
+            const statusInfo = getStatusInfo(rawStatus, t)
             const StatusIcon = statusInfo.icon
 
             const printedAt = liveData.printedAt || order.printedAt
@@ -477,6 +491,12 @@ export default function MyOrdersPage({ onStartPrinting }) {
               !liveData.reprintPending
             )
 
+            const pageCount = Number(order.printableCount || order.totalPages || 1)
+            const copyCount = Number(order.copies || 1)
+            const displayPrintType = (order.colorMode === 'color' || order.printType === 'Color')
+              ? t('settings.colorOption', 'Color')
+              : t('settings.bwOption', 'B&W')
+
             return (
               <motion.div
                 key={order.orderId}
@@ -498,23 +518,23 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     {order.fileName}
                   </p>
                   <div className="flex items-center gap-1.5 sm:gap-3 text-[11px] sm:text-xs text-gray-500 flex-wrap">
-                    <span>{order.printableCount || order.totalPages} {Number(order.printableCount || order.totalPages) === 1 ? 'page' : 'pages'}</span>
+                    <span>{pageCount} {pageCount === 1 ? t('settings.page', 'page') : t('settings.pages', 'pages')}</span>
                     <span>•</span>
-                    <span>{order.copies} {order.copies === 1 ? 'copy' : 'copies'}</span>
+                    <span>{copyCount} {copyCount === 1 ? t('settings.copy', 'copy') : t('settings.copies', 'copies')}</span>
                     <span>•</span>
-                    <span>{order.printType}</span>
+                    <span>{displayPrintType}</span>
                     <span>•</span>
                     <span className="font-bold text-gray-700">₹{order.amount}</span>
                   </div>
                   <p className="text-[11px] text-gray-400">
-                    Placed: {formatSavedAt(order.savedAt)}
+                    {t('orders.placedAt', 'Placed: {time}', { time: formatSavedAt(order.savedAt) })}
                   </p>
 
                   {/* 30-Minute Retention Countdown & Status Badges */}
                   {canReprint && (
                     <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
                       <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
-                      <span>Reprint available: <strong className="font-mono font-bold text-amber-900">{formatRemainingCountdown(remainingSecs)}</strong></span>
+                      <span>{t('orders.reprintAvailable', 'Reprint available: {time}', { time: formatRemainingCountdown(remainingSecs) })}</span>
                       {liveData.reprintCount > 0 && (
                         <span className="text-[10px] bg-amber-200/80 text-amber-900 font-bold px-1.5 py-0.5 rounded-md ml-1">
                           {liveData.reprintCount} {liveData.reprintCount === 1 ? 'reprint' : 'reprints'}
@@ -526,14 +546,14 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   {(isExpired || isPdfDeleted) && (isPrinted || printedAt) && (
                     <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
                       <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>Reprint window expired; document permanently deleted.</span>
+                      <span>{t('orders.reprintExpired', 'Reprint window expired; document permanently deleted.')}</span>
                     </div>
                   )}
 
                   {liveData.reprintPending && (
                     <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-blue-800 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
                       <Loader2 className="w-3.5 h-3.5 text-blue-600 animate-spin shrink-0" />
-                      <span>Reprint queued — waiting for Xerox shop dispatch</span>
+                      <span>{t('orders.reprintQueued', 'Reprint queued — waiting for Xerox shop dispatch')}</span>
                     </div>
                   )}
 
@@ -565,12 +585,12 @@ export default function MyOrdersPage({ onStartPrinting }) {
                       {reprintingId === order.orderId ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Queueing...</span>
+                          <span>{t('orders.queueing', 'Queueing...')}</span>
                         </>
                       ) : (
                         <>
                           <RotateCw className="w-3.5 h-3.5" />
-                          <span>Reprint</span>
+                          <span>{t('orders.reprintSimple', 'Reprint')}</span>
                         </>
                       )}
                     </button>
@@ -580,13 +600,13 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     className="px-3.5 py-2.5 sm:py-2 bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer flex-1 min-[420px]:flex-initial text-center"
                   >
                     <Store className="w-3.5 h-3.5 shrink-0" />
-                    <span>Show Order ID</span>
+                    <span>{t('orders.showOrderId', 'Show Order ID')}</span>
                   </button>
                   <button
                     onClick={() => setSelectedOrder(order)}
                     className="px-3.5 py-2.5 sm:py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-semibold text-xs rounded-xl transition-colors cursor-pointer flex-1 min-[420px]:flex-initial text-center"
                   >
-                    View Details
+                    {t('orders.viewDetails', 'View Details')}
                   </button>
                 </div>
               </motion.div>
@@ -613,7 +633,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
               className="relative z-10 bg-white border border-orange-200 rounded-3xl p-5 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-xl mx-2 sm:mx-auto"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base sm:text-lg font-bold text-[#222222]">Order Details</h3>
+                <h3 className="text-base sm:text-lg font-bold text-[#222222]">{t('orders.orderDetails', 'Order Details')}</h3>
                 <button
                   onClick={() => setSelectedOrder(null)}
                   className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 text-gray-400 flex items-center justify-center transition-colors cursor-pointer"
@@ -627,7 +647,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 {/* Order ID Banner */}
                 <div className="p-3.5 sm:p-4 bg-[#FFF8F2] border border-orange-200 rounded-2xl flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-xs text-gray-500">Order ID</p>
+                    <p className="text-xs text-gray-500">{t('status.yourOrderId', 'Order ID')}</p>
                     <p className="font-mono text-lg sm:text-xl font-extrabold text-[#F78C25]">
                       {selectedOrder.orderId}
                     </p>
@@ -639,10 +659,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     {copied ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Copied</span>
+                        <span>{t('orders.copied', 'Copied')}</span>
                       </>
                     ) : (
-                      'Copy ID'
+                      t('orders.copyId', 'Copy ID')
                     )}
                   </button>
                 </div>
@@ -650,57 +670,65 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 {/* Details Breakdown */}
                 <div className="bg-gray-50/70 border border-gray-100 rounded-2xl p-3.5 sm:p-4 space-y-2.5 text-xs">
                   <div className="flex justify-between items-start gap-2">
-                    <span className="text-gray-500 shrink-0">File Name:</span>
+                    <span className="text-gray-500 shrink-0">{t('orders.fileName', 'File Name:')}</span>
                     <span className="font-semibold text-gray-800 text-right break-words max-w-[65%]">
                       {selectedOrder.fileName}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Total Pages:</span>
+                    <span className="text-gray-500">{t('orders.totalPages', 'Total Pages:')}</span>
                     <span className="font-semibold text-gray-800">{selectedOrder.totalPages}</span>
                   </div>
                   {(selectedOrder.pageRangeMode === 'custom' || (selectedOrder.pageRange && selectedOrder.pageRange !== 'all') || selectedOrder.customPages) && (
                     <div className="flex justify-between">
-                      <span className="text-gray-500">Custom Pages:</span>
-                      <span className="font-semibold text-[#F78C25]">{selectedOrder.customPages || selectedOrder.pageRange} ({selectedOrder.printableCount || selectedOrder.selectedPageCount || selectedOrder.totalPages} pages)</span>
+                      <span className="text-gray-500">{t('orders.customPages', 'Custom Pages:')}</span>
+                      <span className="font-semibold text-[#F78C25]">{selectedOrder.customPages || selectedOrder.pageRange} ({selectedOrder.printableCount || selectedOrder.selectedPageCount || selectedOrder.totalPages} {Number(selectedOrder.printableCount || selectedOrder.selectedPageCount || selectedOrder.totalPages) === 1 ? t('settings.page', 'page') : t('settings.pages', 'pages')})</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Copies:</span>
+                    <span className="text-gray-500">{t('orders.copiesLabel', 'Copies:')}</span>
                     <span className="font-semibold text-gray-800">{selectedOrder.copies}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Print Color:</span>
-                    <span className="font-semibold text-gray-800">{selectedOrder.printType}</span>
+                    <span className="text-gray-500">{t('orders.printColor', 'Print Color:')}</span>
+                    <span className="font-semibold text-gray-800">
+                      {selectedOrder.colorMode === 'color' || selectedOrder.printType === 'Color'
+                        ? t('settings.colorOption', 'Color')
+                        : t('settings.bwOption', 'B&W')}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Print Side:</span>
-                    <span className="font-semibold text-gray-800">{selectedOrder.printSide || 'Single'}</span>
+                    <span className="text-gray-500">{t('orders.printSide', 'Print Side:')}</span>
+                    <span className="font-semibold text-gray-800">
+                      {selectedOrder.duplex || selectedOrder.printSide === 'Double'
+                        ? t('settings.doubleSided', 'Double sided')
+                        : t('settings.singleSided', 'Single sided')}
+                    </span>
                   </div>
                   {selectedOrder.printingCost > 0 && (
                     <div className="flex justify-between text-gray-500">
-                      <span>Printing Cost:</span>
+                      <span>{t('orders.printingCost', 'Printing Cost:')}</span>
                       <span className="font-medium text-gray-700">₹{selectedOrder.printingCost}</span>
                     </div>
                   )}
                   {(selectedOrder.digitalProcessingFee > 0 || selectedOrder.serviceFee > 0) && (
                     <div className="flex justify-between text-gray-500">
-                      <span>Digital Processing Fee:</span>
+                      <span>{t('orders.digitalProcessingFee', 'Digital Processing Fee:')}</span>
                       <span className="font-medium text-gray-700">+₹{selectedOrder.digitalProcessingFee || selectedOrder.serviceFee}</span>
                     </div>
                   )}
                   <div className="flex justify-between border-t border-gray-200 pt-2">
-                    <span className="text-gray-700 font-bold">Total Paid:</span>
+                    <span className="text-gray-700 font-bold">{t('orders.totalPaid', 'Total Paid:')}</span>
                     <span className="font-extrabold text-[#F78C25] text-sm">₹{selectedOrder.amount}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Placed On:</span>
+                    <span className="text-gray-500">{t('orders.placedOn', 'Placed On:')}</span>
                     <span className="text-gray-600">{formatSavedAt(selectedOrder.savedAt)}</span>
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t border-gray-200">
-                    <span className="text-gray-500 font-medium">Order Status:</span>
+                    <span className="text-gray-500 font-medium">{t('orders.orderStatusLabel', 'Order Status:')}</span>
                     {(() => {
-                      const curStatus = getStatusInfo(liveStatuses[selectedOrder.orderId] || selectedOrder.printStatus || selectedOrder.status)
+                      const curStatus = getStatusInfo(liveStatuses[selectedOrder.orderId] || selectedOrder.printStatus || selectedOrder.status, t)
                       const CurIcon = curStatus.icon
                       return (
                         <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${curStatus.cls}`}>
@@ -711,7 +739,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     })()}
                   </div>
                   <div className="flex justify-between items-center pt-1 border-t border-gray-200">
-                    <span className="text-gray-500 font-medium">Payment Status:</span>
+                    <span className="text-gray-500 font-medium">{t('orders.paymentStatusLabel', 'Payment Status:')}</span>
                     {(() => {
                       const selData = liveOrderData[selectedOrder.orderId] || {}
                       const rawPay = String(selData.paymentStatus || selectedOrder.paymentStatus || 'pending').trim().toLowerCase()
@@ -762,7 +790,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                         <div className="flex items-center gap-2">
                           <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                           <div className="text-xs">
-                            <span className="text-amber-800 font-semibold">Reprint window: </span>
+                            <span className="text-amber-800 font-semibold">{t('orders.reprintWindow', 'Reprint window: ')}</span>
                             <strong className="font-mono font-bold text-amber-950">{formatRemainingCountdown(remainingSecs)}</strong>
                           </div>
                         </div>
@@ -775,12 +803,12 @@ export default function MyOrdersPage({ onStartPrinting }) {
                           {reprintingId === selectedOrder.orderId ? (
                             <>
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Queueing...</span>
+                              <span>{t('orders.queueing', 'Queueing...')}</span>
                             </>
                           ) : (
                             <>
                               <RotateCw className="w-3.5 h-3.5" />
-                              <span>Reprint Document</span>
+                              <span>{t('orders.reprintDoc', 'Reprint Document')}</span>
                             </>
                           )}
                         </button>
@@ -792,7 +820,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     return (
                       <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span>Reprint window expired; document permanently deleted.</span>
+                        <span>{t('orders.reprintExpired', 'Reprint window expired; document permanently deleted.')}</span>
                       </div>
                     )
                   }
@@ -809,7 +837,7 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Store className="w-4 h-4 shrink-0" />
-                  <span>Show Order ID at Xerox Shop</span>
+                  <span>{t('orders.showAtShop', 'Show Order ID at Xerox Shop')}</span>
                 </button>
               </div>
             </motion.div>
@@ -847,16 +875,16 @@ export default function MyOrdersPage({ onStartPrinting }) {
               </div>
 
               <h3 className="text-base font-bold text-[#222222]">
-                Show at Campus Xerox Shop
+                {t('orders.showAtShopTitle', 'Show at Campus Xerox Shop')}
               </h3>
               <p className="text-xs text-gray-500 mt-1 mb-4">
-                The Xerox shop staff will look up this Order ID to hand over your printed documents.
+                {t('orders.showAtShopDesc', 'The Xerox shop staff will look up this Order ID to hand over your printed documents.')}
               </p>
 
               {/* Large, clear, copyable Order ID display */}
               <div className="bg-white border-2 border-orange-200 rounded-2xl p-4 mb-4 shadow-inner">
                 <p className="text-[10px] uppercase font-extrabold text-orange-400 tracking-wider mb-1">
-                  ORDER ID
+                  {t('status.yourOrderId', 'ORDER ID')}
                 </p>
                 <p className="font-mono text-3xl font-black text-[#F78C25] tracking-widest selection:bg-orange-200">
                   {shopModalOrder.orderId}
@@ -871,17 +899,17 @@ export default function MyOrdersPage({ onStartPrinting }) {
                   {copied ? (
                     <>
                       <Check className="w-4 h-4 text-white" />
-                      <span>Order ID Copied!</span>
+                      <span>{t('orders.orderIdCopied', 'Order ID Copied!')}</span>
                     </>
                   ) : (
                     <>
                       <ClipboardList className="w-4 h-4 text-white" />
-                      <span>Copy Order ID</span>
+                      <span>{t('orders.showOrderId', 'Copy Order ID')}</span>
                     </>
                   )}
                 </button>
                 <p className="text-[11px] text-gray-400 truncate">
-                  File: <span className="font-medium text-gray-600">{shopModalOrder.fileName}</span>
+                  {t('orders.fileName', 'File:')} <span className="font-medium text-gray-600">{shopModalOrder.fileName}</span>
                 </p>
               </div>
             </motion.div>

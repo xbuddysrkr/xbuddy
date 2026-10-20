@@ -2,11 +2,13 @@ import { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 're
 import { Download, Printer } from 'lucide-react'
 import { useResume } from '../resumeStore.jsx'
 import { getTemplate } from '../templates'
+import { useLanguage } from '../../i18n/LanguageContext'
 
 const ResumePreview = forwardRef(function ResumePreview(
   { onPrint, isModal = false, onCloseModal, onExportStateChange },
   ref
 ) {
+  const { t } = useLanguage()
   const { resume } = useResume()
   const previewRef = useRef(null)
   const [exporting, setExporting] = useState(false)
@@ -119,18 +121,18 @@ const ResumePreview = forwardRef(function ResumePreview(
               className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer mr-1"
             >
               <span>←</span>
-              <span>Back to Editor</span>
+              <span>{t('resume.backToEditor')}</span>
             </button>
           )}
 
           <div className="hidden sm:flex items-center gap-1.5 mr-1">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-slate-500 text-xs font-medium">Click on text to edit</span>
+            <span className="text-slate-500 text-xs font-medium">{t('resume.clickToEdit')}</span>
           </div>
 
           {/* Font Controls */}
           <div className="flex items-center gap-1 bg-orange-50/70 border border-orange-200/80 rounded-xl px-2 py-1">
-            <span className="text-slate-600 text-[11px] font-semibold mr-1">Font</span>
+            <span className="text-slate-600 text-[11px] font-semibold mr-1">{t('resume.font')}</span>
             <button
               type="button"
               onClick={() => setFontScale(s => Math.max(0.7, +(s - 0.05).toFixed(2)))}
@@ -154,7 +156,7 @@ const ResumePreview = forwardRef(function ResumePreview(
 
           {/* Zoom Controls */}
           <div className="flex items-center gap-1 bg-orange-50/70 border border-orange-200/80 rounded-xl px-2 py-1">
-            <span className="text-slate-600 text-[11px] font-semibold mr-1">Zoom</span>
+            <span className="text-slate-600 text-[11px] font-semibold mr-1">{t('resume.zoom')}</span>
             <button
               type="button"
               onClick={() => setZoom(z => Math.max(0.35, +(z - 0.08).toFixed(2)))}
@@ -192,7 +194,7 @@ const ResumePreview = forwardRef(function ResumePreview(
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
             )}
-            <span>{exporting ? 'Exporting...' : 'Download PDF'}</span>
+            <span>{exporting ? t('resume.exporting') : t('resume.downloadPdf')}</span>
           </button>
 
           <button
@@ -204,7 +206,7 @@ const ResumePreview = forwardRef(function ResumePreview(
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
             </svg>
-            <span>{exporting ? 'Preparing...' : 'Print with X Buddy'}</span>
+            <span>{exporting ? t('resume.preparing') : t('resume.printWithXBuddy')}</span>
           </button>
         </div>
       </div>

@@ -1,15 +1,18 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { GraduationCap, Building2, Hospital, Landmark, BookOpen, School } from 'lucide-react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function PerfectFor() {
+  const { t } = useLanguage()
+
   const categories = [
-    { icon: GraduationCap, title: 'Colleges', desc: 'Instant student assignment & project printing' },
-    { icon: Building2, title: 'Offices', desc: 'Secure corporate document kiosks & badges' },
-    { icon: Hospital, title: 'Hospitals', desc: 'Patient records & prescription form generation' },
-    { icon: Landmark, title: 'Government Offices', desc: 'Public utility application forms & verification' },
-    { icon: BookOpen, title: 'Libraries', desc: 'Quiet autonomous print & scan terminals' },
-    { icon: School, title: 'Universities', desc: 'Campus-wide smart kiosk network deployment' },
+    { icon: GraduationCap, title: t('perfectFor.c1Title', 'Colleges'), desc: t('perfectFor.c1Desc', 'Instant student assignment & project printing') },
+    { icon: Building2, title: t('perfectFor.c2Title', 'Offices'), desc: t('perfectFor.c2Desc', 'Secure corporate document kiosks & badges') },
+    { icon: Hospital, title: t('perfectFor.c3Title', 'Hospitals'), desc: t('perfectFor.c3Desc', 'Patient records & prescription form generation') },
+    { icon: Landmark, title: t('perfectFor.c4Title', 'Government Offices'), desc: t('perfectFor.c4Desc', 'Public utility application forms & verification') },
+    { icon: BookOpen, title: t('perfectFor.c5Title', 'Libraries'), desc: t('perfectFor.c5Desc', 'Quiet autonomous print & scan terminals') },
+    { icon: School, title: t('perfectFor.c6Title', 'Universities'), desc: t('perfectFor.c6Desc', 'Campus-wide smart kiosk network deployment') },
   ]
 
   return (
@@ -23,7 +26,7 @@ export default function PerfectFor() {
             viewport={{ once: true }}
             className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-[#F7931E] text-xs font-bold uppercase tracking-wider mb-3"
           >
-            Universal Deployment
+            {t('perfectFor.badge', 'Universal Deployment')}
           </motion.div>
           <motion.h2
             initial={{ opacity: 0, y: 15 }}
@@ -32,7 +35,7 @@ export default function PerfectFor() {
             transition={{ delay: 0.1 }}
             className="text-3xl md:text-5xl font-extrabold text-slate-900 tracking-tight"
           >
-            Perfect <span className="gradient-text-orange">For</span>
+            {t('perfectFor.title', 'Perfect For')}
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 15 }}
@@ -41,7 +44,7 @@ export default function PerfectFor() {
             transition={{ delay: 0.2 }}
             className="text-slate-500 text-base md:text-lg mt-3"
           >
-            Scalable infrastructure built for high-footfall educational, healthcare, and civic environments.
+            {t('perfectFor.subtitle', 'Scalable infrastructure built for high-footfall educational, healthcare, and civic environments.')}
           </motion.p>
         </div>
 

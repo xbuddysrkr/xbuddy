@@ -32,9 +32,12 @@ function BoothLogin({ onSuccess }) {
     const res = await boothLogin(pin)
     if (res.success) {
       sessionStorage.setItem(SESSION_KEY, 'true')
+      if (res.boothToken) {
+        sessionStorage.setItem('xbuddy_booth_token', res.boothToken)
+      }
       onSuccess()
     } else {
-      setError(res.error || 'Wrong PIN')
+      setError(res.error || 'Incorrect station PIN. Access denied.')
       setPin('')
       inputRef.current?.focus()
     }
@@ -115,6 +118,7 @@ function BoothPanel({ onLogout }) {
     clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
       sessionStorage.removeItem(SESSION_KEY)
+      sessionStorage.removeItem('xbuddy_booth_token')
       onLogout()
     }, INACTIVITY_MS)
   }, [onLogout])

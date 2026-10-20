@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Zap, Check, FileEdit, Eye, Lock, X } from 'lucide-react'
 import { DOC_TYPES } from '../utils/letterTemplates'
 import { ACADEMIC_TOOLKIT_ENABLED } from '../utils/academicToolkitConfig'
+import { useLanguage } from '../i18n/LanguageContext'
 
 // ── SVG Icons (no emojis) ─────────────────────────────────────────────────────
 const ICONS = {
@@ -15,6 +16,18 @@ const ICONS = {
   resume:      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>,
   assignment:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>,
   lab:         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" /></svg>,
+}
+
+const DOC_TYPE_KEYS = {
+  leave:       { labelKey: 'toolkit.docLeave',       descKey: 'toolkit.docLeaveDesc' },
+  bonafide:    { labelKey: 'toolkit.docBonafide',    descKey: 'toolkit.docBonafideDesc' },
+  internship:  { labelKey: 'toolkit.docInternship',  descKey: 'toolkit.docInternshipDesc' },
+  permission:  { labelKey: 'toolkit.docPermission',  descKey: 'toolkit.docPermissionDesc' },
+  apology:     { labelKey: 'toolkit.docApology',     descKey: 'toolkit.docApologyDesc' },
+  scholarship: { labelKey: 'toolkit.docScholarship', descKey: 'toolkit.docScholarshipDesc' },
+  resume:      { labelKey: 'toolkit.docResume',      descKey: 'toolkit.docResumeDesc' },
+  assignment:  { labelKey: 'toolkit.docAssignment',  descKey: 'toolkit.docAssignmentDesc' },
+  lab:         { labelKey: 'toolkit.docLab',         descKey: 'toolkit.docLabDesc' },
 }
 
 const FIELDS = {
@@ -30,16 +43,16 @@ const FIELDS = {
 }
 
 const FIELD_META = {
-  name:       { label: 'Full Name',           placeholder: 'e.g. Rahul Sharma'        },
-  rollNo:     { label: 'Roll Number',          placeholder: 'e.g. 21CS045'             },
-  year:       { label: 'Year / Semester',      placeholder: 'e.g. II Year / 3rd Sem'   },
-  department: { label: 'Department',           placeholder: 'e.g. Computer Science'    },
-  college:    { label: 'College Name',         placeholder: 'e.g. ABC Engineering College' },
-  receiver:   { label: 'To (Receiver)',        placeholder: 'e.g. The HOD / Principal' },
-  reason:     { label: 'Reason / Purpose',     placeholder: 'e.g. Medical emergency'   },
-  days:       { label: 'No. of Days',          placeholder: 'e.g. 3'                   },
-  weeks:      { label: 'No. of Weeks',         placeholder: 'e.g. 4'                   },
-  extra:      { label: 'Additional Details',   placeholder: 'Any extra info (optional)'},
+  name:       { labelKey: 'toolkit.fieldFullName',   label: 'Full Name',           placeholder: 'e.g. Rahul Sharma'        },
+  rollNo:     { labelKey: 'toolkit.fieldRollNo',     label: 'Roll Number',          placeholder: 'e.g. 21CS045'             },
+  year:       { labelKey: 'toolkit.fieldYear',       label: 'Year / Semester',      placeholder: 'e.g. II Year / 3rd Sem'   },
+  department: { labelKey: 'toolkit.fieldDepartment', label: 'Department',           placeholder: 'e.g. Computer Science'    },
+  college:    { labelKey: 'toolkit.fieldCollege',    label: 'College Name',         placeholder: 'e.g. ABC Engineering College' },
+  receiver:   { labelKey: 'toolkit.fieldReceiver',   label: 'To (Receiver)',        placeholder: 'e.g. The HOD / Principal' },
+  reason:     { labelKey: 'toolkit.fieldReason',     label: 'Reason / Purpose',     placeholder: 'e.g. Medical emergency'   },
+  days:       { labelKey: 'toolkit.fieldDays',       label: 'No. of Days',          placeholder: 'e.g. 3'                   },
+  weeks:      { labelKey: 'toolkit.fieldWeeks',      label: 'No. of Weeks',         placeholder: 'e.g. 4'                   },
+  extra:      { labelKey: 'toolkit.fieldExtra',      label: 'Additional Details',   placeholder: 'Any extra info (optional)'},
 }
 
 const FIELD_DEFAULTS = {
@@ -498,14 +511,16 @@ async function exportToPdf(canvasElement, docId, opts = {}) {
 
 // ── Left Form Panel ────────────────────────────────────────────────────────────
 function FormPanel({ fields, form, onChange, onGenerate }) {
+  const { t } = useLanguage()
+
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3.5 scrollbar-thin">
       <div className="flex items-center justify-between mb-1">
         <p className="text-slate-900 text-xs sm:text-sm font-extrabold uppercase tracking-wider">
-          Document Details
+          {t('toolkit.docDetails', 'Document Details')}
         </p>
         <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-          Live Synced <Zap className="w-2.5 h-2.5" />
+          {t('toolkit.liveSynced', 'Live Synced')} <Zap className="w-2.5 h-2.5" />
         </span>
       </div>
 
@@ -514,7 +529,7 @@ function FormPanel({ fields, form, onChange, onGenerate }) {
         return (
           <div key={field}>
             <label className="text-slate-900 text-xs sm:text-sm font-bold mb-1.5 block">
-              {meta.label}
+              {meta.labelKey ? t(meta.labelKey, meta.label) : meta.label}
             </label>
             {field === 'extra' || field === 'reason' ? (
               <textarea
@@ -542,7 +557,7 @@ function FormPanel({ fields, form, onChange, onGenerate }) {
         onClick={onGenerate}
         className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-extrabold text-sm rounded-xl transition-all mt-3 shadow-md shadow-orange-500/20 active:scale-95 cursor-pointer"
       >
-        View Full Document Preview →
+        {t('toolkit.viewFullPreview', 'View Full Document Preview →')}
       </button>
     </div>
   )
@@ -561,6 +576,7 @@ function PreviewPanel({
   onPrint,
   toast,
 }) {
+  const { t } = useLanguage()
   const [zoom, setZoom] = useState(() => {
     if (typeof window === 'undefined') return 0.75
     const w = window.innerWidth
@@ -641,7 +657,7 @@ function PreviewPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
             )}
-            <span>{exporting ? 'Generating...' : 'Download PDF'}</span>
+            <span>{exporting ? t('orders.queueing', 'Generating...') : t('toolkit.downloadPdf', 'Download PDF')}</span>
           </button>
 
           <button
@@ -653,7 +669,7 @@ function PreviewPanel({
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
             </svg>
-            <span>Print with XBuddy</span>
+            <span>{t('toolkit.printWithXBuddy', 'Print with XBuddy')}</span>
           </button>
         </div>
       </div>
@@ -702,6 +718,7 @@ function PreviewPanel({
 
 // ── Document Modal with DOM-Stable Two-Way Synchronization ────────────────────
 function DocModal({ docType, onClose, onPrint }) {
+  const { t } = useLanguage()
   const EMPTY = {
     name: '',
     rollNo: '',
@@ -877,20 +894,20 @@ function DocModal({ docType, onClose, onPrint }) {
             <Lock className="w-6 h-6" />
           </div>
           <span className="px-2.5 py-0.5 rounded-full bg-orange-100 text-[#F78C25] text-xs font-bold uppercase tracking-wider border border-orange-200 inline-block mb-3">
-            Coming Soon
+            {t('toolkit.comingSoon', 'Coming Soon')}
           </span>
           <h3 className="text-lg font-extrabold text-slate-900 mb-2">
-            {docType?.label || 'Academic Toolkit'} is Locked
+            {docType?.label || t('toolkit.badge', 'Academic Toolkit')} {t('toolkit.locked', 'is Locked')}
           </h3>
           <p className="text-slate-600 text-sm leading-relaxed mb-6 font-medium">
-            Academic Toolkit is coming soon. We're preparing the templates and editing tools for you.
+            {t('toolkit.lockedNoticeDesc', "Academic Toolkit is coming soon. We're preparing the templates and editing tools for you.")}
           </p>
           <button
             type="button"
             onClick={onClose}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] text-white text-xs font-bold shadow-md shadow-orange-500/20 hover:shadow-lg transition-all cursor-pointer"
           >
-            Back to Toolkit
+            {t('toolkit.backToToolkit', 'Back to Toolkit')}
           </button>
         </div>
       </motion.div>
@@ -950,12 +967,12 @@ function DocModal({ docType, onClose, onPrint }) {
               {tab === 'form' ? (
                 <>
                   <FileEdit className="w-3.5 h-3.5" />
-                  <span>Fill Details</span>
+                  <span>{t('toolkit.fillDetails', 'Fill Details')}</span>
                 </>
               ) : (
                 <>
                   <Eye className="w-3.5 h-3.5" />
-                  <span>Live Preview</span>
+                  <span>{t('toolkit.livePreview', 'Live Preview')}</span>
                 </>
               )}
             </button>
@@ -1001,13 +1018,14 @@ function DocModal({ docType, onClose, onPrint }) {
 
 // ── Main Section ──────────────────────────────────────────────────────────────
 export default function AcademicToolkit({ onPrint }) {
+  const { t } = useLanguage()
   const [active, setActive] = useState(null)
   const [lockedNotice, setLockedNotice] = useState('')
 
   useEffect(() => {
     if (!lockedNotice) return
-    const t = setTimeout(() => setLockedNotice(''), 3500)
-    return () => clearTimeout(t)
+    const tTimer = setTimeout(() => setLockedNotice(''), 3500)
+    return () => clearTimeout(tTimer)
   }, [lockedNotice])
 
   const handleCardClick = (doc) => {
@@ -1030,7 +1048,7 @@ export default function AcademicToolkit({ onPrint }) {
         <div className="flex flex-wrap items-center gap-2 mb-5">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-orange-300 bg-orange-50 text-[#F78C25] text-xs font-bold">
             <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-            Academic Toolkit
+            {t('toolkit.badge', 'Academic Toolkit')}
           </div>
           {!ACADEMIC_TOOLKIT_ENABLED && (
             <div
@@ -1038,7 +1056,7 @@ export default function AcademicToolkit({ onPrint }) {
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-xs font-extrabold shadow-xs"
             >
               <Lock className="w-3 h-3 text-amber-600" />
-              Coming Soon
+              {t('toolkit.comingSoon', 'Coming Soon')}
             </div>
           )}
         </div>
@@ -1046,25 +1064,24 @@ export default function AcademicToolkit({ onPrint }) {
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
             <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 leading-tight">
-              Generate any document<br />
-              <span className="gradient-text">in under 30 seconds</span>
+              {t('toolkit.heading', 'Generate any document in under 30 seconds')}
             </h2>
             <p className="text-slate-600 font-medium mt-3 max-w-lg text-sm sm:text-base">
-              Fill in your details or edit directly on the live document. Everything is two-way synchronized and print-ready.
+              {t('toolkit.description', 'Fill in your details or edit directly on the live document. Everything is two-way synchronized and print-ready.')}
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs font-semibold text-slate-600">
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Two-way synced
+              {t('toolkit.twoWaySynced', 'Two-way synced')}
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-              Inline Canvas Editing
+              {t('toolkit.inlineEditing', 'Inline Canvas Editing')}
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-[#F78C25]" />
-              Direct Print
+              {t('toolkit.directPrint', 'Direct Print')}
             </div>
           </div>
         </div>
@@ -1080,14 +1097,14 @@ export default function AcademicToolkit({ onPrint }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-slate-900 font-bold text-sm sm:text-base">
-                Your academic documents, ready when you need them.
+                {t('toolkit.lockedNoticeTitle', 'Your academic documents, ready when you need them.')}
               </p>
               <p className="text-slate-600 text-xs sm:text-sm font-medium mt-0.5">
-                Academic Toolkit is coming soon. We're preparing the templates and editing tools for you.
+                {t('toolkit.lockedNoticeDesc', "Academic Toolkit is coming soon. We're preparing the templates and editing tools for you.")}
               </p>
             </div>
             <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide bg-white text-[#F78C25] border border-orange-200 shadow-2xs">
-              Under Preparation
+              {t('toolkit.underPrep', 'Under Preparation')}
             </span>
           </div>
         )}
@@ -1095,75 +1112,81 @@ export default function AcademicToolkit({ onPrint }) {
 
       {/* Cards grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3" data-testid="academic-toolkit-grid">
-        {DOC_TYPES.map((doc, i) => (
-          <motion.button
-            key={doc.id}
-            data-testid={`toolkit-card-${doc.id}`}
-            data-locked={!ACADEMIC_TOOLKIT_ENABLED}
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.04 }}
-            whileHover={ACADEMIC_TOOLKIT_ENABLED ? { y: -2 } : {}}
-            onClick={() => handleCardClick(doc)}
-            className={`group text-left p-5 rounded-2xl bg-white border transition-all duration-200 cursor-pointer ${
-              !ACADEMIC_TOOLKIT_ENABLED
-                ? 'border-orange-100 hover:border-amber-300 hover:shadow-sm'
-                : 'border-orange-100 hover:border-[#F78C25] hover:shadow-md'
-            }`}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25] group-hover:bg-[#F78C25] group-hover:text-white transition-colors">
-                {ICONS[doc.id]}
-              </div>
-              <div className="flex items-center gap-1.5">
-                {!ACADEMIC_TOOLKIT_ENABLED && (
-                  <span
-                    data-testid={`card-locked-badge-${doc.id}`}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
-                  >
-                    <Lock className="w-2.5 h-2.5 text-amber-600" />
-                    Coming Soon
-                  </span>
-                )}
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-                  !ACADEMIC_TOOLKIT_ENABLED
-                    ? 'bg-slate-100 text-slate-400'
-                    : 'bg-orange-50 group-hover:bg-orange-100 text-gray-400 group-hover:text-[#F78C25]'
-                }`}>
-                  {!ACADEMIC_TOOLKIT_ENABLED ? (
-                    <Lock className="w-3 h-3 text-slate-400" />
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 transition-colors">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
-                    </svg>
+        {DOC_TYPES.map((doc, i) => {
+          const docLabel = (doc.id && DOC_TYPE_KEYS[doc.id]) ? t(DOC_TYPE_KEYS[doc.id].labelKey, doc.label) : doc.label
+          const docDesc = (doc.id && DOC_TYPE_KEYS[doc.id]) ? t(DOC_TYPE_KEYS[doc.id].descKey, doc.desc) : doc.desc
+          const localizedDoc = { ...doc, label: docLabel, desc: docDesc }
+
+          return (
+            <motion.button
+              key={doc.id}
+              data-testid={`toolkit-card-${doc.id}`}
+              data-locked={!ACADEMIC_TOOLKIT_ENABLED}
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.04 }}
+              whileHover={ACADEMIC_TOOLKIT_ENABLED ? { y: -2 } : {}}
+              onClick={() => handleCardClick(localizedDoc)}
+              className={`group text-left p-5 rounded-2xl bg-white border transition-all duration-200 cursor-pointer ${
+                !ACADEMIC_TOOLKIT_ENABLED
+                  ? 'border-orange-100 hover:border-amber-300 hover:shadow-sm'
+                  : 'border-orange-100 hover:border-[#F78C25] hover:shadow-md'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#F78C25] group-hover:bg-[#F78C25] group-hover:text-white transition-colors">
+                  {ICONS[doc.id]}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {!ACADEMIC_TOOLKIT_ENABLED && (
+                    <span
+                      data-testid={`card-locked-badge-${doc.id}`}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                    >
+                      <Lock className="w-2.5 h-2.5 text-amber-600" />
+                      {t('toolkit.comingSoon', 'Coming Soon')}
+                    </span>
                   )}
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                    !ACADEMIC_TOOLKIT_ENABLED
+                      ? 'bg-slate-100 text-slate-400'
+                      : 'bg-orange-50 group-hover:bg-orange-100 text-gray-400 group-hover:text-[#F78C25]'
+                  }`}>
+                    {!ACADEMIC_TOOLKIT_ENABLED ? (
+                      <Lock className="w-3 h-3 text-slate-400" />
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 transition-colors">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+                      </svg>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-            <p className="text-slate-900 font-extrabold text-base mb-1">{doc.label}</p>
-            <p className="text-slate-600 text-xs sm:text-sm font-semibold leading-relaxed">{doc.desc}</p>
-            <div className="mt-4 pt-4 border-t border-orange-100 flex items-center justify-between">
-              <span className="text-slate-400 text-xs">Two-way live preview</span>
-              {!ACADEMIC_TOOLKIT_ENABLED ? (
-                <span
-                  data-testid={`open-doc-locked-${doc.id}`}
-                  className="inline-flex items-center gap-1.5 text-slate-400 text-xs font-semibold"
-                >
-                  <Lock className="w-3 h-3 text-slate-400" />
-                  Locked
-                </span>
-              ) : (
-                <span
-                  data-testid={`open-doc-action-${doc.id}`}
-                  className="text-[#F78C25] text-xs font-bold opacity-75 group-hover:opacity-100 transition-opacity"
-                >
-                  Open Document →
-                </span>
-              )}
-            </div>
-          </motion.button>
-        ))}
+              <p className="text-slate-900 font-extrabold text-base mb-1">{docLabel}</p>
+              <p className="text-slate-600 text-xs sm:text-sm font-semibold leading-relaxed">{docDesc}</p>
+              <div className="mt-4 pt-4 border-t border-orange-100 flex items-center justify-between">
+                <span className="text-slate-400 text-xs">{t('toolkit.twoWayLivePreview', 'Two-way live preview')}</span>
+                {!ACADEMIC_TOOLKIT_ENABLED ? (
+                  <span
+                    data-testid={`open-doc-locked-${doc.id}`}
+                    className="inline-flex items-center gap-1.5 text-slate-400 text-xs font-semibold"
+                  >
+                    <Lock className="w-3 h-3 text-slate-400" />
+                    {t('toolkit.locked', 'Locked')}
+                  </span>
+                ) : (
+                  <span
+                    data-testid={`open-doc-action-${doc.id}`}
+                    className="text-[#F78C25] text-xs font-bold opacity-75 group-hover:opacity-100 transition-opacity"
+                  >
+                    {t('toolkit.openDocument', 'Open Document →')}
+                  </span>
+                )}
+              </div>
+            </motion.button>
+          )
+        })}
       </div>
 
       {/* Modal */}

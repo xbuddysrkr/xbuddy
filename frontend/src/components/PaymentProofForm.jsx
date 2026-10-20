@@ -5,12 +5,14 @@ import { fileToBase64 } from '../utils/fileToBase64'
 import { submitOrder, submitReprintPayment } from '../utils/api'
 import { saveOrder } from '../utils/orderStore'
 import OrderProgress from './OrderProgress'
+import { useLanguage } from '../i18n/LanguageContext'
 
 const inputCls = 'w-full bg-[#FAFAFA] border border-orange-200 rounded-xl px-4 py-2.5 text-[#222222] text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#F78C25] focus:ring-1 focus:ring-orange-200 transition-all'
 
 const PENDING_STATUSES = { upload_file: 'pending', save_order: 'pending', confirmed: 'pending' }
 
 export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
+  const { t } = useLanguage()
   const [phone,         setPhone]         = useState('')
   const [transactionId, setTransactionId] = useState('')
   const [fieldError,    setFieldError]    = useState('')
@@ -216,13 +218,13 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!phone.trim())         return setFieldError('Please enter your phone number.')
-    if (!transactionId.trim()) return setFieldError('Please enter the Transaction ID.')
-    if (transactionId.trim().length < 6) return setFieldError('Transaction ID must be at least 6 characters.')
+    if (!phone.trim())         return setFieldError(t('payment.phoneRequired', 'Please enter your phone number.'))
+    if (!transactionId.trim()) return setFieldError(t('payment.utrRequired', 'Please enter the Transaction ID.'))
+    if (transactionId.trim().length < 6) return setFieldError(t('payment.utrMinLength', 'Transaction ID must be at least 6 characters.'))
     if (orderMeta?.isReprint) {
       const origTx = String(orderMeta.originalTransactionId || '').trim().toUpperCase()
       if (origTx && transactionId.trim().toUpperCase() === origTx) {
-        return setFieldError('Cannot reuse the original order transaction ID. Every reprint requires a new payment and transaction reference.')
+        return setFieldError(t('payment.utrReuseError', 'Cannot reuse the original order transaction ID. Every reprint requires a new payment and transaction reference.'))
       }
     }
     setStepStatuses(PENDING_STATUSES)
@@ -260,27 +262,27 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 border-t border-orange-100 pt-4">
       <h4 className="text-[#222222] font-semibold mb-4 text-sm">
-        {orderMeta?.isReprint ? 'Confirm Reprint Payment' : 'Confirm Your Payment'}
+        {orderMeta?.isReprint ? t('payment.confirmPayment', 'Confirm Reprint Payment') : t('payment.confirmPayment', 'Confirm Your Payment')}
       </h4>
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="text-gray-500 text-xs mb-1 block">Phone Number</label>
+          <label className="text-gray-500 text-xs mb-1 block">{t('payment.phoneLabel', 'Phone Number')}</label>
           <input
             type="tel" value={phone}
             onChange={(e) => { setPhone(e.target.value); setFieldError('') }}
-            placeholder="Enter your phone number"
+            placeholder={t('payment.phonePlaceholder', 'Enter your phone number')}
             className={inputCls}
             disabled={processing}
           />
         </div>
 
         <div>
-          <label className="text-gray-500 text-xs mb-1 block">UPI Transaction ID</label>
+          <label className="text-gray-500 text-xs mb-1 block">{t('payment.utrLabel', 'UPI Transaction ID')}</label>
           <input
             type="text" value={transactionId}
             onChange={(e) => { setTransactionId(e.target.value); setFieldError('') }}
-            placeholder="e.g. 4358XXXXXXXX"
+            placeholder={t('payment.utrPlaceholder', 'e.g. 4358XXXXXXXX')}
             className={inputCls + ' font-mono'}
             disabled={processing}
           />
@@ -322,7 +324,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
             className="w-full py-3 bg-[#F78C25] hover:bg-[#e07010] text-white font-bold text-sm rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5"
           >
             <Check className="w-4 h-4" />
-            <span>{orderMeta?.isReprint ? 'Confirm & Pay for Reprint' : 'Confirm & Submit Order'}</span>
+            <span>{orderMeta?.isReprint ? t('payment.confirmAndPayReprint', 'Confirm & Pay for Reprint') : t('payment.confirmAndSubmit', 'Confirm & Submit Order')}</span>
           </motion.button>
         )}
       </form>

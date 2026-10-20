@@ -4,8 +4,10 @@ import TrustStats from './TrustStats'
 import BlurText from './BlurText'
 import XBuddyHeroMascot from './XBuddyHeroMascot'
 import { ArrowRight, Sparkles, FileText, ClipboardList, Zap } from 'lucide-react'
+import { useLanguage } from '../i18n/LanguageContext'
 
 export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
+  const { t, language } = useLanguage()
   const startBtnRef = useRef(null)
   const [isBtnHovered, setIsBtnHovered] = useState(false)
   const [isCelebrating, setIsCelebrating] = useState(false)
@@ -45,9 +47,11 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
           className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-orange-200/80 bg-gradient-to-r from-orange-50 via-white to-amber-50 shadow-sm text-slate-800 text-xs font-semibold mb-6 group cursor-default"
         >
           <span className="w-2 h-2 rounded-full bg-[#F7931E] animate-pulse" />
-          <span className="text-[#F7931E] font-bold inline-flex items-center gap-1"><Zap className="w-3.5 h-3.5 fill-[#F7931E]" /> Digital Platform</span>
+          <span className="text-[#F7931E] font-bold inline-flex items-center gap-1">
+            <Zap className="w-3.5 h-3.5 fill-[#F7931E]" /> {t('hero.digitalPlatform', 'Digital Platform')}
+          </span>
           <span className="text-slate-300">|</span>
-          <span className="text-slate-600">Smart Print Ordering for Campus Xerox Shops</span>
+          <span className="text-slate-600">{t('hero.badgeText', 'Smart Print Ordering for Campus Xerox Shops')}</span>
         </motion.div>
 
         {/* Hero Title with Interactive Living XBuddy Mascot + BlurText */}
@@ -58,7 +62,8 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
             isCelebrating={isCelebrating}
           />
           <BlurText
-            text="Buddy"
+            key={`buddy-${language}`}
+            text={t('hero.buddy', 'Buddy')}
             delay={100}
             animateBy="words"
             direction="top"
@@ -70,7 +75,8 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
         {/* Title Subhead with BlurText */}
         <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-800 tracking-tight mb-5">
           <BlurText
-            text="Smart Digital Printing for Campus"
+            key={`subhead-${language}`}
+            text={t('hero.subhead', 'Smart Digital Printing for Campus')}
             delay={80}
             animateBy="words"
             direction="top"
@@ -80,7 +86,8 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
 
         {/* Subtitle Copy with BlurText */}
         <BlurText
-          text="Upload your documents, pay digitally, track your order, and collect your prints from your campus Xerox shop."
+          key={`subtitle-${language}`}
+          text={t('hero.subtitle', 'Upload your documents, pay digitally, track your order, and collect your prints from your campus Xerox shop.')}
           delay={35}
           animateBy="words"
           direction="top"
@@ -95,7 +102,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
           transition={{ delay: 0.4 }}
           className="flex items-center justify-center gap-2 text-xs font-medium text-slate-400 mb-8"
         >
-          <span>Powered by NextGen Labs</span>
+          <span>{t('hero.poweredBy', 'Powered by NextGen Labs')}</span>
           <span className="w-1.5 h-1.5 rounded-full bg-[#F7931E]" />
         </motion.div>
 
@@ -117,7 +124,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
             onClick={handleStartPrinting}
             className="px-8 py-4 rounded-2xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] text-white font-bold text-base glow-orange-button transition-all duration-200 flex items-center justify-center gap-2 group shadow-lg shadow-orange-500/20 cursor-pointer"
           >
-            <span>Start Printing</span>
+            <span>{t('hero.startPrinting', 'Start Printing')}</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </motion.button>
 
@@ -129,7 +136,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
               className="px-7 py-4 rounded-2xl bg-orange-50/70 hover:bg-orange-100/70 text-[#F7931E] font-bold text-base border border-orange-200 shadow-xs transition-all duration-200 flex items-center justify-center gap-2"
             >
               <ClipboardList className="w-4 h-4" />
-              <span>Track My Orders</span>
+              <span>{t('hero.trackMyOrders', 'Track My Orders')}</span>
             </motion.button>
           )}
 
@@ -139,7 +146,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
             onClick={onResumeBuilder}
             className="px-6 py-4 rounded-2xl bg-white hover:bg-orange-50/50 text-slate-800 font-bold text-base border border-orange-200/90 shadow-xs transition-all duration-200 flex items-center justify-center gap-2"
           >
-            <span>Build Resume</span>
+            <span>{t('hero.buildResume', 'Build Resume')}</span>
             <Sparkles className="w-4 h-4 text-[#F7931E]" />
           </motion.button>
 
@@ -149,7 +156,7 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
             href="#academic-toolkit"
             className="px-6 py-4 rounded-2xl bg-white hover:bg-orange-50/50 text-slate-700 font-bold text-base border border-orange-200/90 shadow-xs transition-all duration-200 flex items-center justify-center gap-2"
           >
-            <span>Academic Toolkit</span>
+            <span>{t('hero.academicToolkit', 'Academic Toolkit')}</span>
             <FileText className="w-4 h-4 text-slate-400" />
           </motion.a>
         </motion.div>
@@ -160,3 +167,4 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
     </section>
   )
 }
+

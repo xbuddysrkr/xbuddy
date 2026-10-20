@@ -15,8 +15,20 @@ import ResumeForm from './components/ResumeForm'
 import ResumePreview from './components/ResumePreview'
 import TemplatePicker from './components/TemplatePicker'
 import XBuddyStudioMascot from './components/XBuddyStudioMascot'
+import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext'
+
+const SECTION_KEY_MAP = {
+  personal: 'resume.secPersonal',
+  education: 'resume.secEducation',
+  skills: 'resume.secSkills',
+  experience: 'resume.secExperience',
+  projects: 'resume.secProjects',
+  certifications: 'resume.secCertifications',
+  achievements: 'resume.secAchievements',
+}
 
 function ResumeStudioInner({ onPrint, onBack }) {
+  const { t } = useLanguage()
   const { resume } = useResume()
   const [activeSection, setActiveSection] = useState('personal')
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false)
@@ -56,8 +68,8 @@ function ResumeStudioInner({ onPrint, onBack }) {
             type="button"
             onClick={onBack}
             className="w-9 h-9 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] flex items-center justify-center transition-all border border-orange-200/80 shadow-2xs active:scale-95 cursor-pointer shrink-0"
-            title="Back to Home"
-            aria-label="Back to Home"
+            title={t('resume.backToHome')}
+            aria-label={t('resume.backToHome')}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
@@ -69,24 +81,26 @@ function ResumeStudioInner({ onPrint, onBack }) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-slate-900 font-extrabold text-sm sm:text-base leading-tight tracking-tight">
-                  XBuddy Resume Studio
+                  {t('resume.studioTitle')}
                 </h1>
                 <span className="hidden min-[400px]:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100/80 text-orange-700">
-                  ATS Ready
+                  {t('resume.atsReady')}
                 </span>
               </div>
               <p className="text-slate-400 text-[11px] hidden sm:block">
-                Professional Campus & Tech Resume Builder · Print Ready
+                {t('resume.studioTagline')}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Right Header Status & Save indicator */}
+        {/* Right Header Status, Language Switcher & Save indicator */}
         <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+
           {savedToast ? (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200 animate-fade-in">
-              <Check className="w-3 h-3" /> Saved
+              <Check className="w-3 h-3" /> {t('resume.saved')}
             </span>
           ) : (
             <button
@@ -95,7 +109,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
               className="hidden min-[480px]:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Draft Saved</span>
+              <span>{t('resume.draftSaved')}</span>
             </button>
           )}
 
@@ -106,7 +120,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
             className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-xs border border-orange-200 transition-all active:scale-95 cursor-pointer shadow-2xs"
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>Preview</span>
+            <span>{t('resume.preview')}</span>
           </button>
         </div>
       </header>
@@ -126,7 +140,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-slate-800">
-                    Resume Completeness
+                    {t('resume.resumeCompleteness')}
                   </span>
                   {completeness >= 80 && (
                     <span className="text-[11px] font-bold text-emerald-600 bg-emerald-100/80 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
@@ -175,10 +189,10 @@ function ResumeStudioInner({ onPrint, onBack }) {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Resume Sections
+                  {t('resume.resumeSections')}
                 </span>
                 <span className="text-[11px] text-slate-400">
-                  Tap to edit section
+                  {t('resume.tapToEdit')}
                 </span>
               </div>
 
@@ -204,7 +218,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
                       <div className="flex items-center gap-1.5 min-w-0">
                         {SecIcon && <SecIcon className="w-3.5 h-3.5 shrink-0" />}
                         <span className={`text-[11px] font-bold truncate ${isActive ? 'text-[#F78C25]' : 'text-slate-800'}`}>
-                          {sec.label}
+                          {SECTION_KEY_MAP[sec.id] ? t(SECTION_KEY_MAP[sec.id]) : sec.label}
                         </span>
                       </div>
                       <span className="shrink-0 text-[10px] font-bold">
@@ -240,7 +254,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
                 className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-orange-500 to-[#F78C25] hover:from-orange-600 hover:to-[#EB740A] text-white font-bold text-xs sm:text-sm shadow-md shadow-orange-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer"
               >
                 <Eye className="w-4 h-4" />
-                <span>Preview Resume (A4 Full Page)</span>
+                <span>{t('resume.previewFullPage')}</span>
               </button>
             </div>
           </div>
@@ -279,12 +293,12 @@ function ResumeStudioInner({ onPrint, onBack }) {
             {savedToast ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Saved</span>
+                <span>{t('resume.saved')}</span>
               </>
             ) : (
               <>
                 <Save className="w-3.5 h-3.5" />
-                <span>Save</span>
+                <span>{t('resume.save')}</span>
               </>
             )}
           </button>
@@ -296,7 +310,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
             className="flex-1 py-2.5 px-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-xs border border-orange-200 flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-2xs"
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>Preview</span>
+            <span>{t('resume.preview')}</span>
           </button>
 
           {/* Download PDF */}
@@ -320,7 +334,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-3.5 h-3.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
             </svg>
-            <span>Print with XBuddy</span>
+            <span>{t('resume.printWithXBuddy')}</span>
           </button>
         </div>
       </div>
