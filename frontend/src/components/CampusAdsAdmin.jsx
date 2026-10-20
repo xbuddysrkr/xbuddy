@@ -28,9 +28,12 @@ import {
   PenTool,
   ClipboardList,
   Check,
-  Lightbulb
+  Lightbulb,
+  Lock,
+  LogOut,
+  ShieldCheck,
 } from 'lucide-react'
-import { createCampusAd, fetchCampusAds } from '../utils/api'
+import { createCampusAd, fetchCampusAds, verifyAdsPassword } from '../utils/api'
 import CampusPromotionAd from './CampusPromotionAd'
 
 const PRESET_TEMPLATES = [
@@ -91,6 +94,16 @@ function getFormattedDate(offsetDays = 0) {
 }
 
 export default function CampusAdsAdmin({ onBack, onNavigateToStatus }) {
+  const [isAuthorized, setIsAuthorized] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.sessionStorage.getItem('xbuddy_ads_authorized') === 'true'
+    }
+    return false
+  })
+  const [accessPassword, setAccessPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [verifyingAuth, setVerifyingAuth] = useState(false)
+
   const [formData, setFormData] = useState({
     clubName: 'CSE Student Association',
     title: 'CodeSprint 2026 — 24H Campus Hackathon',
@@ -129,8 +142,45 @@ export default function CampusAdsAdmin({ onBack, onNavigateToStatus }) {
   }
 
   useEffect(() => {
-    loadExistingAds()
-  }, [])
+    if (isAuthorized) {
+      loadExistingAds()
+    }
+  }, [isAuthorized])
+
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    if (!accessPassword.trim()) {
+      setAuthError('Please enter password.')
+      return
+    }
+    setVerifyingAuth(true)
+    setAuthError('')
+    try {
+      const res = await verifyAdsPassword(accessPassword)
+      if (res && res.success) {
+        setIsAuthorized(true)
+        setAuthError('')
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('xbuddy_ads_authorized', 'true')
+        }
+      } else {
+        setAuthError(res?.error || 'Incorrect password. Access denied.')
+      }
+    } catch {
+      setAuthError('Authentication verification failed. Please try again.')
+    } finally {
+      setVerifyingAuth(false)
+    }
+  }
+
+  const handleLogout = () => {
+    setIsAuthorized(false)
+    setAccessPassword('')
+    setAuthError('')
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('xbuddy_ads_authorized')
+    }
+  }
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -297,6 +347,89 @@ function optimizeImageDataUrl(dataUrl, maxDim = 720, quality = 0.75) {
     endDate: formData.endDate,
   }
 
+  // ── ACCESS CONTROL LOCK SCREEN ─────────────────────────────────────────────
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-orange-50/50 via-white to-slate-50 flex items-center justify-center px-4 py-12 font-sans select-none">
+        <div className="w-full max-w-md rounded-3xl border border-orange-200/90 bg-white p-7 sm:p-8 shadow-xl shadow-orange-500/10 relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400 via-[#F78C25] to-amber-400" />
+
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#F7931E] to-[#FF6B00] flex items-center justify-center text-white shadow-md shadow-orange-500/25">
+                <Lock className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-[11px] font-black text-[#F78C25] uppercase tracking-wider">Access Control</p>
+                <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Campus Ads Manager</h1>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+            Protected administrative portal for approved campus clubs and administrators. Enter password to continue.
+          </p>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Access Password
+              </label>
+              <input
+                type="password"
+                value={accessPassword}
+                onChange={(e) => {
+                  setAccessPassword(e.target.value)
+                  setAuthError('')
+                }}
+                placeholder="Enter access password"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-[#F78C25] focus:bg-white focus:outline-none text-sm transition-all shadow-2xs font-mono"
+                autoFocus
+                autoComplete="current-password"
+              />
+            </div>
+
+            {authError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={verifyingAuth}
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white text-xs font-bold shadow-md shadow-orange-500/25 transition-all active:scale-[0.99] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+            >
+              {verifyingAuth ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Unlock Ads Manager →</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-slate-500 hover:text-[#F78C25] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              ← Return to Student App
+            </button>
+            <span className="text-[11px] text-slate-400">SRKR Campus Xerox</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50/40 via-white to-slate-50 text-slate-800 pb-20">
       {/* Top Header */}
@@ -340,6 +473,15 @@ function optimizeImageDataUrl(dataUrl, maxDim = 720, quality = 0.75) {
               <RefreshCw className={`w-3.5 h-3.5 ${loadingLiveAds ? 'animate-spin text-[#F7931E]' : ''}`} />
               <span className="hidden sm:inline font-semibold">Refresh</span>
             </button>
+
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 border border-slate-200 hover:border-rose-200 transition-colors cursor-pointer text-xs flex items-center gap-1.5 font-bold"
+              title="Lock & Exit Campus Ads Manager"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Lock / Logout</span>
+            </button>
           </div>
         </div>
       </div>
@@ -352,8 +494,9 @@ function optimizeImageDataUrl(dataUrl, maxDim = 720, quality = 0.75) {
               <span className="px-2 py-0.5 rounded-md bg-white/20 text-white text-[10px] font-black tracking-wide uppercase">
                 Instant Publish
               </span>
-              <span className="text-xs text-orange-100 font-medium">
-                Connected to Google Sheet: <span className="font-mono underline">1a_dzI0AaOQo0gypw00BUUiKC872a7lKbKNQU4qe-Eq4</span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 text-white text-xs font-semibold backdrop-blur-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Google Sheets Connected</span>
               </span>
             </div>
             <h2 className="text-lg sm:text-xl font-black tracking-tight">

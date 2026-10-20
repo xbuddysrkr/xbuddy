@@ -558,12 +558,6 @@ export default function App() {
                   </button>
                 </div>
                 <LanguageSwitcher />
-                <button
-                  onClick={() => goToStep(STEP.UPLOAD)}
-                  className="px-3.5 min-[360px]:px-4 sm:px-5 py-1.5 sm:py-2 bg-gradient-to-r from-[#F7931E] to-[#FF6B00] hover:from-[#FF9C26] hover:to-[#EB740A] text-white rounded-lg sm:rounded-xl font-bold text-xs shadow-md shadow-orange-500/20 hover:shadow-lg hover:shadow-orange-500/30 hover:-translate-y-0.5 transition-all cursor-pointer shrink-0"
-                >
-                  {t('nav.printNow', 'Print Now →')}
-                </button>
               </div>
             ) : step === STEP.MY_ORDERS || step === STEP.ADMIN || step === STEP.ADS ? (
               <div className="flex items-center gap-2 sm:gap-3">

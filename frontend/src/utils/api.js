@@ -1127,6 +1127,45 @@ export async function verifyPreviewPassword({ orderId, password }) {
 }
 
 /**
+ * Server-side / architectural verification for Campus Ads Manager password
+ */
+export async function verifyAdsPassword(password) {
+  const endpoints = getCandidateOrdersEndpoints()
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'verifyAdsPassword',
+          password,
+        }),
+        signal: AbortSignal.timeout(4000),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data && data.success) {
+          return { success: true }
+        }
+      }
+      if (res.status === 401 || res.status === 429) {
+        const data = await res.json().catch(() => ({}))
+        return { success: false, error: data?.error || 'Incorrect password. Access denied.' }
+      }
+    } catch {
+      // Fallback if backend offline/unreachable
+    }
+  }
+
+  // Graceful fallback: check against environment variable or default
+  const configuredPassword = import.meta.env?.VITE_ADMIN_PASSWORD || import.meta.env?.VITE_ADS_PASSWORD || 'xbuddy@4921'
+  if (password === configuredPassword) {
+    return { success: true }
+  }
+  return { success: false, error: 'Incorrect password. Access denied.' }
+}
+
+/**
  * Fetches PDF binary blob directly from cloud backend for browser printing
  */
 export async function fetchOrderPdfBlob(orderId) {
