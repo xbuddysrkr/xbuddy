@@ -19,6 +19,16 @@ import {
   isOrderReprintEligible,
   cleanupExpiredPdfs,
 } from './_lib/retention.js'
+import {
+  safeCompare,
+  checkPreviewRateLimit,
+  recordPreviewFailure,
+  resetPreviewAttempts,
+  generatePreviewToken,
+  verifyPreviewToken,
+  consumePreviewToken,
+  isBoothAuthorized,
+} from './_lib/boothAuth.js'
 
 const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
 
@@ -288,15 +298,41 @@ export default async function handler(req, res) {
   try {
     // ── 0. BOOTH PREVIEW PASSWORD VERIFICATION ───────────────────────────
     if (action === 'verifyPreviewPassword') {
+      const clientIp = req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1'
+      const rateCheck = checkPreviewRateLimit(clientIp)
+      if (!rateCheck.allowed) {
+        return res.status(429).json({
+          success: false,
+          error: `Too many failed preview attempts. Please wait ${rateCheck.remainingSecs || 300} seconds.`,
+        })
+      }
+
+      const expectedPassword = process.env.BOOTH_PREVIEW_PASSWORD
+      if (!expectedPassword) {
+        console.error('[SECURITY_CONFIG_ERROR] BOOTH_PREVIEW_PASSWORD environment variable is not configured on the server.')
+        return res.status(500).json({
+          success: false,
+          error: 'Preview service misconfigured. Server administrator must set BOOTH_PREVIEW_PASSWORD.',
+        })
+      }
+
       const password = String(req.body?.password || req.query?.password || '')
-      const expectedPassword = process.env.BOOTH_PREVIEW_PASSWORD || 'XBuddy@4921'
       const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
 
-      if (password === expectedPassword) {
-        const secret = process.env.JWT_SECRET || process.env.AGENT_SECRET || 'xbuddy_preview_token_secret_4921'
-        const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes validity
-        const hmac = crypto.createHmac('sha256', secret).update(`${orderId}:${expiresAt}`).digest('hex')
-        const previewToken = `${expiresAt}.${hmac}`
+      if (!orderId) {
+        return res.status(400).json({ success: false, error: 'orderId is required' })
+      }
+
+      if (safeCompare(password, expectedPassword)) {
+        resetPreviewAttempts(clientIp)
+        const previewToken = generatePreviewToken(orderId)
+        if (!previewToken) {
+          console.error('[SECURITY_CONFIG_ERROR] No session signing secret configured on server.')
+          return res.status(500).json({
+            success: false,
+            error: 'Token signing service misconfigured. Server administrator must set SESSION_SECRET or JWT_SECRET.',
+          })
+        }
 
         return res.status(200).json({
           success: true,
@@ -307,9 +343,39 @@ export default async function handler(req, res) {
         })
       }
 
+      recordPreviewFailure(clientIp)
       return res.status(401).json({
         success: false,
         error: 'Incorrect preview password. Access denied.',
+      })
+    }
+
+    // ── 0.1 CAMPUS ADS & ADMIN PASSWORD VERIFICATION ─────────────────────
+    if (action === 'verifyAdminPassword' || action === 'verifyAdsPassword') {
+      const clientIp = req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1'
+      const rateCheck = checkPreviewRateLimit(clientIp)
+      if (!rateCheck.allowed) {
+        return res.status(429).json({
+          success: false,
+          error: `Too many failed attempts. Please wait ${rateCheck.remainingSecs || 300} seconds.`,
+        })
+      }
+
+      const expectedPassword = process.env.ADMIN_PASSWORD || process.env.ADS_PASSWORD || 'xbuddy@4921'
+      const password = String(req.body?.password || req.query?.password || '')
+
+      if (safeCompare(password, expectedPassword)) {
+        resetPreviewAttempts(clientIp)
+        return res.status(200).json({
+          success: true,
+          message: 'Access authorized',
+        })
+      }
+
+      recordPreviewFailure(clientIp)
+      return res.status(401).json({
+        success: false,
+        error: 'Incorrect password. Access denied.',
       })
     }
 
@@ -896,29 +962,54 @@ export default async function handler(req, res) {
       // Note: action === 'getOrderPdf' is preserved for automated Print Agent syncing without password
       if (action === 'getPdf' || action === 'downloadPdf') {
         const token = String(req.query?.token || req.body?.token || '').trim()
-        const rawPass = String(req.query?.password || req.body?.password || '')
-        const expectedPassword = process.env.BOOTH_PREVIEW_PASSWORD || 'XBuddy@4921'
-        let authorized = false
+        const verification = verifyPreviewToken(orderId, token)
 
-        if (rawPass && rawPass === expectedPassword) {
-          authorized = true
-        } else if (token && token.includes('.')) {
-          const [expiresAtStr, hmac] = token.split('.')
-          const expiresAt = Number(expiresAtStr)
-          if (!isNaN(expiresAt) && expiresAt > Date.now()) {
-            const secret = process.env.JWT_SECRET || process.env.AGENT_SECRET || 'xbuddy_preview_token_secret_4921'
-            const expectedHmac = crypto.createHmac('sha256', secret).update(`${orderId}:${expiresAt}`).digest('hex')
-            if (hmac === expectedHmac) {
-              authorized = true
-            }
-          }
-        }
-
-        if (!authorized) {
+        if (!verification.valid) {
+          const errorMsg =
+            verification.reason === 'expired'
+              ? 'Preview token has expired. Please request a new preview.'
+              : 'Authorized preview token required. Access denied.'
           return res.status(401).json({
             success: false,
-            error: 'Password verification required to preview PDF. Access denied.',
+            error: errorMsg,
           })
+        }
+
+        // Connect to MongoDB to atomically consume token across instances
+        let mongoDb = null
+        try {
+          const conn = await connectToDatabase()
+          mongoDb = conn?.db
+        } catch (dbErr) {
+          console.error('[SECURITY_FAIL_CLOSED] Database connection failed for getPdf preview token consumption:', dbErr.message)
+          return res.status(503).json({
+            success: false,
+            error: 'Authentication verification service temporarily unavailable.',
+          })
+        }
+
+        // Only consume on GET requests; HEAD requests (if probed by browser) do not consume token
+        if (req.method === 'GET') {
+          const consumption = await consumePreviewToken(
+            verification.tokenId,
+            orderId,
+            verification.expiresAt,
+            mongoDb
+          )
+
+          if (!consumption.consumed) {
+            if (consumption.replayed) {
+              return res.status(401).json({
+                success: false,
+                error: 'This preview token has already been consumed. Please submit the password again for a new preview.',
+                replayed: true,
+              })
+            }
+            return res.status(500).json({
+              success: false,
+              error: 'Token consumption verification failed: ' + (consumption.error || 'database error'),
+            })
+          }
         }
       }
 
@@ -1080,11 +1171,14 @@ export default async function handler(req, res) {
     if (action === 'repairOrderPdf') {
       const pin = String(req.body?.pin || req.headers?.['x-pin'] || '').trim()
       const apiKey = String(req.body?.apiKey || req.headers?.['x-api-key'] || '').trim()
-      const boothPin = process.env.BOOTH_PIN || '4921'
-      const isAuthorized = (pin && pin === boothPin) || (apiKey && apiKey === GAS_API_KEY)
+      const configuredPin = process.env.BOOTH_STATION_PIN || process.env.BOOTH_PIN
+      const isAuthorized =
+        isBoothAuthorized(req) ||
+        (configuredPin && pin && safeCompare(pin, configuredPin)) ||
+        (apiKey && GAS_API_KEY && safeCompare(apiKey, GAS_API_KEY))
 
       if (!isAuthorized) {
-        return res.status(401).json({ success: false, error: 'Unauthorized: valid shopkeeper PIN or API key required' })
+        return res.status(401).json({ success: false, error: 'Unauthorized: valid shopkeeper session or PIN required' })
       }
 
       const orderId = String(req.body?.orderId || '').trim().toUpperCase()
@@ -1355,6 +1449,12 @@ export default async function handler(req, res) {
 
     // ── 5. UPDATE PAYMENT STATUS (MONGODB PRIMARY) ──────────────────────────
     if (action === 'updatePaymentStatus') {
+      if (!isBoothAuthorized(req)) {
+        return res.status(401).json({
+          success: false,
+          error: 'Station authentication required to update payment status. Access denied.',
+        })
+      }
       const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
       const paymentStatus = String(req.body?.paymentStatus || req.query?.paymentStatus || '').trim()
       if (!orderId || !paymentStatus) {
@@ -1707,6 +1807,12 @@ export default async function handler(req, res) {
 
     // ── 5.3 VERIFY REPRINT PAYMENT (SHOPKEEPER VERIFICATION / REJECTION) ────
     if (action === 'verifyReprintPayment') {
+      if (!isBoothAuthorized(req)) {
+        return res.status(401).json({
+          success: false,
+          error: 'Station authentication required to verify reprint payment. Access denied.',
+        })
+      }
       const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
       const attemptId = String(req.body?.attemptId || req.query?.attemptId || '').trim()
       const newPaymentStatus = String(req.body?.paymentStatus || req.query?.paymentStatus || '').trim().toLowerCase()

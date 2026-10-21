@@ -8,13 +8,17 @@ import {
   PartyPopper,
   ThumbsUp,
   Zap,
-  Download
+  Download,
+  ShieldCheck,
+  Target
 } from 'lucide-react'
 import { ResumeProvider, useResume, SECTIONS, getSectionCompletion, computeOverallCompleteness } from './resumeStore.jsx'
 import ResumeForm from './components/ResumeForm'
 import ResumePreview from './components/ResumePreview'
 import TemplatePicker from './components/TemplatePicker'
 import XBuddyStudioMascot from './components/XBuddyStudioMascot'
+import AtsReadinessCard from './components/AtsReadinessCard'
+import JobMatchPanel from './components/JobMatchPanel'
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext'
 
 const SECTION_KEY_MAP = {
@@ -34,6 +38,7 @@ function ResumeStudioInner({ onPrint, onBack }) {
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [savedToast, setSavedToast] = useState(false)
+  const [evaluationTab, setEvaluationTab] = useState('ats') // 'ats' | 'job_match'
 
   const previewExportRef = useRef(null)
   const completeness = computeOverallCompleteness(resume)
@@ -178,6 +183,43 @@ function ResumeStudioInner({ onPrint, onBack }) {
                   )}
                 </span>
               </div>
+            </div>
+
+            {/* B. ATS Readiness & Target Job Match Evaluation Suite */}
+            <div className="space-y-2">
+              <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setEvaluationTab('ats')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    evaluationTab === 'ats'
+                      ? 'bg-white text-slate-800 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <ShieldCheck className={`w-3.5 h-3.5 ${evaluationTab === 'ats' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  <span>{t('resume.atsReadinessScore')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEvaluationTab('job_match')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    evaluationTab === 'job_match'
+                      ? 'bg-white text-slate-800 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Target className={`w-3.5 h-3.5 ${evaluationTab === 'job_match' ? 'text-[#F78C25]' : 'text-slate-400'}`} />
+                  <span>{t('resume.jobMatchTitle')}</span>
+                </button>
+              </div>
+
+              {/* Render selected evaluation panel */}
+              {evaluationTab === 'ats' ? (
+                <AtsReadinessCard resume={resume} />
+              ) : (
+                <JobMatchPanel resume={resume} />
+              )}
             </div>
 
             {/* B. Mobile Template Quick-Selector Strip (Visible on mobile/tablet) */}

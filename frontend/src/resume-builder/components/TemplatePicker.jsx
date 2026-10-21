@@ -2,6 +2,7 @@ import React from 'react'
 import { Check, Lightbulb } from 'lucide-react'
 import { useResume } from '../resumeStore.jsx'
 import { TEMPLATES } from '../templates'
+import { getTemplateProfile } from '../scoring/atsEngine'
 import { useLanguage } from '../../i18n/LanguageContext'
 
 /**
@@ -153,12 +154,13 @@ export default function TemplatePicker({ layout = 'vertical' }) {
         <div className="flex items-stretch gap-2.5 overflow-x-auto pb-2 scrollbar-none -mx-1 px-1 touch-pan-x">
           {TEMPLATES.map(tpl => {
             const isSelected = resume.template === tpl.id
+            const profile = getTemplateProfile(tpl.id)
             return (
               <button
                 key={tpl.id}
                 onClick={() => setTemplate(tpl.id)}
                 type="button"
-                className={`flex flex-col items-center p-2 rounded-xl border text-center transition-all shrink-0 w-[104px] cursor-pointer select-none active:scale-95 ${
+                className={`flex flex-col items-center p-2 rounded-xl border text-center transition-all shrink-0 w-[108px] cursor-pointer select-none active:scale-95 ${
                   isSelected
                     ? 'border-[#F78C25] bg-orange-50/80 shadow-xs ring-2 ring-[#F78C25]/30'
                     : 'border-slate-200 bg-white hover:border-orange-200 shadow-xs'
@@ -175,8 +177,12 @@ export default function TemplatePicker({ layout = 'vertical' }) {
                 <span className={`text-[11px] font-bold line-clamp-1 leading-tight ${isSelected ? 'text-[#F78C25]' : 'text-slate-700'}`}>
                   {tpl.label}
                 </span>
-                <span className="text-[9px] text-slate-400 mt-0.5 capitalize">
-                  {tpl.id.replace('-', ' ')}
+                <span className={`text-[8.5px] font-bold px-1.5 py-0.2 rounded mt-1 border ${
+                  profile.rating === 'provisional_high' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  profile.rating === 'provisional_moderate' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                  'bg-amber-50 text-amber-800 border-amber-200'
+                }`}>
+                  {profile.badge}
                 </span>
               </button>
             )
@@ -197,6 +203,7 @@ export default function TemplatePicker({ layout = 'vertical' }) {
       <div className="space-y-2">
         {TEMPLATES.map(tpl => {
           const isSelected = resume.template === tpl.id
+          const profile = getTemplateProfile(tpl.id)
           return (
             <button
               key={tpl.id}
@@ -210,7 +217,7 @@ export default function TemplatePicker({ layout = 'vertical' }) {
             >
               <MiniVisualResume templateId={tpl.id} accent={tpl.accent} />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-1 mb-1">
+                <div className="flex items-center justify-between gap-1 mb-0.5">
                   <span className={`text-xs font-bold truncate ${isSelected ? 'text-[#F78C25]' : 'text-slate-800'}`}>
                     {tpl.label}
                   </span>
@@ -219,6 +226,15 @@ export default function TemplatePicker({ layout = 'vertical' }) {
                       <Check className="w-3 h-3" /> Selected
                     </span>
                   )}
+                </div>
+                <div className="flex items-center gap-1 mb-1">
+                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                    profile.rating === 'provisional_high' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    profile.rating === 'provisional_moderate' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                    'bg-amber-50 text-amber-800 border-amber-200'
+                  }`}>
+                    {profile.badge}
+                  </span>
                 </div>
                 <p className="text-slate-500 text-[11px] leading-relaxed line-clamp-2">
                   {tpl.desc}

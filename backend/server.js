@@ -7,6 +7,14 @@ import ordersHandler from './api/orders.js'
 import agentOrdersHandler from './api/agent/orders.js'
 import agentHeartbeatHandler from './api/agent/heartbeat.js'
 
+import {
+  safeCompare,
+  checkPinRateLimit,
+  recordPinFailure,
+  resetPinAttempts,
+  generateBoothSessionToken
+} from './api/_lib/boothAuth.js'
+
 // Load environment variables from .env if present
 dotenv.config()
 
@@ -34,6 +42,8 @@ app.use(cors({
     'X-Agent-Secret',
     'x-pin',
     'X-Pin',
+    'x-booth-token',
+    'X-Booth-Token',
     'Accept',
     'Origin',
     'X-Requested-With'
@@ -125,14 +135,47 @@ app.all('/api/agent/heartbeat', async (req, res) => {
   }
 })
 
-// Booth Operator Authentication (Validates against BOOTH_PIN)
+// Booth Operator Authentication (Validates against BOOTH_STATION_PIN / BOOTH_PIN with rate limiting and signed session token)
 const handleBoothLogin = (req, res) => {
-  const { pin } = req.body || {}
-  const validPin = process.env.BOOTH_PIN || '4921'
-  if (pin && String(pin).trim() === String(validPin).trim()) {
-    return res.json({ success: true, message: 'Booth authenticated' })
+  const ip = req.ip || req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown'
+  const rateLimit = checkPinRateLimit(ip)
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: `Too many failed PIN attempts. Please wait ${rateLimit.remainingSecs} seconds before trying again.`,
+    })
   }
-  return res.status(401).json({ success: false, error: 'Wrong PIN. Try again.' })
+
+  const configuredPin = process.env.BOOTH_STATION_PIN || process.env.BOOTH_PIN
+  if (!configuredPin) {
+    console.error('[SECURITY_CONFIG_ERROR] Neither BOOTH_STATION_PIN nor BOOTH_PIN is configured on the server.')
+    return res.status(500).json({
+      success: false,
+      error: 'Station PIN service misconfigured. Server administrator must set BOOTH_STATION_PIN.',
+    })
+  }
+
+  const { pin } = req.body || {}
+  if (pin && safeCompare(String(pin).trim(), String(configuredPin).trim())) {
+    resetPinAttempts(ip)
+    const boothToken = generateBoothSessionToken()
+    if (!boothToken) {
+      console.error('[SECURITY_CONFIG_ERROR] Session signing secret is not configured on the server.')
+      return res.status(500).json({
+        success: false,
+        error: 'Station session service misconfigured. Server administrator must set SESSION_SECRET or JWT_SECRET.',
+      })
+    }
+    return res.json({
+      success: true,
+      message: 'Booth authenticated',
+      boothToken,
+      expiresIn: 28800,
+    })
+  }
+
+  recordPinFailure(ip)
+  return res.status(401).json({ success: false, error: 'Incorrect station PIN. Access denied.' })
 }
 app.post('/api/booth/login', handleBoothLogin)
 app.post('/booth-login', handleBoothLogin)

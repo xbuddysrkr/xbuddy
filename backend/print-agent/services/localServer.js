@@ -131,12 +131,18 @@ async function downloadFile(url, destPath) {
   }
 }
 
-const BOOTH_PIN = process.env.BOOTH_PIN || '4921'
-
 app.post('/booth-login', (req, res) => {
-  const { pin } = req.body
-  if (!pin) return res.json({ success: false, error: 'PIN required' })
-  if (pin !== BOOTH_PIN) return res.json({ success: false, error: 'Wrong PIN. Try again.' })
+  const configuredPin = process.env.BOOTH_STATION_PIN || process.env.BOOTH_PIN
+  if (!configuredPin) {
+    return res.status(500).json({ success: false, error: 'Station PIN service not configured on print agent.' })
+  }
+  const { pin } = req.body || {}
+  if (!pin) return res.status(400).json({ success: false, error: 'PIN required' })
+  const crypto = require('crypto')
+  const bufA = Buffer.from(String(pin).trim())
+  const bufB = Buffer.from(String(configuredPin).trim())
+  const matches = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)
+  if (!matches) return res.status(401).json({ success: false, error: 'Incorrect station PIN. Access denied.' })
   res.json({ success: true })
 })
 
