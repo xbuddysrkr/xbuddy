@@ -128,21 +128,22 @@ console.log('\n[TEST 3] Verifying score changes when switching templates...')
 const scoreMinimal = calculateAtsReadiness({ ...dynamicResume, template: 'minimal' })
 const scoreCreative = calculateAtsReadiness({ ...dynamicResume, template: 'creative' })
 
-assert.equal(scoreMinimal.breakdown.templateCompatibility.score, 25, 'Minimal ATS must score 25')
-assert.equal(scoreCreative.breakdown.templateCompatibility.score, 16, 'Two-column creative template must score 16')
-assert.equal(scoreCreative.breakdown.templateCompatibility.rating, 'provisional_caution')
+// In the new model, template selection creates a slight layout advisory (7 vs 5), NOT a 9-point penalty on content!
+assert.equal(scoreMinimal.breakdown.structureLayout.details.find(d => d.key === 'template_layout')?.score, 7, 'Minimal ATS layout score must be 7')
+assert.equal(scoreCreative.breakdown.structureLayout.details.find(d => d.key === 'template_layout')?.score, 5, 'Two-column creative layout score must be 5')
+assert.equal(scoreCreative.breakdown.structureLayout.templateRating, 'provisional_caution')
 assert(
-  scoreCreative.suggestions.some(s => s.category === 'template'),
+  scoreCreative.suggestions.some(s => s.category === 'structure'),
   'Switching to two-column template must generate a layout caution suggestion'
 )
-console.log('✓ TEST 3 PASSED: Template compatibility score reacts deterministically across templates')
+console.log('✓ TEST 3 PASSED: Template compatibility score reacts deterministically across templates without dominating content score')
 
 // 4. JOB MATCH UI STATES & VALIDATION
 console.log('\n[TEST 4] Verifying Job Match states (uncalculated, limited information, calculated)...')
 
 // State A: Uncalculated / empty
 const emptyJdResult = calculateJobMatch(dynamicResume, '')
-assert.equal(emptyJdResult.status, 'insufficient_job_description')
+assert.equal(emptyJdResult.status, 'not_calculated')
 assert.equal(emptyJdResult.score, null)
 
 // State B: Insufficient / brief JD

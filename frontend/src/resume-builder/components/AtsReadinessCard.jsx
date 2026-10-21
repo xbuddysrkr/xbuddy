@@ -123,11 +123,11 @@ export default function AtsReadinessCard({ resume }) {
         </div>
         <div className="p-1.5 rounded-lg bg-white/80 border border-slate-200/60">
           <div className="text-[9px] text-slate-500 truncate">{t('resume.categoryCompleteness')}</div>
-          <div className="text-xs font-bold text-slate-700">{breakdown.completeness.score}/25</div>
+          <div className="text-xs font-bold text-slate-700">{breakdown.completeness.score}/20</div>
         </div>
         <div className="p-1.5 rounded-lg bg-white/80 border border-slate-200/60">
-          <div className="text-[9px] text-slate-500 truncate">{t('resume.categoryTemplate')}</div>
-          <div className="text-xs font-bold text-slate-700">{breakdown.templateCompatibility.score}/25</div>
+          <div className="text-[9px] text-slate-500 truncate">{t('resume.categoryEvidence')}</div>
+          <div className="text-xs font-bold text-slate-700">{breakdown.contentEvidence.score}/25</div>
         </div>
       </div>
 
@@ -187,35 +187,25 @@ export default function AtsReadinessCard({ resume }) {
             </span>
 
             <div className="space-y-1">
-              {/* Category 1 */}
+              {/* Category 1: Identity & Contact */}
               <div className="p-2 rounded-xl bg-white/95 border border-slate-100 flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700">{t('resume.categoryIdentity')}</span>
                 <span className="font-bold text-slate-800">{breakdown.identity.score} / {breakdown.identity.max}</span>
               </div>
 
-              {/* Category 2 */}
+              {/* Category 2: Section Completeness & Substance */}
               <div className="p-2 rounded-xl bg-white/95 border border-slate-100 flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700">{t('resume.categoryCompleteness')}</span>
                 <span className="font-bold text-slate-800">{breakdown.completeness.score} / {breakdown.completeness.max}</span>
               </div>
 
-              {/* Category 3: Template Compatibility Profile */}
-              <div className="p-2 rounded-xl bg-white/95 border border-slate-100 space-y-1 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-700">{t('resume.categoryTemplate')}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${getTplBadgeStyle(tplComp.rating)}`}>
-                      {tplComp.profileBadge}
-                    </span>
-                    <span className="font-bold text-slate-800">{tplComp.score} / {tplComp.max}</span>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-500 leading-tight">
-                  Selected template: <span className="font-medium text-slate-700 capitalize">{tplComp.templateId}</span>. Ratings are provisional layout heuristics until full text-stream validation.
-                </p>
+              {/* Category 3: Skills & Technical Relevance */}
+              <div className="p-2 rounded-xl bg-white/95 border border-slate-100 flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-700">{t('resume.categorySkillsRelevance')}</span>
+                <span className="font-bold text-slate-800">{(breakdown.skillsRelevance || breakdown.skillsQuality).score} / {(breakdown.skillsRelevance || breakdown.skillsQuality).max}</span>
               </div>
 
-              {/* Category 4: Content Specificity & Action Verbs */}
+              {/* Category 4: Accomplishments & Supporting Evidence */}
               <div className="p-2 rounded-xl bg-white/95 border border-slate-100 space-y-1 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-slate-700">{t('resume.categoryEvidence')}</span>
@@ -235,16 +225,26 @@ export default function AtsReadinessCard({ resume }) {
                 )}
               </div>
 
-              {/* Category 5: Formatting Hygiene */}
+              {/* Category 5: Consistency & Formatting Hygiene */}
               <div className="p-2 rounded-xl bg-white/95 border border-slate-100 flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700">{t('resume.categoryHygiene')}</span>
                 <span className="font-bold text-slate-800">{breakdown.formattingHygiene.score} / {breakdown.formattingHygiene.max}</span>
               </div>
 
-              {/* Category 6: Skills Quality */}
-              <div className="p-2 rounded-xl bg-white/95 border border-slate-100 flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-700">{t('resume.categorySkillsQuality')}</span>
-                <span className="font-bold text-slate-800">{breakdown.skillsQuality.score} / {breakdown.skillsQuality.max}</span>
+              {/* Category 6: Clarity & Standard Resume Structure */}
+              <div className="p-2 rounded-xl bg-white/95 border border-slate-100 space-y-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">{t('resume.categoryStructure')}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${getTplBadgeStyle(tplComp.rating)}`}>
+                      {tplComp.profileBadge}
+                    </span>
+                    <span className="font-bold text-slate-800">{(breakdown.structureLayout || breakdown.templateCompatibility).score} / {(breakdown.structureLayout || breakdown.templateCompatibility).max}</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  Selected template: <span className="font-medium text-slate-700 capitalize">{tplComp.templateId}</span>. Single-column layouts preserve natural linear text flow for automated parsers.
+                </p>
               </div>
             </div>
           </div>

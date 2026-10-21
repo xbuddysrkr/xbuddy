@@ -292,8 +292,8 @@ export default function JobMatchPanel({ resume }) {
                 <span className="font-bold">{matchResult.breakdown.requiredSkills.score} / {matchResult.breakdown.requiredSkills.max}</span>
               </div>
               <div className="flex items-center justify-between text-slate-700">
-                <span>{t('resume.skillOverlapCategory')}</span>
-                <span className="font-bold">{matchResult.breakdown.skillOverlap.score} / {matchResult.breakdown.skillOverlap.max}</span>
+                <span>{t('resume.otherSkillsCategory') || t('resume.skillOverlapCategory')}</span>
+                <span className="font-bold">{(matchResult.breakdown.otherSkills || matchResult.breakdown.skillOverlap).score} / {(matchResult.breakdown.otherSkills || matchResult.breakdown.skillOverlap).max}</span>
               </div>
               <div className="flex items-center justify-between text-slate-700">
                 <span>{t('resume.projectEvidenceCategory')}</span>
