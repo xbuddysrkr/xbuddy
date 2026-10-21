@@ -12,7 +12,7 @@ export default function TrustStats() {
       title: t('trustStats.stat1Title', 'Academic'),
       label: t('trustStats.stat1Label', 'Toolkit'),
       description: t('trustStats.stat1Desc', 'Academic toolkit, form generation & utilities'),
-      tag: t('trustStats.stat1Tag', 'Coming Soon'),
+      tag: null,
     },
     {
       icon: Zap,

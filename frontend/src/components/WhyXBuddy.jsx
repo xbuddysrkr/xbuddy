@@ -1,6 +1,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { Clock, ShieldCheck, Wallet, Store, Layers, CheckCircle2 } from 'lucide-react'
+import { Lock, ShieldCheck, Wallet, Store, Layers, CheckCircle2 } from 'lucide-react'
 import { useLanguage } from '../i18n/LanguageContext'
 
 export default function WhyXBuddy() {
@@ -9,13 +9,13 @@ export default function WhyXBuddy() {
   const features = [
     {
       icon: Layers,
-      title: t('whyXBuddy.f1Title', 'Academic Toolkit'),
-      description: t('whyXBuddy.f1Desc', 'Generate resumes, leave letters, bonafide requests, and format lab manuals in seconds.'),
+      title: t('whyXBuddy.feat1Title', t('whyXBuddy.f1Title', 'Academic Toolkit')),
+      description: t('whyXBuddy.feat1Desc', t('whyXBuddy.f1Desc', 'Generate resumes, leave letters, bonafide requests, and format lab manuals in seconds.')),
     },
     {
-      icon: Clock,
-      title: t('whyXBuddy.f2Title', 'Zero Waiting Lines'),
-      description: t('whyXBuddy.f2Desc', 'Order prints directly from your classroom or hostel and skip the crowd at the Xerox shop.'),
+      icon: Lock,
+      title: t('whyXBuddy.feat2Title', 'Data Privacy'),
+      description: t('whyXBuddy.feat2Desc', 'Your files and documents are encrypted in transit and automatically deleted after printing.'),
     },
     {
       icon: Store,
