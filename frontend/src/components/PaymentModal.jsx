@@ -20,35 +20,22 @@ import { detectPlatform, getPhonePeLaunchUrl, buildUpiQuery, getUpiUrls } from '
 import { useLanguage } from '../i18n/LanguageContext'
 import { getPaymentConfig, createDirectUpiIntentOrder, pollDirectUpiOrderStatus } from '../utils/api'
 
-// Official Xerox Shopkeeper Receiving UPI Credentials (PhonePe Merchant QR)
-const OFFICIAL_UPI_ID = 'Q433336995@ybl'
-const OFFICIAL_PAYEE_NAME = 'PhonePeMerchant'
+// Official Xerox Shopkeeper Receiving UPI Credentials
+const OFFICIAL_UPI_ID = '9100280705@ybl'
+const OFFICIAL_PAYEE_NAME = 'THANALA VS NSP SAILOKESH'
 
 function sanitizeUpiId(id) {
-  if (!id || typeof id !== 'string') return OFFICIAL_UPI_ID
-  const clean = id.trim()
-  if (
-    clean.toLowerCase().includes('sreekar') ||
-    clean.toLowerCase().includes('okaxis') ||
-    clean.includes('9100280705') ||
-    clean.toLowerCase().includes('q4333369951')
-  ) {
+  if (!id || typeof id !== 'string' || id.toLowerCase().includes('sreekar') || id.toLowerCase().includes('okaxis')) {
     return OFFICIAL_UPI_ID
   }
-  return clean
+  return id.trim()
 }
 
 function sanitizePayeeName(name) {
-  if (!name || typeof name !== 'string') return OFFICIAL_PAYEE_NAME
-  const clean = name.trim()
-  if (
-    clean.toLowerCase().includes('sreekar') ||
-    clean.toLowerCase().includes('thota') ||
-    clean.toUpperCase().includes('SAILOKESH')
-  ) {
+  if (!name || typeof name !== 'string' || name.toLowerCase().includes('sreekar') || name.toLowerCase().includes('thota')) {
     return OFFICIAL_PAYEE_NAME
   }
-  return clean
+  return name.trim()
 }
 
 const DEFAULT_UPI_ID = sanitizeUpiId(import.meta.env.VITE_UPI_ID)

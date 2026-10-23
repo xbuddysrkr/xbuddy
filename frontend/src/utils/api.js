@@ -1374,26 +1374,13 @@ export async function triggerBrowserPrint(blobOrUrl) {
  */
 export async function getPaymentConfig() {
   const sanitize = (id, fallback) => {
-    if (
-      !id ||
-      typeof id !== 'string' ||
-      id.toLowerCase().includes('sreekar') ||
-      id.toLowerCase().includes('okaxis') ||
-      id.includes('9100280705') ||
-      id.toLowerCase().includes('q4333369951')
-    ) {
+    if (!id || typeof id !== 'string' || id.toLowerCase().includes('sreekar') || id.toLowerCase().includes('okaxis')) {
       return fallback
     }
     return id.trim()
   }
   const sanitizeName = (name, fallback) => {
-    if (
-      !name ||
-      typeof name !== 'string' ||
-      name.toLowerCase().includes('sreekar') ||
-      name.toLowerCase().includes('thota') ||
-      name.toUpperCase().includes('SAILOKESH')
-    ) {
+    if (!name || typeof name !== 'string' || name.toLowerCase().includes('sreekar') || name.toLowerCase().includes('thota')) {
       return fallback
     }
     return name.trim()
@@ -1406,8 +1393,8 @@ export async function getPaymentConfig() {
       if (data && data.upiId) {
         return {
           success: true,
-          upiId: sanitize(data.upiId, 'Q433336995@ybl'),
-          payeeName: sanitizeName(data.payeeName, 'PhonePeMerchant'),
+          upiId: sanitize(data.upiId, '9100280705@ybl'),
+          payeeName: sanitizeName(data.payeeName, 'THANALA VS NSP SAILOKESH'),
         }
       }
     }
@@ -1416,8 +1403,8 @@ export async function getPaymentConfig() {
   }
   return {
     success: true,
-    upiId: sanitize(import.meta.env.VITE_UPI_ID, 'Q433336995@ybl'),
-    payeeName: sanitizeName(import.meta.env.VITE_PAYEE_NAME, 'PhonePeMerchant'),
+    upiId: sanitize(import.meta.env.VITE_UPI_ID, '9100280705@ybl'),
+    payeeName: sanitizeName(import.meta.env.VITE_PAYEE_NAME, 'THANALA VS NSP SAILOKESH'),
   }
 }
 
