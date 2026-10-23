@@ -261,6 +261,8 @@ export const te = {
     utrRequired: 'దయచేసి ట్రాన్సాక్షన్ ID (UTR) ని నమోదు చేయండి.',
     utrMinLength: 'ట్రాన్సాక్షన్ ID కనీసం 6 అక్షరాలు ఉండాలి.',
     utrReuseError: 'పాత ట్రాన్సాక్షన్ ID ని ఉపయోగించలేరు. ప్రతి రీప్రింట్‌కు కొత్త పేమెంట్ వివరాలు అవసరం.',
+    saveQrImage: 'QR కోడ్ సేవ్ చేయండి',
+    phonePeSteps: 'చెల్లింపు విధానం',
   },
   orderProgress: {
     stepUploadLabel: 'డాక్యుమెంట్ ప్రిపేర్ అవుతోంది',

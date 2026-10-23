@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import QRCode from 'qrcode'
 import PaymentProofForm from './PaymentProofForm'
+import PaymentQrInstructionsModal from './PaymentQrInstructionsModal'
 import {
   Smartphone,
   QrCode,
@@ -15,8 +16,12 @@ import {
   Clock,
   ExternalLink,
   ShieldCheck,
+  Download,
+  FileImage,
+  Info,
 } from 'lucide-react'
-import { detectPlatform, getPhonePeLaunchUrl, buildUpiQuery, getUpiUrls } from '../utils/upiLauncher'
+import { detectPlatform, getPhonePeLaunchUrl, buildUpiQuery, getUpiUrls, openPhonePeAppOnly } from '../utils/upiLauncher'
+import { buildQrFilename, generateSharpQrPng, triggerQrDownload } from '../utils/qrDownload'
 import { useLanguage } from '../i18n/LanguageContext'
 import { getPaymentConfig, createDirectUpiIntentOrder, pollDirectUpiOrderStatus } from '../utils/api'
 
@@ -123,7 +128,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [step, setStep] = useState('SELECT')
   const [selectedApp, setSelectedApp] = useState(null)
   const [copiedUpi, setCopiedUpi] = useState(false)
-  const [viewMode, setViewMode] = useState('apps') // 'apps' | 'qr'
+  const [viewMode, setViewMode] = useState('qr') // Default to 'qr' for instant QR download & display
   const [desktopNotice, setDesktopNotice] = useState('')
   const [fallbackNotice, setFallbackNotice] = useState('')
   const [genericFallbackUri, setGenericFallbackUri] = useState('')
@@ -137,6 +142,13 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   // Direct UPI Intent Session from Server
   const [intentData, setIntentData] = useState(null)
   const [vectorQrSvg, setVectorQrSvg] = useState('')
+  const [pngDataUrl, setPngDataUrl] = useState('')
+
+  // Auto-Download & Instructions Popup State
+  const [showInstructionsPopup, setShowInstructionsPopup] = useState(false)
+  const [isDownloaded, setIsDownloaded] = useState(false)
+  const [downloadError, setDownloadError] = useState(false)
+  const autoDownloadedOrdersRef = useRef(new Set())
 
   // 5-Minute Checkout Expiry Countdown (300 seconds)
   const [remainingSeconds, setRemainingSeconds] = useState(300)
@@ -163,7 +175,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   })
   const genericUpiUri = intentData?.upiUri || `upi://pay?${upiQuery}`
 
-  // ── 1. Fetch Safe Receiving Config on Mount ───────────────────────────────
+  // ── 1. Fetch Safe Receiving Config & Authoritative Order on Mount ────────
   useEffect(() => {
     let isMounted = true
     getPaymentConfig()
@@ -178,15 +190,21 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       .catch((err) => {
         console.warn('[Direct UPI Config Warn]:', err)
       })
+
+    // Immediately register order on server to ensure persistent orderId & authoritative intent
+    registerIntentOrderOnServer()
+
     return () => {
       isMounted = false
     }
   }, [])
 
-  // ── 2. Vector SVG QR Generation ──────────────────────────────────────────
+  // ── 2. Vector SVG & High-Res PNG QR Generation ───────────────────────────
   useEffect(() => {
     if (!genericUpiUri) return
     let isCancelled = false
+
+    // 2a. Vector SVG for clean on-screen rendering
     QRCode.toString(genericUpiUri, {
       type: 'svg',
       margin: 1,
@@ -202,10 +220,59 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       .catch((err) => {
         console.warn('[Vector QR Generation Warn]:', err)
       })
+
+    // 2b. High-Res PNG for sharp mobile download & UPI app gallery scanning
+    generateSharpQrPng(genericUpiUri, {
+      width: 800,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    })
+      .then((dataUrl) => {
+        if (!isCancelled) setPngDataUrl(dataUrl)
+      })
+      .catch((err) => {
+        console.warn('[PNG QR Generation Warn]:', err)
+      })
+
     return () => {
       isCancelled = true
     }
   }, [genericUpiUri])
+
+  // ── 3. Automatic QR Download Trigger (Idempotent per Order) ───────────────
+  useEffect(() => {
+    if (!pngDataUrl || !activeOrderId) return
+    if (autoDownloadedOrdersRef.current.has(activeOrderId)) return
+
+    autoDownloadedOrdersRef.current.add(activeOrderId)
+    const filename = buildQrFilename(activeOrderId)
+    const success = triggerQrDownload(pngDataUrl, filename)
+
+    setIsDownloaded(true)
+    setDownloadError(!success)
+    setShowInstructionsPopup(true)
+  }, [pngDataUrl, activeOrderId])
+
+  // ── 4. Re-Download & App Launcher Handlers ────────────────────────────────
+  function handleDownloadAgain() {
+    const filename = buildQrFilename(activeOrderId)
+    if (pngDataUrl) {
+      const success = triggerQrDownload(pngDataUrl, filename)
+      setDownloadError(!success)
+      if (success) setIsDownloaded(true)
+    } else if (genericUpiUri) {
+      generateSharpQrPng(genericUpiUri, { width: 800, margin: 2 }).then((url) => {
+        setPngDataUrl(url)
+        const success = triggerQrDownload(url, filename)
+        setDownloadError(!success)
+        if (success) setIsDownloaded(true)
+      })
+    }
+  }
+
+  function handleOpenPhonePe() {
+    openPhonePeAppOnly()
+  }
 
   // ── 3. 5-Minute Checkout Countdown Timer ──────────────────────────────────
   useEffect(() => {
@@ -486,7 +553,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                   </div>
 
                   {/* Crisp Vector SVG QR Code */}
-                  <div className="bg-white rounded-2xl p-4 mb-3 mx-auto w-fit border border-orange-200 shadow-sm">
+                  <div className="bg-white rounded-2xl p-4 mb-2 mx-auto w-fit border border-orange-200 shadow-sm">
                     {vectorQrSvg ? (
                       <div
                         className="w-48 h-48 mx-auto flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-lg"
@@ -497,6 +564,24 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                         Generating Vector QR...
                       </div>
                     )}
+                  </div>
+
+                  {/* QR Action Buttons: Download Again & PhonePe Instructions */}
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={handleDownloadAgain}
+                      className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" /> {t('payment.saveQrImage', 'Save QR Image')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowInstructionsPopup(true)}
+                      className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#5f259f] border border-purple-200 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                    >
+                      <Smartphone className="w-3.5 h-3.5" /> {t('payment.phonePeSteps', 'Payment Steps')}
+                    </button>
                   </div>
 
                   {/* Order & Receiving Details */}
@@ -653,6 +738,20 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
           )}
         </div>
       </motion.div>
+
+      {/* Dynamic Payment QR Instructions & PhonePe Popup */}
+      <PaymentQrInstructionsModal
+        isOpen={showInstructionsPopup}
+        onClose={() => setShowInstructionsPopup(false)}
+        amount={total}
+        orderId={activeOrderId}
+        payeeName={receiverConfig.payeeName}
+        remainingSeconds={remainingSeconds}
+        onDownloadAgain={handleDownloadAgain}
+        onOpenPhonePe={platform !== 'desktop' ? handleOpenPhonePe : null}
+        isDownloaded={isDownloaded}
+        downloadError={downloadError}
+      />
     </AnimatePresence>
   )
 }

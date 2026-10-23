@@ -261,6 +261,8 @@ export const en = {
     utrRequired: 'Please enter the Transaction ID.',
     utrMinLength: 'Transaction ID must be at least 6 characters.',
     utrReuseError: 'Cannot reuse the original order transaction ID. Every reprint requires a new payment and transaction reference.',
+    saveQrImage: 'Save QR Image',
+    phonePeSteps: 'Payment Steps',
   },
   orderProgress: {
     stepUploadLabel: 'Preparing Document',
