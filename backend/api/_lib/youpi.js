@@ -9,8 +9,8 @@ import crypto from 'node:crypto'
  * Live mode is disabled by default via YOUPI_PG_ENABLED=false.
  */
 
-export const DEFAULT_YOUPI_API_URL = 'http://localhost:6100'
-export const DEFAULT_YOUPI_PORTAL_URL = 'http://localhost:7000'
+export const DEFAULT_YOUPI_API_URL = ''
+export const DEFAULT_YOUPI_PORTAL_URL = ''
 
 /**
  * Feature flag check

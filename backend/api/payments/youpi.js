@@ -242,6 +242,7 @@ export async function youpiPaymentHandler(req, res) {
       })
     } catch (sessionErr) {
       console.warn(`[YOUPI_GATEWAY_OFFLINE] Remote YouPI gateway unreachable at ${getYouPiConfig().apiUrl}: ${sessionErr.message}. Generating local staging session for testing.`)
+      const portalUrl = getYouPiConfig().portalUrl
       const localPaymentId = `pay_staging_${cleanId}`
       session = {
         paymentId: localPaymentId,
@@ -250,7 +251,7 @@ export async function youpiPaymentHandler(req, res) {
         amountPaise: String(expectedPaise),
         currency: 'INR',
         status: 'ACTIVE',
-        checkoutUrl: `${getYouPiConfig().portalUrl}/checkout/${localPaymentId}`,
+        checkoutUrl: portalUrl ? `${portalUrl}/checkout/${localPaymentId}` : null,
         isStagingEmulated: true,
       }
     }

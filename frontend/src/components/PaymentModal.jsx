@@ -205,7 +205,21 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   async function handleLaunchYouPiGateway() {
     const session = await ensureYouPiSession()
     if (session) {
-      setStep('YOUPI_CHECKOUT')
+      if (platform === 'desktop') {
+        setViewMode('qr')
+        setDesktopNotice(`Please scan the QR code below using your mobile UPI app to pay ₹${session.amount || total}.`)
+        handleGatewaySuccess(session.orderId)
+      } else {
+        const genericIntent = session.upiIntents?.generic
+        if (genericIntent) {
+          try {
+            window.location.href = genericIntent
+          } catch (launchErr) {
+            console.warn('[Generic Launch Fallback]:', launchErr)
+          }
+        }
+        handleGatewaySuccess(session.orderId)
+      }
     }
   }
 
@@ -275,8 +289,12 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       const session = await ensureYouPiSession()
       if (session) {
         if (platform === 'desktop') {
-          // On desktop, show the supported YouPI checkout portal / QR modal
-          setStep('YOUPI_CHECKOUT')
+          // On desktop, switch to QR code mode inside the modal (never open localhost)
+          setSelectedApp(app)
+          setViewMode('qr')
+          setDesktopNotice(`Please scan the QR code below using ${app.name} on your mobile phone to pay ₹${session.amount || total}.`)
+          setFallbackNotice('')
+          handleGatewaySuccess(session.orderId)
           return
         }
 
@@ -849,7 +867,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
               {/* Action Buttons */}
               <div className="space-y-2 pt-1">
-                {youpiSession?.checkoutUrl && (
+                {youpiSession?.checkoutUrl && !youpiSession.checkoutUrl.includes('localhost') && (
                   <a
                     href={youpiSession.checkoutUrl}
                     target="_blank"
