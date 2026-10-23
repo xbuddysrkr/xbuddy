@@ -232,8 +232,8 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
   }
 
   window.__XBUDDY_UPI_DIAGNOSTIC__ = function (testAmount = 15) {
-    const upiId = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
-    const payeeName = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
+    const upiId = import.meta.env.VITE_UPI_ID || '9100280705@ybl'
+    const payeeName = import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
     const note = 'XBuddy Print Test'
     const refId = 'TEST_REF_123'
     const upiQuery = buildUpiQuery({ upiId, payeeName, amount: testAmount, note, refId })

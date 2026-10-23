@@ -22,10 +22,10 @@ import { useLanguage } from '../i18n/LanguageContext'
 import { getYouPiConfig, createYouPiSession, pollYouPiPaymentStatus } from '../utils/api'
 import { fileToBase64 } from '../utils/fileToBase64'
 
-const UPI_ID = import.meta.env.VITE_UPI_ID || 'xbuddy@upi'
-const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'Xerox Buddy'
-const GPAY_UPI_ID = import.meta.env.VITE_GPAY_UPI_ID || 'sreekarthota2007@okaxis'
-const GPAY_PAYEE_NAME = import.meta.env.VITE_GPAY_PAYEE_NAME || 'Sreekar Thota'
+const UPI_ID = import.meta.env.VITE_UPI_ID || '9100280705@ybl'
+const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
+const GPAY_UPI_ID = import.meta.env.VITE_GPAY_UPI_ID || '9100280705@ybl'
+const GPAY_PAYEE_NAME = import.meta.env.VITE_GPAY_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
 
 const PAYMENT_APPS = [
   {
