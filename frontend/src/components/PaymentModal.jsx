@@ -270,10 +270,6 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     }
   }
 
-  function handleOpenPhonePe() {
-    openPhonePeAppOnly()
-  }
-
   // ── 3. 5-Minute Checkout Countdown Timer ──────────────────────────────────
   useEffect(() => {
     const timer = setInterval(() => {
@@ -739,7 +735,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
         </div>
       </motion.div>
 
-      {/* Dynamic Payment QR Instructions & PhonePe Popup */}
+      {/* Dynamic Payment QR Instructions Popup */}
       <PaymentQrInstructionsModal
         isOpen={showInstructionsPopup}
         onClose={() => setShowInstructionsPopup(false)}
@@ -748,7 +744,6 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
         payeeName={receiverConfig.payeeName}
         remainingSeconds={remainingSeconds}
         onDownloadAgain={handleDownloadAgain}
-        onOpenPhonePe={platform !== 'desktop' ? handleOpenPhonePe : null}
         isDownloaded={isDownloaded}
         downloadError={downloadError}
       />

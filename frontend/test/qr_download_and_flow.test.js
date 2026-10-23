@@ -101,6 +101,39 @@ assert.ok(modalSource.includes('phonePeSteps'), 'PaymentModal must render step-b
 assert.ok(modalSource.includes('PaymentQrInstructionsModal'), 'PaymentModal must include PaymentQrInstructionsModal')
 console.log('✓ TEST 6 PASSED: PaymentModal includes QR download button and PhonePe scanner instructions')
 
+// TEST 7: PaymentQrInstructionsModal component inspection
+console.log('\n[TEST 7] Verifying PaymentQrInstructionsModal source & requirements...')
+const instructionsSource = fs.readFileSync(path.join(__dirname, '../src/components/PaymentQrInstructionsModal.jsx'), 'utf-8')
+
+// No Open PhonePe button
+assert.ok(!instructionsSource.includes('Open PhonePe App'), 'Must NOT have an Open PhonePe button')
+assert.ok(!instructionsSource.includes('onOpenPhonePe'), 'Must NOT accept or call onOpenPhonePe')
+
+// Animated phone visual & steps
+assert.ok(instructionsSource.includes('AnimatedPhoneVisual'), 'Must include AnimatedPhoneVisual component')
+assert.ok(instructionsSource.includes('step-app'), 'Must have step 1 for opening UPI app')
+assert.ok(instructionsSource.includes('step-scan'), 'Must have step 2 for scanning QR & gallery')
+assert.ok(instructionsSource.includes('step-select'), 'Must have step 3 for selecting saved XBuddy QR')
+assert.ok(instructionsSource.includes('useReducedMotion'), 'Must support reduced motion accessibility')
+
+// Prominent instruction & dynamic amount notice
+assert.ok(instructionsSource.includes('almostThere'), 'Must render Almost there! heading')
+assert.ok(instructionsSource.includes('upiFlowPrompt'), 'Must render prominent upiFlowPrompt')
+assert.ok(instructionsSource.includes('upiAmountPreFilled'), 'Must render pre-filled amount notice')
+assert.ok(instructionsSource.includes('formattedAmount'), 'Must format dynamic order amount')
+assert.ok(instructionsSource.includes('formattedCountdown'), 'Must render 5-minute countdown timer')
+console.log('✓ TEST 7 PASSED: PaymentQrInstructionsModal satisfies all prompt design & functional requirements')
+
+// TEST 8: Bilingual keys for playful popup
+console.log('\n[TEST 8] Verifying playful popup bilingual keys...')
+const requiredKeys = ['almostThere', 'step1Desc', 'step2Desc', 'step3Desc', 'upiFlowPrompt', 'upiAmountPreFilled', 'downloadFailed', 'downloadFallback', 'gotItPay']
+for (const key of requiredKeys) {
+  assert.ok(en.payment[key], `en.payment.${key} must exist`)
+  assert.ok(te.payment[key], `te.payment.${key} must exist`)
+}
+console.log('✓ TEST 8 PASSED: All playful popup keys exist in English and Telugu')
+
 console.log('\n============================================================')
 console.log('🎉 ALL QR DOWNLOAD & PAYMENT FLOW VERIFICATION TESTS PASSED!')
 console.log('============================================================')
+
