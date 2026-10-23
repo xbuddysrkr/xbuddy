@@ -24,27 +24,25 @@ export function getShopkeeperUpiConfig() {
     process.env.XBUDDY_UPI_ID ||
     process.env.VITE_UPI_ID ||
     process.env.UPI_ID ||
-    '9100280705@ybl'
+    'Q433336995@ybl'
   ).trim()
 
   let payeeName = (
     process.env.XBUDDY_UPI_NAME ||
     process.env.VITE_PAYEE_NAME ||
     process.env.PAYEE_NAME ||
-    'THANALA VS NSP SAILOKESH'
+    'PhonePeMerchant'
   ).trim()
 
-  // Strict override: if stale legacy Sreekar Thota VPA is present, override with official shopkeeper
-  if (upiId.includes('sreekar') || upiId.includes('okaxis') || !upiId) {
-    upiId = '9100280705@ybl'
-  }
-  if (payeeName.toLowerCase().includes('sreekar') || payeeName.toLowerCase().includes('thota') || !payeeName) {
-    payeeName = 'THANALA VS NSP SAILOKESH'
+  // Normalize typo or legacy VPAs
+  if (upiId.toLowerCase().includes('q4333369951') || upiId.toLowerCase().includes('q433336995')) {
+    upiId = 'Q433336995@ybl'
+  } else if (upiId.includes('sreekar') || upiId.includes('okaxis') || upiId.includes('9100280705') || !upiId) {
+    upiId = 'Q433336995@ybl'
   }
 
-  // Basic VPA format validation: must have local and domain parts separated by @
-  if (!upiId.includes('@') || upiId.startsWith('@') || upiId.endsWith('@')) {
-    throw new Error(`Invalid receiving UPI ID format: "${upiId}". Expected format: username@bank`)
+  if (payeeName.toLowerCase().includes('sreekar') || payeeName.toLowerCase().includes('thota') || !payeeName) {
+    payeeName = 'PhonePeMerchant'
   }
 
   // Basic VPA format validation: must have local and domain parts separated by @
@@ -110,6 +108,12 @@ export function buildDirectUpiUri({ payeeVpa, payeeName, amountPaise, orderId, d
     `tr=${encodeURIComponent(orderId)}`,
     `tn=${encodeURIComponent(cleanDesc)}`,
   ]
+
+  if (payeeVpa.toUpperCase().startsWith('Q') && payeeVpa.toLowerCase().endsWith('@ybl')) {
+    params.push('mc=0000')
+    params.push('mode=02')
+    params.push('purpose=00')
+  }
 
   return `upi://pay?${params.join('&')}`
 }

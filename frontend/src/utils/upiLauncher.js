@@ -107,6 +107,12 @@ export function buildUpiQuery({ upiId, payeeName, amount, note, refId }) {
     parts.push(`tr=${encodeURIComponent(String(refId))}`)
   }
 
+  if (upiId && upiId.toUpperCase().startsWith('Q') && upiId.toLowerCase().endsWith('@ybl')) {
+    parts.push('mc=0000')
+    parts.push('mode=02')
+    parts.push('purpose=00')
+  }
+
   return parts.join('&')
 }
 
@@ -232,8 +238,8 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
   }
 
   window.__XBUDDY_UPI_DIAGNOSTIC__ = function (testAmount = 15) {
-    const upiId = import.meta.env.VITE_UPI_ID || '9100280705@ybl'
-    const payeeName = import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
+    const upiId = import.meta.env.VITE_UPI_ID || 'Q433336995@ybl'
+    const payeeName = import.meta.env.VITE_PAYEE_NAME || 'PhonePeMerchant'
     const note = 'XBuddy Print Test'
     const refId = 'TEST_REF_123'
     const upiQuery = buildUpiQuery({ upiId, payeeName, amount: testAmount, note, refId })
