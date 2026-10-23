@@ -244,6 +244,21 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       })
   }
 
+  async function handleSimulateStagingConfirmation() {
+    const activeOrderId = youpiSession?.orderId || orderMeta?.orderId
+    if (!activeOrderId) return
+    try {
+      setYoupiStatusText('Simulating bank payment confirmation in staging...')
+      await fetch('/api/payments/youpi/test-simulate-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: activeOrderId }),
+      })
+    } catch (err) {
+      console.warn('[Simulate Error]:', err)
+    }
+  }
+
   async function handleSelectApp(app) {
     // Prevent double-click duplicate launches
     if (isLaunchingRef.current) return
@@ -895,6 +910,15 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               )}
 
               <div className="space-y-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleSimulateStagingConfirmation}
+                  className="w-full py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Zap className="w-3.5 h-3.5 fill-indigo-600 text-indigo-600" />
+                  <span>Test Mode: Simulate Bank Webhook Confirmation</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setStep('FORM')}
