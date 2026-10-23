@@ -91,7 +91,52 @@ app.get('/health', async (req, res) => {
   })
 })
 
-// YouPI-PG Payment Gateway Routes (Experimental Staging Adapter)
+// ── Direct UPI Payments API (Authoritative Shopkeeper Intent & Vector QR) ────
+app.all('/api/payments/config', async (req, res) => {
+  try {
+    const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
+    req.path = 'config'
+    await directUpiPaymentHandler(req, res)
+  } catch (err) {
+    console.error('[SERVER ERROR /api/payments/config]:', err)
+    if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.all('/api/payments/create-intent-order', async (req, res) => {
+  try {
+    const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
+    req.path = 'create-intent-order'
+    await directUpiPaymentHandler(req, res)
+  } catch (err) {
+    console.error('[SERVER ERROR /api/payments/create-intent-order]:', err)
+    if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.all('/api/payments/order-status', async (req, res) => {
+  try {
+    const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
+    req.path = 'order-status'
+    await directUpiPaymentHandler(req, res)
+  } catch (err) {
+    console.error('[SERVER ERROR /api/payments/order-status]:', err)
+    if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.all('/api/payments/qr-svg', async (req, res) => {
+  try {
+    const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
+    req.path = 'qr-svg'
+    await directUpiPaymentHandler(req, res)
+  } catch (err) {
+    console.error('[SERVER ERROR /api/payments/qr-svg]:', err)
+    if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// YouPI-PG Gateway Routes (Deprecated / Staging Fallback Only - YOUPI_PG_ENABLED=false)
 app.all('/api/payments/youpi', async (req, res) => {
   try {
     const { youpiPaymentHandler } = await import('./api/payments/youpi.js')

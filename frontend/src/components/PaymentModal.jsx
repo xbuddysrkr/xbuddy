@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import QRCode from 'qrcode'
 import PaymentProofForm from './PaymentProofForm'
 import {
   Smartphone,
@@ -8,24 +9,19 @@ import {
   Check,
   ArrowRight,
   RotateCcw,
-  ShieldCheck,
   CheckCircle2,
   Lightbulb,
   X,
-  Zap,
-  AlertCircle,
+  Clock,
   ExternalLink,
-  Loader2
+  ShieldCheck,
 } from 'lucide-react'
-import { detectPlatform, directLaunchUPI, buildUpiQuery, openPhonePeAppOnly, getPhonePeLaunchUrl } from '../utils/upiLauncher'
+import { detectPlatform, getPhonePeLaunchUrl, buildUpiQuery, getUpiUrls } from '../utils/upiLauncher'
 import { useLanguage } from '../i18n/LanguageContext'
-import { getYouPiConfig, createYouPiSession, pollYouPiPaymentStatus } from '../utils/api'
-import { fileToBase64 } from '../utils/fileToBase64'
+import { getPaymentConfig, createDirectUpiIntentOrder, pollDirectUpiOrderStatus } from '../utils/api'
 
-const UPI_ID = import.meta.env.VITE_UPI_ID || '9100280705@ybl'
-const PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
-const GPAY_UPI_ID = import.meta.env.VITE_GPAY_UPI_ID || '9100280705@ybl'
-const GPAY_PAYEE_NAME = import.meta.env.VITE_GPAY_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
+const DEFAULT_UPI_ID = import.meta.env.VITE_UPI_ID || '9100280705@ybl'
+const DEFAULT_PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
 
 const PAYMENT_APPS = [
   {
@@ -52,7 +48,10 @@ const PAYMENT_APPS = [
     bgGradient: 'from-blue-50 to-white hover:from-blue-100/70',
     icon: (
       <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-blue-600 flex items-center justify-center font-extrabold text-xs shadow-xs">
-        <span className="text-[#4285F4]">G</span><span className="text-[#EA4335]">P</span><span className="text-[#FBBC05]">a</span><span className="text-[#34A853]">y</span>
+        <span className="text-[#4285F4]">G</span>
+        <span className="text-[#EA4335]">P</span>
+        <span className="text-[#FBBC05]">a</span>
+        <span className="text-[#34A853]">y</span>
       </div>
     ),
   },
@@ -102,7 +101,7 @@ const PAYMENT_APPS = [
 
 export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const { t } = useLanguage()
-  // Step states: 'SELECT' | 'PHONEPE_MANUAL' | 'LAUNCHING' | 'DID_YOU_PAY' | 'FORM' | 'YOUPI_CHECKOUT' | 'YOUPI_VERIFYING'
+  // Step states: 'SELECT' | 'LAUNCHING' | 'DID_YOU_PAY' | 'FORM'
   const [step, setStep] = useState('SELECT')
   const [selectedApp, setSelectedApp] = useState(null)
   const [copiedUpi, setCopiedUpi] = useState(false)
@@ -110,58 +109,147 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [desktopNotice, setDesktopNotice] = useState('')
   const [fallbackNotice, setFallbackNotice] = useState('')
   const [genericFallbackUri, setGenericFallbackUri] = useState('')
+
+  // Shopkeeper Receiving Details from Server
+  const [receiverConfig, setReceiverConfig] = useState({
+    upiId: DEFAULT_UPI_ID,
+    payeeName: DEFAULT_PAYEE_NAME,
+  })
+
+  // Direct UPI Intent Session from Server
+  const [intentData, setIntentData] = useState(null)
+  const [vectorQrSvg, setVectorQrSvg] = useState('')
+
+  // 5-Minute Checkout Expiry Countdown (300 seconds)
+  const [remainingSeconds, setRemainingSeconds] = useState(300)
+
   const launchingTimeoutRef = useRef(null)
   const isLaunchingRef = useRef(false)
-
-  // YouPI-PG Gateway Staging State
-  const [youpiConfig, setYoupiConfig] = useState({ enabled: false })
-  const [youpiSession, setYoupiSession] = useState(null)
-  const [youpiLoading, setYoupiLoading] = useState(false)
-  const [youpiError, setYoupiError] = useState('')
-  const [youpiStatusText, setYoupiStatusText] = useState('')
   const isPollingRef = useRef(false)
 
   const platform = detectPlatform()
   const phonePeLaunchUrl = getPhonePeLaunchUrl()
 
-  // Active UPI ID & Payee Name (uses custom GPay UPI ID when GPay is selected)
-  const activeUpiId = selectedApp?.id === 'gpay' ? GPAY_UPI_ID : UPI_ID
-  const activePayeeName = selectedApp?.id === 'gpay' ? GPAY_PAYEE_NAME : PAYEE_NAME
+  const activeOrderId = orderMeta?.orderId || intentData?.orderId || ''
+  const note = orderMeta?.isReprint
+    ? `XBuddy Reprint ${activeOrderId}`
+    : `XBuddy Print ${activeOrderId}`
 
-  // Build standard UPI URI for QR code and generic fallback (exact matching merchant VPA, 2-decimals amount, and refId)
-  const note = orderMeta?.isReprint ? `XBuddy Reprint ${orderMeta.orderId}` : `XBuddy Print ${orderMeta?.fileName ? orderMeta.fileName.slice(0, 15) : 'Order'}`
-  const refId = orderMeta?.attemptId || orderMeta?.orderId || orderMeta?.fileId || ''
-  const upiQuery = buildUpiQuery({ upiId: activeUpiId, payeeName: activePayeeName, amount: total, note, refId })
-  const genericUpiUri = `upi://pay?${upiQuery}`
-  const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(genericUpiUri)}&size=220x220&margin=4`
+  // Build standard UPI URI for QR code and generic fallback
+  const upiQuery = buildUpiQuery({
+    upiId: receiverConfig.upiId,
+    payeeName: receiverConfig.payeeName,
+    amount: total,
+    note,
+    refId: activeOrderId,
+  })
+  const genericUpiUri = intentData?.upiUri || `upi://pay?${upiQuery}`
 
-  // Fetch gateway configuration on mount
+  // ── 1. Fetch Safe Receiving Config on Mount ───────────────────────────────
   useEffect(() => {
-    getYouPiConfig().then((cfg) => {
-      if (cfg?.enabled) {
-        setYoupiConfig(cfg)
-      }
-    })
+    let isMounted = true
+    getPaymentConfig()
+      .then((cfg) => {
+        if (isMounted && cfg && cfg.upiId) {
+          setReceiverConfig({
+            upiId: cfg.upiId,
+            payeeName: cfg.payeeName || DEFAULT_PAYEE_NAME,
+          })
+        }
+      })
+      .catch((err) => {
+        console.warn('[Direct UPI Config Warn]:', err)
+      })
+    return () => {
+      isMounted = false
+    }
   }, [])
 
-  // Listen to postMessage events from YouPI-PG checkout modal / iframe
+  // ── 2. Vector SVG QR Generation ──────────────────────────────────────────
   useEffect(() => {
-    function handleGatewayMessage(e) {
-      if (!e.data || typeof e.data !== 'object') return
-      const evt = String(e.data.event || e.data.type || '').toUpperCase()
-      if (evt.includes('SUCCESS')) {
-        handleGatewaySuccess()
-      } else if (evt.includes('FAILED')) {
-        setYoupiError(t('payment.gatewayFailed', 'Payment was not completed or timed out on gateway.'))
-      } else if (evt.includes('CANCEL')) {
-        setYoupiError(t('payment.gatewayCancelled', 'Payment was cancelled.'))
-      } else if (evt.includes('EXPIRE')) {
-        setYoupiError(t('payment.gatewayExpired', 'Payment session expired. Please retry.'))
-      }
+    if (!genericUpiUri) return
+    let isCancelled = false
+    QRCode.toString(genericUpiUri, {
+      type: 'svg',
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'M',
+    })
+      .then((svg) => {
+        if (!isCancelled) setVectorQrSvg(svg)
+      })
+      .catch((err) => {
+        console.warn('[Vector QR Generation Warn]:', err)
+      })
+    return () => {
+      isCancelled = true
     }
-    window.addEventListener('message', handleGatewayMessage)
-    return () => window.removeEventListener('message', handleGatewayMessage)
-  }, [youpiSession])
+  }, [genericUpiUri])
+
+  // ── 3. 5-Minute Checkout Countdown Timer ──────────────────────────────────
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const formatCountdown = (seconds) => {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+
+  // ── 4. Authoritative Server Order Persistence on Click ───────────────────
+  async function registerIntentOrderOnServer() {
+    try {
+      const orderPayload = {
+        orderId: orderMeta?.orderId,
+        fileName: orderMeta?.fileName,
+        totalPages: orderMeta?.totalPages || orderMeta?.filePages || 1,
+        copies: orderMeta?.copies || 1,
+        colorMode: orderMeta?.colorMode || 'bw',
+        duplex: orderMeta?.isDoubleSide || orderMeta?.duplex || false,
+        printableCount: orderMeta?.printableCount || orderMeta?.selectedPagesCount,
+        phoneNumber: orderMeta?.phoneNumber,
+        isReprint: orderMeta?.isReprint,
+      }
+      const data = await createDirectUpiIntentOrder(orderPayload)
+      if (data && data.success) {
+        setIntentData(data)
+        if (data.qrSvg) {
+          setVectorQrSvg(data.qrSvg)
+        }
+        return data
+      }
+    } catch (err) {
+      console.warn('[Direct UPI Order Registration Notice]:', err.message)
+    }
+    return null
+  }
+
+  // ── 5. Background Verification Polling ────────────────────────────────────
+  useEffect(() => {
+    if (!activeOrderId || isPollingRef.current) return
+    isPollingRef.current = true
+
+    pollDirectUpiOrderStatus(activeOrderId, {
+      maxAttempts: 60,
+      intervalMs: 3000,
+      onStatusUpdate: (order) => {
+        if (order.isPaid || order.paymentStatus === 'paid' || order.paymentStatus === 'verified') {
+          setTimeout(() => {
+            onSuccess(activeOrderId, order)
+          }, 600)
+        }
+      },
+    }).finally(() => {
+      isPollingRef.current = false
+    })
+  }, [activeOrderId, onSuccess])
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -172,188 +260,46 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     }
   }, [])
 
-  async function ensureYouPiSession() {
-    if (youpiSession && youpiSession.orderId) return youpiSession
-    setYoupiLoading(true)
-    setYoupiError('')
-    try {
-      let b64 = orderMeta?.pdfBase64 || null
-      if (!b64 && orderMeta?.pdfFile) {
-        try {
-          b64 = await fileToBase64(orderMeta.pdfFile)
-        } catch {}
-      }
-
-      const session = await createYouPiSession({
-        ...orderMeta,
-        pdfBase64: b64,
-        amount: total,
-        returnUrl: window.location.href,
-      })
-
-      setYoupiSession(session)
-      return session
-    } catch (err) {
-      console.warn('[YouPI Session Notice]:', err.message)
-      setYoupiError(err.message || 'Unable to connect to gateway session. Using fallback.')
-      return null
-    } finally {
-      setYoupiLoading(false)
-    }
-  }
-
-  async function handleLaunchYouPiGateway() {
-    const session = await ensureYouPiSession()
-    if (session) {
-      if (platform === 'desktop') {
-        setViewMode('qr')
-        setDesktopNotice(`Please scan the QR code below using your mobile UPI app to pay ₹${session.amount || total}.`)
-        handleGatewaySuccess(session.orderId)
-      } else {
-        const genericIntent = session.upiIntents?.generic
-        if (genericIntent) {
-          try {
-            window.location.href = genericIntent
-          } catch (launchErr) {
-            console.warn('[Generic Launch Fallback]:', launchErr)
-          }
-        }
-        handleGatewaySuccess(session.orderId)
-      }
-    }
-  }
-
-  function handleGatewaySuccess(explicitOrderId) {
-    const activeOrderId = explicitOrderId || youpiSession?.orderId || orderMeta?.orderId
-    if (!activeOrderId) return
-
-    setStep('YOUPI_VERIFYING')
-    setYoupiStatusText('Waiting for authoritative bank confirmation via secure webhook...')
-
-    if (isPollingRef.current) return
-    isPollingRef.current = true
-
-    pollYouPiPaymentStatus(activeOrderId, {
-      maxAttempts: 45,
-      intervalMs: 2000,
-      onStatusUpdate: (status) => {
-        if (status.paymentStatus === 'paid') {
-          setYoupiStatusText('Payment verified authoritatively! Order queued for printing.')
-        }
-      },
-    })
-      .then((res) => {
-        isPollingRef.current = false
-        if (res.verified) {
-          setTimeout(() => {
-            onSuccess(activeOrderId, res.order)
-          }, 800)
-        } else {
-          setYoupiError('Authoritative confirmation has not arrived yet. If money was deducted, enter Transaction ID below.')
-        }
-      })
-      .catch(() => {
-        isPollingRef.current = false
-        setYoupiError('Verification polling encountered an issue. Please verify with transaction ID.')
-      })
-  }
-
-  async function handleSimulateStagingConfirmation() {
-    const activeOrderId = youpiSession?.orderId || orderMeta?.orderId
-    if (!activeOrderId) return
-    try {
-      setYoupiStatusText('Simulating bank payment confirmation in staging...')
-      await fetch('/api/payments/youpi/test-simulate-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: activeOrderId }),
-      })
-    } catch (err) {
-      console.warn('[Simulate Error]:', err)
-    }
-  }
-
+  // ── 6. Handle App Tap / Launch ────────────────────────────────────────────
   async function handleSelectApp(app) {
-    // Prevent double-click duplicate launches
     if (isLaunchingRef.current) return
     isLaunchingRef.current = true
     setTimeout(() => {
       isLaunchingRef.current = false
     }, 1500)
 
-    const platform = detectPlatform()
+    setSelectedApp(app)
 
-    // ── 1. IF YOUPI-PG GATEWAY IS ENABLED (STAGING / DEVELOPMENT) ──
-    if (youpiConfig?.enabled) {
-      setSelectedApp(app)
-      const session = await ensureYouPiSession()
-      if (session) {
-        if (platform === 'desktop') {
-          // On desktop, switch to QR code mode inside the modal (never open localhost)
-          setSelectedApp(app)
-          setViewMode('qr')
-          setDesktopNotice(`Please scan the QR code below using ${app.name} on your mobile phone to pay ₹${session.amount || total}.`)
-          setFallbackNotice('')
-          handleGatewaySuccess(session.orderId)
-          return
-        }
+    // Ensure order is authoritatively registered on server
+    const serverIntent = await registerIntentOrderOnServer()
 
-        // On mobile: Launch direct UPI intent for selected app without intermediate web pages
-        const intentUrl = session.upiIntents?.[app.id] || session.upiIntents?.generic
-        if (intentUrl) {
-          try {
-            window.location.href = intentUrl
-          } catch (launchErr) {
-            console.warn('[App Launch Intent Fallback]:', launchErr)
-          }
-        }
-
-        // Advance immediately to authoritative verification state and poll order status
-        handleGatewaySuccess(session.orderId)
-        return
-      }
-      // If session failed to initialize, proceed to fallback cleanly
-    }
-
-    // ── 2. NATIVE FALLBACK WORKFLOW (PRODUCTION / GATEWAY DISABLED) ──
     if (platform === 'desktop') {
-      setSelectedApp(app)
       setViewMode('qr')
-      setDesktopNotice('Please use your mobile device to open the payment app, or scan the QR code below.')
+      setDesktopNotice(`Please scan the QR code below using ${app.name} on your mobile phone to pay ₹${Number(total || 0).toFixed(2)}.`)
       setFallbackNotice('')
       return
     }
 
     setDesktopNotice('')
     setFallbackNotice('')
-    setSelectedApp(app)
 
-    // PHONEPE APP ONLY LAUNCH:
-    // Pure app launch — absolutely no payment parameters, no amount, no recipient, no prefilled screen.
-    if (app.id === 'phonepe') {
-      openPhonePeAppOnly()
-      setStep('PHONEPE_MANUAL')
-      return
-    }
-
-    // Custom UPI ID for Google Pay
-    const targetUpiId = app.id === 'gpay' ? GPAY_UPI_ID : UPI_ID
-    const targetPayeeName = app.id === 'gpay' ? GPAY_PAYEE_NAME : PAYEE_NAME
-
-    // Synchronous direct top-level navigation inside the user's tap gesture for other UPI apps
-    const { genericFallbackUrl } = directLaunchUPI({
+    // Generate app-specific intent or generic UPI URI
+    const targetQuery = serverIntent?.upiUri ? serverIntent.upiUri.replace(/^upi:\/\/pay\?/, '') : upiQuery
+    const { primary, genericFallback } = getUpiUrls({
       appId: app.id,
-      upiId: targetUpiId,
-      payeeName: targetPayeeName,
-      amount: total,
-      note,
-      refId,
+      platform,
+      upiQuery: targetQuery,
     })
 
-    setGenericFallbackUri(genericFallbackUrl)
+    setGenericFallbackUri(genericFallback)
     setStep('LAUNCHING')
 
-    // Transition to DID_YOU_PAY confirmation after browser pause/return window
+    try {
+      window.location.href = primary
+    } catch (launchErr) {
+      console.warn('[App Launch Intent Fallback]:', launchErr)
+    }
+
     if (launchingTimeoutRef.current) clearTimeout(launchingTimeoutRef.current)
     launchingTimeoutRef.current = setTimeout(() => {
       setStep((currentStep) => (currentStep === 'LAUNCHING' ? 'DID_YOU_PAY' : currentStep))
@@ -362,7 +308,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
   function copyUpiId() {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(activeUpiId)
+      navigator.clipboard.writeText(receiverConfig.upiId)
       setCopiedUpi(true)
       setTimeout(() => setCopiedUpi(false), 2000)
     }
@@ -372,7 +318,9 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     <AnimatePresence>
       <motion.div
         key="backdrop"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         onClick={onClose}
         className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
       />
@@ -397,93 +345,35 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               <p className="text-gray-400 text-xs">
                 {orderMeta?.isReprint
                   ? t('payment.reprintNotice', 'New payment required for reprint · 30-min window')
-                  : (step === 'FORM' ? t('payment.enterTxDetails', 'Enter transaction details') : t('payment.payUpiSubtitle', 'Pay via UPI and confirm your order'))}
+                  : (step === 'FORM' ? t('payment.enterTxDetails', 'Enter transaction details') : t('payment.payUpiSubtitle', 'Direct UPI Payment to Shopkeeper'))}
               </p>
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all cursor-pointer"
-              aria-label="Close Payment Modal"
+              className="text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+              aria-label="Close payment modal"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
 
-          {orderMeta?.isReprint && (
-            <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between shadow-2xs">
-              <span className="font-semibold">{t('payment.reprintingOrder', 'Reprinting Order:')} <strong className="font-mono text-amber-950 font-bold">{orderMeta.orderId}</strong></span>
-              <span className="text-amber-700 font-medium text-[11px] bg-amber-100/80 px-2 py-0.5 rounded-md">{t('payment.separatePayment', 'Separate Payment')}</span>
-            </div>
-          )}
-
-          {/* Amount breakdown badge */}
-          <div className="bg-orange-50/80 border border-orange-200 rounded-2xl p-3.5 mb-4 text-xs">
-            <div className="flex justify-between text-gray-500 mb-1">
-              <span>{t('payment.printingCost', 'Printing Cost')}</span>
-              <span className="font-semibold text-gray-800">₹{orderMeta?.printingCost ?? total}</span>
-            </div>
-            <div className="flex justify-between text-gray-500 mb-1.5">
-              <span>{t('payment.digitalProcessingFee', 'Digital Processing Fee')}</span>
-              <span className="font-semibold text-gray-800">+₹{orderMeta?.digitalProcessingFee ?? orderMeta?.serviceFee ?? 0}</span>
-            </div>
-            <div className="flex justify-between items-center border-t border-orange-200 pt-2 font-bold">
-              <span className="text-slate-800 text-sm">{t('payment.totalPayable', 'Total Payable:')}</span>
-              <span className="text-[#F78C25] font-extrabold text-2xl">₹{total}</span>
-            </div>
-          </div>
-
-          {/* ─── STEP 1: SELECT PAYMENT METHOD ─── */}
+          {/* ─── STEP 1: PAYMENT APP SELECTOR & QR CODE ─── */}
           {step === 'SELECT' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              {/* Optional YouPI-PG Gateway Integration Option (Staging / Controlled Dev) */}
-              {youpiConfig?.enabled && (
-                <div className="mb-4 p-3.5 rounded-2xl border-2 border-indigo-200 bg-gradient-to-r from-indigo-50/90 via-purple-50/60 to-white shadow-xs">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-                        <Zap className="w-4 h-4 fill-white" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-indigo-950 text-xs">YouPI-PG Gateway</span>
-                        <span className="ml-1.5 text-[9px] font-extrabold uppercase tracking-wide bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">Staging</span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-extrabold text-indigo-700">₹{total}</span>
-                  </div>
-                  <p className="text-[11px] text-indigo-800/80 mb-2.5">
-                    Pay via YouPI hosted gateway with authoritative webhook verification.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleLaunchYouPiGateway}
-                    disabled={youpiLoading}
-                    className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-60 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    {youpiLoading ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Initializing Gateway...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Pay via YouPI Gateway</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </>
-                    )}
-                  </button>
-                  {youpiError && (
-                    <p className="text-[10px] text-rose-600 font-semibold mt-2 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3 shrink-0" />
-                      <span>{youpiError}</span>
-                    </p>
-                  )}
-                  <div className="mt-2 pt-2 border-t border-indigo-100 text-center">
-                    <span className="text-[10px] text-indigo-400 font-medium">Or choose a manual payment method below ↓</span>
-                  </div>
+              {/* Amount Banner */}
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl p-4 text-center border border-orange-100 mb-4 shadow-2xs">
+                <span className="text-xs text-slate-500 font-medium block mb-1">
+                  {orderMeta?.isReprint ? t('payment.amountToPayReprint', 'Reprint Amount:') : t('payment.amountToPay', 'Amount to Pay:')}
+                </span>
+                <span className="text-3xl font-black text-[#F78C25] tracking-tight">₹{Number(total || 0).toFixed(2)}</span>
+                <div className="flex items-center justify-center gap-1.5 mt-2 text-[11px] text-slate-500">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Direct UPI · Receiver: <strong>{receiverConfig.payeeName}</strong></span>
                 </div>
-              )}
+              </div>
 
-              {/* Tab Selector */}
+              {/* View Switcher Tabs: 1-Tap UPI Apps vs Scan QR Code */}
               <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-semibold">
                 <button
                   type="button"
@@ -496,7 +386,10 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setViewMode('qr')}
+                  onClick={() => {
+                    setViewMode('qr')
+                    registerIntentOrderOnServer()
+                  }}
                   className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     viewMode === 'qr' ? 'bg-white text-[#F78C25] shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
                   }`}
@@ -527,45 +420,16 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
                   <p className="text-[11px] font-semibold text-slate-500 mb-1 flex items-center justify-between">
                     <span>{t('payment.selectAppToOpen', 'Select app to open:')}</span>
-                    <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">{t('payment.directLauncher', 'Direct Launcher')}</span>
+                    <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">Direct Launcher</span>
                   </p>
 
                   {PAYMENT_APPS.map((app) => {
-                    const isPhonePeMobile = app.id === 'phonepe' && platform !== 'desktop' && phonePeLaunchUrl && !youpiConfig?.enabled
-
-                    if (isPhonePeMobile) {
-                      return (
-                        <a
-                          key={app.id}
-                          href={phonePeLaunchUrl}
-                          onClick={() => {
-                            setSelectedApp(app)
-                            setStep('PHONEPE_MANUAL')
-                          }}
-                          className={`w-full py-2.5 px-3 rounded-2xl border ${app.borderColor} bg-gradient-to-r ${app.bgGradient} text-slate-900 font-semibold text-xs flex items-center justify-between shadow-xs hover:shadow-md transition-all cursor-pointer group no-underline`}
-                        >
-                          <div className="flex items-center gap-3">
-                            {app.icon}
-                            <div className="text-left">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-slate-900 text-xs">{app.name}</span>
-                              </div>
-                              <p className="text-[10px] text-slate-400">{app.description}</p>
-                            </div>
-                          </div>
-                          <span className="font-bold text-xs flex items-center gap-1 group-hover:translate-x-0.5 transition-transform" style={{ color: app.textColor }}>
-                            {t('payment.openApp', { name: app.name })} <ArrowRight className="w-3 h-3" />
-                          </span>
-                        </a>
-                      )
-                    }
-
                     return (
                       <button
                         key={app.id}
                         type="button"
                         onClick={() => handleSelectApp(app)}
-                        className={`w-full py-2.5 px-3 rounded-2xl border ${app.borderColor} bg-gradient-to-r ${app.bgGradient} text-slate-900 font-semibold text-xs flex items-center justify-between shadow-xs hover:shadow-md transition-all cursor-pointer group`}
+                        className={`w-full p-3 rounded-2xl border ${app.borderColor} bg-gradient-to-r ${app.bgGradient} flex items-center justify-between transition-all duration-150 cursor-pointer group shadow-2xs hover:shadow-xs`}
                       >
                         <div className="flex items-center gap-3">
                           {app.icon}
@@ -585,38 +449,55 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                 </div>
               )}
 
-              {/* View: QR Code */}
+              {/* View: Vector SVG QR Code */}
               {viewMode === 'qr' && (
                 <div className="mb-4 text-center">
-                  {fallbackNotice ? (
-                    <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium flex items-center justify-center gap-1.5">
-                      <Lightbulb className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>{fallbackNotice}</span>
-                    </div>
-                  ) : desktopNotice ? (
+                  {desktopNotice ? (
                     <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-medium flex items-center justify-center gap-1.5">
                       <Smartphone className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                       <span>{desktopNotice}</span>
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-500 mb-2">{t('payment.scanWithApps', 'Scan using PhonePe, GPay, Paytm, or BHIM')}</p>
+                    <p className="text-xs text-slate-500 mb-2">{t('payment.scanWithApps', 'Scan using PhonePe, Google Pay, Paytm, or BHIM')}</p>
                   )}
-                  <div className="bg-[#FFF8F2] rounded-2xl p-3.5 mb-3 mx-auto w-fit border border-orange-100 shadow-xs">
-                    <img
-                      src={dynamicQrUrl}
-                      alt="UPI Payment QR Code"
-                      className="w-48 h-48 object-contain rounded-lg"
-                      onError={(e) => {
-                        e.target.src = '/qr-code.png'
-                      }}
-                    />
+
+                  {/* 5-Minute Expiry Countdown Badge */}
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full py-1 px-3 w-fit mx-auto mb-3">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Session expires in: <strong>{formatCountdown(remainingSeconds)}</strong></span>
+                  </div>
+
+                  {/* Crisp Vector SVG QR Code */}
+                  <div className="bg-white rounded-2xl p-4 mb-3 mx-auto w-fit border border-orange-200 shadow-sm">
+                    {vectorQrSvg ? (
+                      <div
+                        className="w-48 h-48 mx-auto flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:rounded-lg"
+                        dangerouslySetInnerHTML={{ __html: vectorQrSvg }}
+                      />
+                    ) : (
+                      <div className="w-48 h-48 mx-auto flex items-center justify-center text-slate-400 text-xs">
+                        Generating Vector QR...
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Order & Receiving Details */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 text-xs space-y-1 text-left">
+                    <div className="flex justify-between text-slate-500 text-[11px]">
+                      <span>Shop Name:</span>
+                      <strong className="text-slate-800">{receiverConfig.payeeName}</strong>
+                    </div>
+                    <div className="flex justify-between text-slate-500 text-[11px]">
+                      <span>Order Reference:</span>
+                      <strong className="font-mono text-slate-800">{activeOrderId}</strong>
+                    </div>
                   </div>
 
                   {/* UPI ID copy */}
                   <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
                     <div className="text-left">
                       <span className="text-slate-400 text-[10px] block">{t('payment.upiId', 'UPI ID')}</span>
-                      <span className="font-mono font-bold text-slate-700">{activeUpiId}</span>
+                      <span className="font-mono font-bold text-slate-700">{receiverConfig.upiId}</span>
                     </div>
                     <button
                       type="button"
@@ -650,90 +531,6 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
             </motion.div>
           )}
 
-          {/* ─── PHONEPE MANUAL APP LAUNCH STEP ─── */}
-          {step === 'PHONEPE_MANUAL' && (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-4 text-center space-y-3.5">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-center relative shadow-sm">
-                <div className="w-9 h-9 rounded-xl bg-[#5f259f] text-white flex items-center justify-center font-bold text-lg shadow-xs">
-                  पे
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-slate-900 text-base">{t('payment.openingPhonePe', 'Opening PhonePe...')}</h4>
-                <p className="text-xs text-slate-500 mt-1">
-                  {t('payment.payManuallyInApp', { amount: Number(total || 0).toFixed(2) })}
-                </p>
-              </div>
-
-              {/* Requirement: clear message if app couldn't be opened */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium text-left flex items-start gap-2">
-                <Lightbulb className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>{t('payment.phonePeNotOpened', "PhonePe couldn't be opened. Please open PhonePe manually.")}</span>
-              </div>
-
-              {/* Quick Manual Payment Details */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">{t('payment.payableAmount', 'Payable Amount:')}</span>
-                  <span className="font-bold text-slate-800 text-sm">₹{Number(total || 0).toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between border-t border-slate-200 pt-2">
-                  <div className="text-left">
-                    <span className="text-slate-400 text-[10px] block">{t('payment.merchantUpiId', 'Merchant UPI ID')}</span>
-                    <span className="font-mono font-bold text-slate-700">{UPI_ID}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={copyUpiId}
-                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:text-[#5f259f] text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                  >
-                    {copiedUpi ? <><Check className="w-3 h-3 text-emerald-600" /> {t('common.copied', 'Copied')}</> : <><Copy className="w-3 h-3" /> {t('common.copy', 'Copy')}</>}
-                  </button>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-2 pt-1">
-                {phonePeLaunchUrl ? (
-                  <a
-                    href={phonePeLaunchUrl}
-                    className="w-full py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer no-underline"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" /> {t('payment.retryOpeningPhonePe', 'Retry Opening PhonePe')}
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => openPhonePeAppOnly()}
-                    className="w-full py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" /> {t('payment.retryOpeningPhonePe', 'Retry Opening PhonePe')}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setStep('FORM')}
-                  className="w-full py-2.5 bg-[#F78C25] text-white font-bold text-xs rounded-xl shadow-xs hover:bg-[#e07010] transition-colors cursor-pointer"
-                >
-                  {t('payment.completedInPhonePe', 'I Completed the Payment in PhonePe →')}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode('qr')
-                    setStep('SELECT')
-                  }}
-                  className="w-full py-2 text-slate-500 hover:text-slate-800 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-                >
-                  {t('payment.orPayUsingQr', 'Or Pay using UPI QR Code')}
-                </button>
-              </div>
-            </motion.div>
-          )}
-
           {/* ─── STEP 2: LAUNCHING APP ─── */}
           {step === 'LAUNCHING' && (
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-5 text-center space-y-3.5">
@@ -749,7 +546,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               <div className="space-y-2 pt-1">
                 <a
                   href={genericFallbackUri || genericUpiUri}
-                  className="w-full py-2.5 px-3 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2.5 px-3 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer no-underline"
                 >
                   <Smartphone className="w-3.5 h-3.5" /> {t('payment.appDidntOpen', { name: selectedApp?.name || 'App' })}
                 </a>
@@ -785,8 +582,15 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               <div>
                 <h4 className="font-bold text-slate-900 text-base">{t('payment.didYouPayTitle', 'Did you complete the payment?')}</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  {t('payment.didYouPaySubtitle', { amount: total, name: selectedApp?.name || 'UPI' })}
+                  {t('payment.didYouPaySubtitle', { amount: Number(total || 0).toFixed(2), name: selectedApp?.name || 'UPI' })}
                 </p>
+              </div>
+
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 font-medium text-left flex items-start gap-2">
+                <Lightbulb className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <span>
+                  Payment verification pending. Enter your UPI Transaction ID (UTR) or wait for shopkeeper approval to begin printing.
+                </span>
               </div>
 
               <div className="space-y-2 pt-2">
@@ -795,7 +599,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                   onClick={() => setStep('FORM')}
                   className="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Check className="w-4 h-4" /> {t('payment.yesIPaid', { amount: total })}
+                  <Check className="w-4 h-4" /> {t('payment.yesIPaid', { amount: Number(total || 0).toFixed(2) })}
                 </button>
                 <button
                   type="button"
@@ -816,7 +620,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
               <div className="flex items-center justify-between mb-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
                 <span className="text-slate-500 font-medium">{t('payment.paymentFor', 'Payment for:')}</span>
-                <span className="font-bold text-slate-800">₹{total}</span>
+                <span className="font-bold text-slate-800">₹{Number(total || 0).toFixed(2)}</span>
                 <button
                   type="button"
                   onClick={() => setStep('SELECT')}
@@ -827,131 +631,6 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               </div>
 
               <PaymentProofForm orderMeta={orderMeta} onSuccess={onSuccess} onClose={onClose} />
-            </motion.div>
-          )}
-
-          {/* ─── STEP 5: YOUPI-PG HOSTED CHECKOUT STEP ─── */}
-          {step === 'YOUPI_CHECKOUT' && (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-4 text-center space-y-4">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center relative shadow-xs">
-                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-xs">
-                  <Zap className="w-5 h-5 fill-white" />
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-slate-900 text-base">YouPI Gateway Checkout</h4>
-                <p className="text-xs text-slate-500 mt-1">
-                  Session created for order <strong className="font-mono text-slate-800">{youpiSession?.orderId}</strong>
-                </p>
-              </div>
-
-              {/* Amount Breakdown Card */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Order Reference:</span>
-                  <span className="font-mono font-bold text-slate-800">{youpiSession?.orderId}</span>
-                </div>
-                <div className="flex items-center justify-between border-t border-slate-200 pt-1.5">
-                  <span className="text-slate-500">Payable Amount:</span>
-                  <span className="font-bold text-indigo-700 text-sm">₹{youpiSession?.amount || total}</span>
-                </div>
-              </div>
-
-              {youpiError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-medium text-left flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <span>{youpiError}</span>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="space-y-2 pt-1">
-                {youpiSession?.checkoutUrl && !youpiSession.checkoutUrl.includes('localhost') && (
-                  <a
-                    href={youpiSession.checkoutUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer no-underline"
-                  >
-                    <span>Open YouPI Checkout Window</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleGatewaySuccess}
-                  className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>I Completed the Payment in YouPI →</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setStep('SELECT')}
-                  className="w-full py-2 text-slate-500 hover:text-slate-800 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-                >
-                  Return to UPI Apps & QR Code
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ─── STEP 6: YOUPI-PG AUTHORITATIVE VERIFICATION STEP ─── */}
-          {step === 'YOUPI_VERIFYING' && (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="py-5 text-center space-y-4">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center relative shadow-sm">
-                <div className="w-10 h-10 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-              </div>
-
-              <div>
-                <h4 className="font-bold text-slate-900 text-base">Authoritative Verification</h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-[280px] mx-auto">
-                  {youpiStatusText || 'Waiting for bank confirmation via secure HMAC-SHA256 webhook...'}
-                </p>
-              </div>
-
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium text-left flex items-start gap-2">
-                <Lightbulb className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>
-                  Please do not close this modal. Printing is authorized only once the gateway confirms settlement.
-                </span>
-              </div>
-
-              {youpiError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-medium text-left flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <span>{youpiError}</span>
-                </div>
-              )}
-
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={handleSimulateStagingConfirmation}
-                  className="w-full py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <Zap className="w-3.5 h-3.5 fill-indigo-600 text-indigo-600" />
-                  <span>Test Mode: Simulate Bank Webhook Confirmation</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setStep('FORM')}
-                  className="w-full py-2 text-xs font-semibold text-[#F78C25] hover:text-[#e07010] hover:underline cursor-pointer transition-colors"
-                >
-                  Taking longer than expected? Submit Transaction ID manually →
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep('SELECT')}
-                  className="w-full py-1.5 text-xs text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
-                >
-                  Cancel and choose another payment method
-                </button>
-              </div>
             </motion.div>
           )}
         </div>

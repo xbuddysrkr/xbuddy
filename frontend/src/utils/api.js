@@ -1367,24 +1367,33 @@ export async function triggerBrowserPrint(blobOrUrl) {
 /**
  * Fetch YouPI-PG configuration and feature flag status from the server
  */
-export async function getYouPiConfig() {
+// ── DIRECT UPI INTENT & VECTOR QR PAYMENTS ─────────────────────────────────
+
+/**
+ * Retrieves shopkeeper receiving UPI details securely from the backend.
+ */
+export async function getPaymentConfig() {
   try {
-    const res = await fetch('/api/payments/youpi/config', { signal: AbortSignal.timeout(5000) })
+    const res = await fetch('/api/payments/config', { signal: AbortSignal.timeout(5000) })
     if (res.ok) {
       return await res.json()
     }
   } catch (err) {
-    console.warn('[YouPI Config Fetch Warn]:', err.message)
+    console.warn('[Direct UPI Config Warn]:', err.message)
   }
-  const isEnvEnabled = String(import.meta.env.VITE_YOUPI_PG_ENABLED || 'false').toLowerCase() === 'true'
-  return { success: isEnvEnabled, enabled: isEnvEnabled }
+  return {
+    success: true,
+    upiId: import.meta.env.VITE_UPI_ID || '9100280705@ybl',
+    payeeName: import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH',
+  }
 }
 
 /**
- * Initiates an authoritative server-side YouPI-PG payment session
+ * Authoritatively creates a payment intent order on the backend before opening UPI apps.
+ * The backend recalculates the exact amount in integer paise.
  */
-export async function createYouPiSession(orderPayload) {
-  const res = await fetch('/api/payments/youpi/create-session', {
+export async function createDirectUpiIntentOrder(orderPayload) {
+  const res = await fetch('/api/payments/create-intent-order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(orderPayload),
@@ -1392,32 +1401,45 @@ export async function createYouPiSession(orderPayload) {
   })
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(data.error || `Payment session creation failed with HTTP ${res.status}`)
+    throw new Error(data.error || `Failed to create payment intent order: HTTP ${res.status}`)
   }
   return data
 }
 
 /**
- * Polls authoritative order payment verification status from MongoDB backend
+ * Polls the order's payment and verification status.
  */
-export async function pollYouPiPaymentStatus(orderId, { maxAttempts = 60, intervalMs = 2000, onStatusUpdate } = {}) {
+export async function pollDirectUpiOrderStatus(orderId, { maxAttempts = 60, intervalMs = 3000, onStatusUpdate } = {}) {
   const cleanId = String(orderId).trim().toUpperCase()
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const res = await fetch(`/api/payments/youpi/status/${cleanId}`, { signal: AbortSignal.timeout(5000) })
+      const res = await fetch(`/api/payments/order-status?orderId=${encodeURIComponent(cleanId)}`, {
+        signal: AbortSignal.timeout(5000),
+      })
       if (res.ok) {
         const data = await res.json()
         if (onStatusUpdate) onStatusUpdate(data)
-        if (data.paymentStatus === 'paid' || data.paymentStatus === 'completed') {
-          return { verified: true, paymentStatus: 'paid', order: data }
-        }
-        if (['failed', 'cancelled', 'expired'].includes(data.paymentStatus)) {
-          return { verified: false, paymentStatus: data.paymentStatus, order: data }
+        if (data.isPaid || data.paymentStatus === 'paid' || data.paymentStatus === 'verified') {
+          return { verified: true, paymentStatus: data.paymentStatus, order: data }
         }
       }
     } catch {}
     await new Promise((r) => setTimeout(r, intervalMs))
   }
-  return { verified: false, paymentStatus: 'timeout' }
+  return { verified: false, paymentStatus: 'pending' }
 }
+
+// ── DEPRECATED: YouPI-PG Gateway (Disabled in Production) ─────────────────────
+export async function getYouPiConfig() {
+  return { success: false, enabled: false }
+}
+
+export async function createYouPiSession() {
+  throw new Error('YouPI-PG gateway is disabled. Using Direct UPI.')
+}
+
+export async function pollYouPiPaymentStatus() {
+  return { verified: false, paymentStatus: 'disabled' }
+}
+
 
