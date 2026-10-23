@@ -20,6 +20,9 @@ import {
   toRupeesString,
   createYouPiPaymentSession,
   verifyYouPiWebhook,
+  buildUpiUri,
+  buildUpiIntentUri,
+  OFFICIAL_UPI_PACKAGES,
 } from '../_lib/youpi.js'
 
 /**
@@ -234,6 +237,7 @@ export async function youpiPaymentHandler(req, res) {
           copies: payload.copies || 1,
           billablePages: priceCalculation.totalBillablePages,
         },
+        fetchImpl: payload._mockFetch || undefined,
       })
 
       // Link paymentId with MongoDB document
@@ -248,6 +252,53 @@ export async function youpiPaymentHandler(req, res) {
         }
       )
 
+      const payeeVpa = session.payeeVpa || process.env.VITE_UPI_ID || '9100280705@ybl'
+      const payeeName = session.payeeName || process.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
+
+      const upiIntents = {
+        phonepe: buildUpiIntentUri({
+          payeeVpa,
+          payeeName,
+          amountPaise: expectedPaise,
+          orderId: cleanId,
+          packageName: OFFICIAL_UPI_PACKAGES.phonepe,
+        }),
+        gpay: buildUpiIntentUri({
+          payeeVpa,
+          payeeName,
+          amountPaise: expectedPaise,
+          orderId: cleanId,
+          packageName: OFFICIAL_UPI_PACKAGES.gpay,
+        }),
+        paytm: buildUpiIntentUri({
+          payeeVpa,
+          payeeName,
+          amountPaise: expectedPaise,
+          orderId: cleanId,
+          packageName: OFFICIAL_UPI_PACKAGES.paytm,
+        }),
+        bhim: buildUpiIntentUri({
+          payeeVpa,
+          payeeName,
+          amountPaise: expectedPaise,
+          orderId: cleanId,
+          packageName: OFFICIAL_UPI_PACKAGES.bhim,
+        }),
+        cred: buildUpiIntentUri({
+          payeeVpa,
+          payeeName,
+          amountPaise: expectedPaise,
+          orderId: cleanId,
+          packageName: OFFICIAL_UPI_PACKAGES.cred,
+        }),
+        generic: buildUpiUri({
+          payeeVpa,
+          payeeName,
+          amountPaise: expectedPaise,
+          orderId: cleanId,
+        }),
+      }
+
       return res.status(200).json({
         success: true,
         orderId: cleanId,
@@ -257,6 +308,9 @@ export async function youpiPaymentHandler(req, res) {
         amountPaise: session.amountPaise || String(expectedPaise),
         currency: session.currency || 'INR',
         portalUrl: getYouPiConfig().portalUrl,
+        payeeVpa,
+        payeeName,
+        upiIntents,
       })
     } catch (sessionErr) {
       console.error(`[YOUPI_SESSION_ERROR] Failed to create gateway session for ${cleanId}:`, sessionErr.message)

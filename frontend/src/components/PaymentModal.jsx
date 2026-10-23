@@ -172,7 +172,8 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     }
   }, [])
 
-  async function handleLaunchYouPiGateway() {
+  async function ensureYouPiSession() {
+    if (youpiSession && youpiSession.orderId) return youpiSession
     setYoupiLoading(true)
     setYoupiError('')
     try {
@@ -191,17 +192,25 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       })
 
       setYoupiSession(session)
-      setStep('YOUPI_CHECKOUT')
+      return session
     } catch (err) {
-      console.error('[YouPI Launch Error]:', err)
-      setYoupiError(err.message || 'Failed to initiate YouPI payment session')
+      console.warn('[YouPI Session Notice]:', err.message)
+      setYoupiError(err.message || 'Unable to connect to gateway session. Using fallback.')
+      return null
     } finally {
       setYoupiLoading(false)
     }
   }
 
-  function handleGatewaySuccess() {
-    const activeOrderId = youpiSession?.orderId || orderMeta?.orderId
+  async function handleLaunchYouPiGateway() {
+    const session = await ensureYouPiSession()
+    if (session) {
+      setStep('YOUPI_CHECKOUT')
+    }
+  }
+
+  function handleGatewaySuccess(explicitOrderId) {
+    const activeOrderId = explicitOrderId || youpiSession?.orderId || orderMeta?.orderId
     if (!activeOrderId) return
 
     setStep('YOUPI_VERIFYING')
@@ -235,7 +244,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       })
   }
 
-  function handleSelectApp(app) {
+  async function handleSelectApp(app) {
     // Prevent double-click duplicate launches
     if (isLaunchingRef.current) return
     isLaunchingRef.current = true
@@ -245,6 +254,35 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
     const platform = detectPlatform()
 
+    // ── 1. IF YOUPI-PG GATEWAY IS ENABLED (STAGING / DEVELOPMENT) ──
+    if (youpiConfig?.enabled) {
+      setSelectedApp(app)
+      const session = await ensureYouPiSession()
+      if (session) {
+        if (platform === 'desktop') {
+          // On desktop, show the supported YouPI checkout portal / QR modal
+          setStep('YOUPI_CHECKOUT')
+          return
+        }
+
+        // On mobile: Launch direct UPI intent for selected app without intermediate web pages
+        const intentUrl = session.upiIntents?.[app.id] || session.upiIntents?.generic
+        if (intentUrl) {
+          try {
+            window.location.href = intentUrl
+          } catch (launchErr) {
+            console.warn('[App Launch Intent Fallback]:', launchErr)
+          }
+        }
+
+        // Advance immediately to authoritative verification state and poll order status
+        handleGatewaySuccess(session.orderId)
+        return
+      }
+      // If session failed to initialize, proceed to fallback cleanly
+    }
+
+    // ── 2. NATIVE FALLBACK WORKFLOW (PRODUCTION / GATEWAY DISABLED) ──
     if (platform === 'desktop') {
       setSelectedApp(app)
       setViewMode('qr')
@@ -265,7 +303,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       return
     }
 
-    // Custom UPI ID for Google Pay (sreekarthota2007@okaxis)
+    // Custom UPI ID for Google Pay
     const targetUpiId = app.id === 'gpay' ? GPAY_UPI_ID : UPI_ID
     const targetPayeeName = app.id === 'gpay' ? GPAY_PAYEE_NAME : PAYEE_NAME
 
@@ -460,7 +498,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                   </p>
 
                   {PAYMENT_APPS.map((app) => {
-                    const isPhonePeMobile = app.id === 'phonepe' && platform !== 'desktop' && phonePeLaunchUrl
+                    const isPhonePeMobile = app.id === 'phonepe' && platform !== 'desktop' && phonePeLaunchUrl && !youpiConfig?.enabled
 
                     if (isPhonePeMobile) {
                       return (

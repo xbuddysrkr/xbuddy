@@ -1376,7 +1376,8 @@ export async function getYouPiConfig() {
   } catch (err) {
     console.warn('[YouPI Config Fetch Warn]:', err.message)
   }
-  return { success: false, enabled: false }
+  const isEnvEnabled = String(import.meta.env.VITE_YOUPI_PG_ENABLED || 'false').toLowerCase() === 'true'
+  return { success: isEnvEnabled, enabled: isEnvEnabled }
 }
 
 /**

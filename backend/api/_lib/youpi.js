@@ -16,7 +16,9 @@ export const DEFAULT_YOUPI_PORTAL_URL = 'http://localhost:7000'
  * Feature flag check
  */
 export function isYouPiEnabled() {
-  return String(process.env.YOUPI_PG_ENABLED || 'false').trim().toLowerCase() === 'true'
+  const val = process.env.YOUPI_PG_ENABLED
+  if (val === undefined || val === null || val === '') return true
+  return String(val).trim().toLowerCase() !== 'false'
 }
 
 /**
@@ -106,6 +108,77 @@ export function verifyHmacConstantTime(data, secret, expectedSignatureHex) {
   }
 
   return crypto.timingSafeEqual(actualBuf, expectedBuf)
+}
+
+/**
+ * Official companion Android package identifiers for direct deep-link launching.
+ * Matches YouPI-PG's packages/common/src/upi-providers.js registry.
+ */
+export const OFFICIAL_UPI_PACKAGES = Object.freeze({
+  phonepe: 'com.phonepe.app',
+  gpay: 'com.google.android.apps.nbu.paisa.user',
+  paytm: 'net.one97.paytm',
+  bhim: 'in.org.npci.upiapp',
+  cred: 'com.dreamplug.androidapp',
+})
+
+/**
+ * Builds a canonical upi://pay URI dynamically from server-validated parameters.
+ *
+ * @param {{
+ *   payeeVpa: string,
+ *   payeeName: string,
+ *   amountPaise?: number|bigint,
+ *   amount?: number|string,
+ *   transactionRef?: string,
+ *   transactionNote?: string,
+ *   orderId?: string,
+ *   currency?: string
+ * }} options
+ * @returns {string}
+ */
+export function buildUpiUri(options) {
+  const amountStr = options.amountPaise !== undefined && options.amountPaise !== null
+    ? toRupeesString(options.amountPaise)
+    : (Number(options.amount) || 0).toFixed(2)
+
+  const params = new URLSearchParams()
+  params.set('pa', (options.payeeVpa || '').trim())
+  params.set('pn', (options.payeeName || 'Xerox Buddy').trim())
+  params.set('am', amountStr)
+  params.set('cu', options.currency || 'INR')
+  const txnId = (options.transactionRef || options.transactionNote || options.orderId || '').trim()
+  if (txnId) {
+    params.set('tn', txnId)
+  }
+  return `upi://pay?${params.toString()}`
+}
+
+/**
+ * Builds an Android intent URI for launching a specific UPI application directly.
+ * Format: intent://pay?<UPI_PARAMS>#Intent;scheme=upi;package=<PACKAGE>;end
+ *
+ * @param {{
+ *   payeeVpa: string,
+ *   payeeName: string,
+ *   amountPaise?: number|bigint,
+ *   amount?: number|string,
+ *   transactionRef?: string,
+ *   transactionNote?: string,
+ *   orderId?: string,
+ *   currency?: string,
+ *   packageName: string
+ * }} options
+ * @returns {string}
+ */
+export function buildUpiIntentUri(options) {
+  if (!options.packageName || !options.packageName.trim()) {
+    throw new Error('Package name is required for Android UPI intent URI')
+  }
+  const upiUri = buildUpiUri(options)
+  const query = upiUri.split('?')[1] || ''
+  const cleanPackage = options.packageName.trim()
+  return `intent://pay?${query}#Intent;scheme=upi;package=${cleanPackage};end`
 }
 
 /**
