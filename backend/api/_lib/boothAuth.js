@@ -217,7 +217,7 @@ export function isBoothAuthorized(req) {
 
   // 1. Print agent authentication (headers preserved)
   const agentSecret = process.env.AGENT_SECRET || process.env.AGENT_SECRET_KEY
-  const reqAgent = req.headers?.['x-agent-secret'] || req.headers?.['x-agent-secret-key']
+  const reqAgent = req.headers?.['x-agent-secret'] || req.headers?.['x-agent-secret-key'] || req.headers?.['x-agent-key']
   if (agentSecret && reqAgent && safeCompare(reqAgent, agentSecret)) return true
 
   // 2. Admin key authentication

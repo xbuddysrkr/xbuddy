@@ -121,7 +121,7 @@ async function runRegressionSuite() {
     assert.ok(doc1Initial.pdfExpiresAt, 'pdfExpiresAt must be set upon upload')
     const uploadExpiresAtMs = new Date(doc1Initial.pdfExpiresAt).getTime()
     const uploadCreatedAtMs = new Date(doc1Initial.createdAt).getTime()
-    assert.strictEqual(uploadExpiresAtMs - uploadCreatedAtMs, 30 * 60 * 1000, 'pdfExpiresAt must be exactly 30 minutes after upload')
+    assert.strictEqual(uploadExpiresAtMs - uploadCreatedAtMs, 24 * 60 * 60 * 1000, 'pdfExpiresAt must be 24 hours after upload for unprinted order')
 
     // Transition status to Printed
     const beforePrintMs = Date.now()
@@ -134,10 +134,12 @@ async function runRegressionSuite() {
     const doc1Printed = await ordersCol.findOne({ orderId: id1 })
     assert.ok(doc1Printed.printedAt, 'printedAt must be set upon transition to Printed')
     assert.ok(doc1Printed.pdfExpiresAt, 'pdfExpiresAt must remain set upon transition to Printed')
-    assert.strictEqual(doc1Printed.pdfExpiresAt, doc1Initial.pdfExpiresAt, 'pdfExpiresAt must retain the upload-time expiration deadline')
+    const printedExpiresAtMs = new Date(doc1Printed.pdfExpiresAt).getTime()
+    const printedAtMs = new Date(doc1Printed.printedAt).getTime()
+    assert.strictEqual(printedExpiresAtMs - printedAtMs, 30 * 60 * 1000, 'pdfExpiresAt must be 30 minutes after printedAt upon Printed transition')
     assert.ok(new Date(doc1Printed.printedAt).getTime() >= beforePrintMs, 'printedAt must be a current server timestamp')
 
-    console.log('✓ TEST 1 PASSED: Upload starts immutable 30-min retention timer, preserved on Printed\n')
+    console.log('✓ TEST 1 PASSED: Upload starts 24h retention timer, converted to 30-min on Printed\n')
 
     // ── TEST 2: Reprint succeeds within window for eligible order ───────────
     console.log('[TEST 2] Testing reprint request succeeds within 30-minute window...')
@@ -227,7 +229,7 @@ async function runRegressionSuite() {
         pdfStorage: 'inline',
         pdfBase64: SAMPLE_BASE64,
         paymentStatus: 'pending',
-        createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
       },
       {
         orderId: id4PendingRecent,
@@ -647,8 +649,9 @@ async function runRegressionSuite() {
     const id13Expired = `XB99${Math.floor(10000 + Math.random() * 90000)}`
     testIdsToCleanup.push(id13Order, id13Expired)
 
+    process.env.AGENT_SECRET = 'test-agent-secret'
     process.env.AGENT_SECRET_KEY = 'test-agent-secret'
-    const agentHeaders = { 'x-agent-key': 'test-agent-secret' }
+    const agentHeaders = { 'x-agent-key': 'test-agent-secret', 'x-agent-secret': 'test-agent-secret' }
 
     // Setup an initial printed order with genuine print settings:
     // 6 pages total, B&W (₹2/page), copies: 1, duplex: false => printingCost: ₹12, serviceFee (slab 6-10): ₹2 => Total: ₹14
@@ -758,6 +761,7 @@ async function runRegressionSuite() {
 
     // 13.5 Rejection Guard: Rejected reprint payment does NOT queue print
     const { req: req13Reject, res: res13Reject } = createMockReqRes({
+      headers: agentHeaders,
       body: {
         action: 'verifyReprintPayment',
         orderId: id13Order,
@@ -813,6 +817,7 @@ async function runRegressionSuite() {
 
     // Shopkeeper verifies attempt 2:
     const { req: req13Verify2, res: res13Verify2 } = createMockReqRes({
+      headers: agentHeaders,
       body: {
         action: 'verifyReprintPayment',
         orderId: id13Order,
@@ -832,6 +837,7 @@ async function runRegressionSuite() {
     // 13.8 Duplicate Print Authorization Guard:
     // Repeated verification or submission while reprinting must be blocked with HTTP 409
     const { req: req13DupVerify, res: res13DupVerify } = createMockReqRes({
+      headers: agentHeaders,
       body: {
         action: 'verifyReprintPayment',
         orderId: id13Order,

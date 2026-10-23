@@ -50,8 +50,13 @@ app.use(cors({
   ],
 }))
 
-// Body parsers: allow large base64 PDF uploads
-app.use(express.json({ limit: '50mb' }))
+// Body parsers: allow large base64 PDF uploads and preserve raw request buffer for webhook HMAC verification
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf
+  }
+}))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
 // Health checks for Render uptime monitoring
@@ -84,6 +89,33 @@ app.get('/health', async (req, res) => {
     mongoError,
     timestamp: new Date().toISOString()
   })
+})
+
+// YouPI-PG Payment Gateway Routes (Experimental Staging Adapter)
+app.all('/api/payments/youpi', async (req, res) => {
+  try {
+    const { youpiPaymentHandler } = await import('./api/payments/youpi.js')
+    await youpiPaymentHandler(req, res)
+  } catch (err) {
+    console.error('[SERVER ERROR /api/payments/youpi]:', err)
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err.message || 'Internal server error' })
+    }
+  }
+})
+
+app.all('/api/payments/youpi/:route(*)', async (req, res) => {
+  try {
+    const { youpiPaymentHandler } = await import('./api/payments/youpi.js')
+    req.query = req.query || {}
+    req.query.route = req.params.route
+    await youpiPaymentHandler(req, res)
+  } catch (err) {
+    console.error('[SERVER ERROR /api/payments/youpi/:route]:', err)
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err.message || 'Internal server error' })
+    }
+  }
 })
 
 // Primary Authoritative Orders API (MongoDB Atlas)

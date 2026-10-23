@@ -914,7 +914,7 @@ export default async function handler(req, res) {
         if (order) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
           const nowMs = Date.now()
-          const derivedExpiry = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : null)
+          const derivedExpiry = getEffectiveExpiryTimestamp(order)
           const isExpired = Boolean(
             order.pdfDeletedAt ||
             (derivedExpiry && new Date(derivedExpiry).getTime() <= nowMs)
@@ -1265,7 +1265,7 @@ export default async function handler(req, res) {
         if (Array.isArray(orders)) {
           const nowMs = Date.now()
           const cleanOrders = orders.map(order => {
-            const derivedExpiry = order.pdfExpiresAt || (order.printedAt ? calculateExpiryTimestamp(order.printedAt) : null)
+            const derivedExpiry = getEffectiveExpiryTimestamp(order)
             const isExpired = Boolean(
               order.pdfDeletedAt ||
               (derivedExpiry && new Date(derivedExpiry).getTime() <= nowMs)

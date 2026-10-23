@@ -1363,3 +1363,60 @@ export async function triggerBrowserPrint(blobOrUrl) {
     frame.src = url
   })
 }
+
+/**
+ * Fetch YouPI-PG configuration and feature flag status from the server
+ */
+export async function getYouPiConfig() {
+  try {
+    const res = await fetch('/api/payments/youpi/config', { signal: AbortSignal.timeout(5000) })
+    if (res.ok) {
+      return await res.json()
+    }
+  } catch (err) {
+    console.warn('[YouPI Config Fetch Warn]:', err.message)
+  }
+  return { success: false, enabled: false }
+}
+
+/**
+ * Initiates an authoritative server-side YouPI-PG payment session
+ */
+export async function createYouPiSession(orderPayload) {
+  const res = await fetch('/api/payments/youpi/create-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(orderPayload),
+    signal: AbortSignal.timeout(15000),
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(data.error || `Payment session creation failed with HTTP ${res.status}`)
+  }
+  return data
+}
+
+/**
+ * Polls authoritative order payment verification status from MongoDB backend
+ */
+export async function pollYouPiPaymentStatus(orderId, { maxAttempts = 60, intervalMs = 2000, onStatusUpdate } = {}) {
+  const cleanId = String(orderId).trim().toUpperCase()
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`/api/payments/youpi/status/${cleanId}`, { signal: AbortSignal.timeout(5000) })
+      if (res.ok) {
+        const data = await res.json()
+        if (onStatusUpdate) onStatusUpdate(data)
+        if (data.paymentStatus === 'paid' || data.paymentStatus === 'completed') {
+          return { verified: true, paymentStatus: 'paid', order: data }
+        }
+        if (['failed', 'cancelled', 'expired'].includes(data.paymentStatus)) {
+          return { verified: false, paymentStatus: data.paymentStatus, order: data }
+        }
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  return { verified: false, paymentStatus: 'timeout' }
+}
+
