@@ -178,27 +178,21 @@ async function runTestSuite() {
     console.log('✓ TEST 5 PASSED: Idempotent single-order persistence verified')
   }
 
-  // ── TEST 6: Behavior when receiving UPI ID is missing ────────────────────
+  // ── TEST 6: Behavior when receiving UPI ID is invalid format ────────────
   console.log('\n[TEST 6] Testing missing/invalid shopkeeper configuration handling...')
   {
     const oldUpi = process.env.XBUDDY_UPI_ID
-    const oldViteUpi = process.env.VITE_UPI_ID
-    const oldGenericUpi = process.env.UPI_ID
-
-    delete process.env.XBUDDY_UPI_ID
-    delete process.env.VITE_UPI_ID
-    delete process.env.UPI_ID
+    process.env.XBUDDY_UPI_ID = 'invalid-vpa-without-domain'
 
     assert.throws(
       () => getShopkeeperUpiConfig(),
-      /Shopkeeper receiving UPI ID .* is not configured/
+      /Invalid receiving UPI ID format/
     )
 
     // Restore
     if (oldUpi) process.env.XBUDDY_UPI_ID = oldUpi
-    if (oldViteUpi) process.env.VITE_UPI_ID = oldViteUpi
-    if (oldGenericUpi) process.env.UPI_ID = oldGenericUpi
-    console.log('✓ TEST 6 PASSED: Missing receiving UPI ID safely rejected before checkout')
+    else delete process.env.XBUDDY_UPI_ID
+    console.log('✓ TEST 6 PASSED: Invalid receiving UPI ID safely rejected before checkout')
   }
 
   // ── TEST 7: App-specific launch handling where officially supported ──────

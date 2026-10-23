@@ -95,8 +95,7 @@ app.get('/health', async (req, res) => {
 app.all('/api/payments/config', async (req, res) => {
   try {
     const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
-    req.path = 'config'
-    await directUpiPaymentHandler(req, res)
+    await directUpiPaymentHandler(req, res, 'config')
   } catch (err) {
     console.error('[SERVER ERROR /api/payments/config]:', err)
     if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
@@ -106,8 +105,7 @@ app.all('/api/payments/config', async (req, res) => {
 app.all('/api/payments/create-intent-order', async (req, res) => {
   try {
     const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
-    req.path = 'create-intent-order'
-    await directUpiPaymentHandler(req, res)
+    await directUpiPaymentHandler(req, res, 'create-intent-order')
   } catch (err) {
     console.error('[SERVER ERROR /api/payments/create-intent-order]:', err)
     if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
@@ -117,8 +115,7 @@ app.all('/api/payments/create-intent-order', async (req, res) => {
 app.all('/api/payments/order-status', async (req, res) => {
   try {
     const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
-    req.path = 'order-status'
-    await directUpiPaymentHandler(req, res)
+    await directUpiPaymentHandler(req, res, 'order-status')
   } catch (err) {
     console.error('[SERVER ERROR /api/payments/order-status]:', err)
     if (!res.headersSent) res.status(500).json({ success: false, error: err.message })
@@ -128,8 +125,7 @@ app.all('/api/payments/order-status', async (req, res) => {
 app.all('/api/payments/qr-svg', async (req, res) => {
   try {
     const { directUpiPaymentHandler } = await import('./api/payments/direct.js')
-    req.path = 'qr-svg'
-    await directUpiPaymentHandler(req, res)
+    await directUpiPaymentHandler(req, res, 'qr-svg')
   } catch (err) {
     console.error('[SERVER ERROR /api/payments/qr-svg]:', err)
     if (!res.headersSent) res.status(500).json({ success: false, error: err.message })

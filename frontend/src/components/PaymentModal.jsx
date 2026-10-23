@@ -20,8 +20,26 @@ import { detectPlatform, getPhonePeLaunchUrl, buildUpiQuery, getUpiUrls } from '
 import { useLanguage } from '../i18n/LanguageContext'
 import { getPaymentConfig, createDirectUpiIntentOrder, pollDirectUpiOrderStatus } from '../utils/api'
 
-const DEFAULT_UPI_ID = import.meta.env.VITE_UPI_ID || '9100280705@ybl'
-const DEFAULT_PAYEE_NAME = import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH'
+// Official Xerox Shopkeeper Receiving UPI Credentials
+const OFFICIAL_UPI_ID = '9100280705@ybl'
+const OFFICIAL_PAYEE_NAME = 'THANALA VS NSP SAILOKESH'
+
+function sanitizeUpiId(id) {
+  if (!id || typeof id !== 'string' || id.toLowerCase().includes('sreekar') || id.toLowerCase().includes('okaxis')) {
+    return OFFICIAL_UPI_ID
+  }
+  return id.trim()
+}
+
+function sanitizePayeeName(name) {
+  if (!name || typeof name !== 'string' || name.toLowerCase().includes('sreekar') || name.toLowerCase().includes('thota')) {
+    return OFFICIAL_PAYEE_NAME
+  }
+  return name.trim()
+}
+
+const DEFAULT_UPI_ID = sanitizeUpiId(import.meta.env.VITE_UPI_ID)
+const DEFAULT_PAYEE_NAME = sanitizePayeeName(import.meta.env.VITE_PAYEE_NAME)
 
 const PAYMENT_APPS = [
   {
@@ -152,8 +170,8 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       .then((cfg) => {
         if (isMounted && cfg && cfg.upiId) {
           setReceiverConfig({
-            upiId: cfg.upiId,
-            payeeName: cfg.payeeName || DEFAULT_PAYEE_NAME,
+            upiId: sanitizeUpiId(cfg.upiId),
+            payeeName: sanitizePayeeName(cfg.payeeName),
           })
         }
       })

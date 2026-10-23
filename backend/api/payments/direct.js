@@ -20,9 +20,9 @@ import {
   generateVectorQrSvg,
 } from '../_lib/directUpi.js'
 
-export async function directUpiPaymentHandler(req, res) {
+export async function directUpiPaymentHandler(req, res, actionOverride) {
   // CORS & method routing
-  const rawPath = (req.path || req.query?.route || req.url || '').replace(/^\/api\/payments\/?/, '')
+  const rawPath = actionOverride || (req.path || req.query?.route || req.url || '').replace(/^\/api\/payments\/?/, '')
   const action = rawPath.split('?')[0].replace(/^\/+|\/+$/g, '')
 
   // ── 1. GET /api/payments/config ───────────────────────────────────────────

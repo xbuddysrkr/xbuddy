@@ -1373,18 +1373,38 @@ export async function triggerBrowserPrint(blobOrUrl) {
  * Retrieves shopkeeper receiving UPI details securely from the backend.
  */
 export async function getPaymentConfig() {
+  const sanitize = (id, fallback) => {
+    if (!id || typeof id !== 'string' || id.toLowerCase().includes('sreekar') || id.toLowerCase().includes('okaxis')) {
+      return fallback
+    }
+    return id.trim()
+  }
+  const sanitizeName = (name, fallback) => {
+    if (!name || typeof name !== 'string' || name.toLowerCase().includes('sreekar') || name.toLowerCase().includes('thota')) {
+      return fallback
+    }
+    return name.trim()
+  }
+
   try {
     const res = await fetch('/api/payments/config', { signal: AbortSignal.timeout(5000) })
     if (res.ok) {
-      return await res.json()
+      const data = await res.json()
+      if (data && data.upiId) {
+        return {
+          success: true,
+          upiId: sanitize(data.upiId, '9100280705@ybl'),
+          payeeName: sanitizeName(data.payeeName, 'THANALA VS NSP SAILOKESH'),
+        }
+      }
     }
   } catch (err) {
     console.warn('[Direct UPI Config Warn]:', err.message)
   }
   return {
     success: true,
-    upiId: import.meta.env.VITE_UPI_ID || '9100280705@ybl',
-    payeeName: import.meta.env.VITE_PAYEE_NAME || 'THANALA VS NSP SAILOKESH',
+    upiId: sanitize(import.meta.env.VITE_UPI_ID, '9100280705@ybl'),
+    payeeName: sanitizeName(import.meta.env.VITE_PAYEE_NAME, 'THANALA VS NSP SAILOKESH'),
   }
 }
 

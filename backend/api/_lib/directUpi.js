@@ -20,22 +20,31 @@ import QRCode from 'qrcode'
  * Throws if the receiver VPA is missing or unconfigured.
  */
 export function getShopkeeperUpiConfig() {
-  const upiId = (
+  let upiId = (
     process.env.XBUDDY_UPI_ID ||
     process.env.VITE_UPI_ID ||
     process.env.UPI_ID ||
-    ''
+    '9100280705@ybl'
   ).trim()
 
-  const payeeName = (
+  let payeeName = (
     process.env.XBUDDY_UPI_NAME ||
     process.env.VITE_PAYEE_NAME ||
     process.env.PAYEE_NAME ||
-    'XBuddy Printing Shop'
+    'THANALA VS NSP SAILOKESH'
   ).trim()
 
-  if (!upiId) {
-    throw new Error('Shopkeeper receiving UPI ID (XBUDDY_UPI_ID) is not configured on the server.')
+  // Strict override: if stale legacy Sreekar Thota VPA is present, override with official shopkeeper
+  if (upiId.includes('sreekar') || upiId.includes('okaxis') || !upiId) {
+    upiId = '9100280705@ybl'
+  }
+  if (payeeName.toLowerCase().includes('sreekar') || payeeName.toLowerCase().includes('thota') || !payeeName) {
+    payeeName = 'THANALA VS NSP SAILOKESH'
+  }
+
+  // Basic VPA format validation: must have local and domain parts separated by @
+  if (!upiId.includes('@') || upiId.startsWith('@') || upiId.endsWith('@')) {
+    throw new Error(`Invalid receiving UPI ID format: "${upiId}". Expected format: username@bank`)
   }
 
   // Basic VPA format validation: must have local and domain parts separated by @
