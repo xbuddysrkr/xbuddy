@@ -286,6 +286,7 @@ export const en = {
     guideStep1: 'Open {name}',
     guideStep2: 'Tap Scan QR → Gallery',
     guideStep3: 'Select saved XBuddy QR & pay',
+    appLogoAlt: '{name} logo',
   },
   orderProgress: {
     stepUploadLabel: 'Preparing Document',

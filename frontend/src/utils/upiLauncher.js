@@ -21,11 +21,11 @@ export const SUPPORTED_OPEN_ONLY_APPS = [
     packageName: 'com.phonepe.app',
     iosScheme: 'phonepe://',
     playStoreUrl: 'https://play.google.com/store/apps/details?id=com.phonepe.app',
+    logoUrl: '/assets/upi/phonepe.png',
     brandColor: '#5f259f',
     textColor: '#5f259f',
     borderColor: 'border-purple-200',
     bgGradient: 'from-purple-50 to-white',
-    symbol: 'పే',
   },
   {
     id: 'gpay',
@@ -33,11 +33,11 @@ export const SUPPORTED_OPEN_ONLY_APPS = [
     packageName: 'com.google.android.apps.nbu.paisa.user',
     iosScheme: 'gpay://',
     playStoreUrl: 'https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.paisa.user',
+    logoUrl: '/assets/upi/google-pay.png',
     brandColor: '#1a73e8',
     textColor: '#1a73e8',
     borderColor: 'border-blue-200',
     bgGradient: 'from-blue-50 to-white',
-    symbol: 'GPay',
   },
   {
     id: 'paytm',
@@ -45,11 +45,11 @@ export const SUPPORTED_OPEN_ONLY_APPS = [
     packageName: 'net.one97.paytm',
     iosScheme: 'paytmmp://',
     playStoreUrl: 'https://play.google.com/store/apps/details?id=net.one97.paytm',
+    logoUrl: '/assets/upi/paytm.png',
     brandColor: '#002970',
     textColor: '#00b9f5',
     borderColor: 'border-sky-200',
     bgGradient: 'from-sky-50 to-white',
-    symbol: 'Paytm',
   },
   {
     id: 'bhim',
@@ -57,37 +57,34 @@ export const SUPPORTED_OPEN_ONLY_APPS = [
     packageName: 'in.org.npci.upiapp',
     iosScheme: 'bhim://',
     playStoreUrl: 'https://play.google.com/store/apps/details?id=in.org.npci.upiapp',
+    logoUrl: '/assets/upi/bhim.png',
     brandColor: '#007849',
     textColor: '#007849',
     borderColor: 'border-emerald-200',
     bgGradient: 'from-emerald-50 to-white',
-    symbol: 'BHIM',
   },
-  {
+]
+
+/**
+ * Additional packages recognized for launch if requested directly, but not
+ * rendered in the primary UI without verified official logo assets.
+ */
+export const ADDITIONAL_UPI_PACKAGES = {
+  cred: {
     id: 'cred',
     name: 'CRED',
     packageName: 'com.dreamplug.androidapp',
     iosScheme: 'cred://',
     playStoreUrl: 'https://play.google.com/store/apps/details?id=com.dreamplug.androidapp',
-    brandColor: '#121212',
-    textColor: '#1e293b',
-    borderColor: 'border-slate-300',
-    bgGradient: 'from-slate-100 to-white',
-    symbol: 'CRED',
   },
-  {
+  amazon: {
     id: 'amazon',
     name: 'Amazon Pay',
     packageName: 'in.amazon.mShop.android.shopping',
     iosScheme: 'amazon://',
     playStoreUrl: 'https://play.google.com/store/apps/details?id=in.amazon.mShop.android.shopping',
-    brandColor: '#FF9900',
-    textColor: '#d97706',
-    borderColor: 'border-amber-200',
-    bgGradient: 'from-amber-50 to-white',
-    symbol: 'Amazon',
   },
-]
+}
 
 /**
  * Returns the exact URL to launch a selected app with ZERO payment data.
@@ -98,7 +95,7 @@ export const SUPPORTED_OPEN_ONLY_APPS = [
  */
 export function getAppOnlyLaunchUrl(appOrId) {
   const app = typeof appOrId === 'string'
-    ? SUPPORTED_OPEN_ONLY_APPS.find((a) => a.id === appOrId)
+    ? SUPPORTED_OPEN_ONLY_APPS.find((a) => a.id === appOrId) || ADDITIONAL_UPI_PACKAGES[appOrId]
     : appOrId
 
   if (!app) return null
@@ -119,7 +116,7 @@ export function getAppOnlyLaunchUrl(appOrId) {
  */
 export function launchAppOnly(appOrId) {
   const app = typeof appOrId === 'string'
-    ? SUPPORTED_OPEN_ONLY_APPS.find((a) => a.id === appOrId)
+    ? SUPPORTED_OPEN_ONLY_APPS.find((a) => a.id === appOrId) || ADDITIONAL_UPI_PACKAGES[appOrId]
     : appOrId
 
   if (!app) {

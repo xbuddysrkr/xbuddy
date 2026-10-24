@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   SUPPORTED_OPEN_ONLY_APPS,
+  ADDITIONAL_UPI_PACKAGES,
   getAppOnlyLaunchUrl,
   launchAppOnly,
   detectPlatform,
@@ -8,35 +12,46 @@ import {
 import { en } from '../src/i18n/locales/en.js'
 import { te } from '../src/i18n/locales/te.js'
 
-console.log('--- STARTING UPI APP LAUNCHER (OPEN ONLY) TEST SUITE ---')
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+console.log('--- STARTING UPI APP LAUNCHER (OPEN ONLY & AUTHENTIC LOGOS) TEST SUITE ---')
 
 // =========================================================================
-// TEST 1: Registry of Supported Open-Only Apps
+// TEST 1: Registry of Supported Open-Only Apps with Authentic Logos
 // =========================================================================
-console.log('\n[TEST 1] Verifying SUPPORTED_OPEN_ONLY_APPS registry...')
+console.log('\n[TEST 1] Verifying SUPPORTED_OPEN_ONLY_APPS registry & local logo assets...')
 
 assert.ok(Array.isArray(SUPPORTED_OPEN_ONLY_APPS), 'SUPPORTED_OPEN_ONLY_APPS must be an array')
-assert.ok(SUPPORTED_OPEN_ONLY_APPS.length >= 4, 'Should support at least 4 major UPI apps')
+assert.equal(SUPPORTED_OPEN_ONLY_APPS.length, 4, 'Should contain 4 official apps: PhonePe, Google Pay, Paytm, BHIM')
 
 const expectedApps = [
-  { id: 'phonepe', pkg: 'com.phonepe.app', scheme: 'phonepe://' },
-  { id: 'gpay', pkg: 'com.google.android.apps.nbu.paisa.user', scheme: 'gpay://' },
-  { id: 'paytm', pkg: 'net.one97.paytm', scheme: 'paytmmp://' },
-  { id: 'bhim', pkg: 'in.org.npci.upiapp', scheme: 'bhim://' },
-  { id: 'cred', pkg: 'com.dreamplug.androidapp', scheme: 'cred://' },
-  { id: 'amazon', pkg: 'in.amazon.mShop.android.shopping', scheme: 'amazon://' },
+  { id: 'phonepe', name: 'PhonePe', pkg: 'com.phonepe.app', scheme: 'phonepe://', logoFile: 'phonepe.png' },
+  { id: 'gpay', name: 'Google Pay', pkg: 'com.google.android.apps.nbu.paisa.user', scheme: 'gpay://', logoFile: 'google-pay.png' },
+  { id: 'paytm', name: 'Paytm', pkg: 'net.one97.paytm', scheme: 'paytmmp://', logoFile: 'paytm.png' },
+  { id: 'bhim', name: 'BHIM UPI', pkg: 'in.org.npci.upiapp', scheme: 'bhim://', logoFile: 'bhim.png' },
 ]
 
 for (const expected of expectedApps) {
   const app = SUPPORTED_OPEN_ONLY_APPS.find((a) => a.id === expected.id)
   assert.ok(app, `Registry must include app with id '${expected.id}'`)
+  assert.equal(app.name, expected.name, `App display name must be '${expected.name}'`)
   assert.equal(app.packageName, expected.pkg, `Package name for ${expected.id} must be ${expected.pkg}`)
   assert.equal(app.iosScheme, expected.scheme, `iOS scheme for ${expected.id} must be ${expected.scheme}`)
   assert.ok(app.playStoreUrl.startsWith('https://play.google.com/store/apps/details?id='), `${expected.id} must have valid Google Play Store URL`)
-  assert.ok(app.name && app.name.trim().length > 0, `${expected.id} must have a display name`)
+  
+  // Authentic Logo Verification
+  assert.ok(app.logoUrl, `${expected.id} must have a logoUrl`)
+  assert.equal(app.logoUrl, `/assets/upi/${expected.logoFile}`, `${expected.id} logoUrl must point to /assets/upi/${expected.logoFile}`)
+  
+  // Verify physical asset exists in public folder
+  const physicalPath = path.resolve(__dirname, `../public/assets/upi/${expected.logoFile}`)
+  assert.ok(fs.existsSync(physicalPath), `Authentic logo file must exist on disk: ${physicalPath}`)
+  const stat = fs.statSync(physicalPath)
+  assert.ok(stat.size > 1000, `Logo file for ${expected.id} must be a valid non-empty image (size: ${stat.size} bytes)`)
 }
 
-console.log('✓ TEST 1 PASSED: App registry contains verified package names, iOS schemes, and official Play Store URLs')
+console.log('✓ TEST 1 PASSED: App registry contains verified package names, iOS schemes, and authentic local logo assets on disk')
 
 // =========================================================================
 // TEST 2: App Launch URL (OPEN ONLY - ZERO PAYMENT PARAMS)
@@ -85,6 +100,10 @@ try {
       )
     }
   }
+
+  // Also verify additional package fallback (e.g. CRED)
+  const credUrl = getAppOnlyLaunchUrl('cred')
+  assert.equal(credUrl, 'intent://#Intent;package=com.dreamplug.androidapp;end')
 
   // Simulate iOS environment
   Object.defineProperty(globalThis, 'navigator', {
@@ -178,9 +197,9 @@ try {
 console.log('✓ TEST 3 PASSED: launchAppOnly triggers clean package launch and handles missing apps or desktop safely')
 
 // =========================================================================
-// TEST 4: English & Telugu Localization Parity for App Selector
+// TEST 4: English & Telugu Localization Parity for App Selector & Accessible Alt Text
 // =========================================================================
-console.log('\n[TEST 4] Verifying i18n keys for UPI App Selector...')
+console.log('\n[TEST 4] Verifying i18n keys for UPI App Selector & accessible labels...')
 
 const requiredPaymentKeys = [
   'chooseUpiApp',
@@ -196,6 +215,7 @@ const requiredPaymentKeys = [
   'guideStep1',
   'guideStep2',
   'guideStep3',
+  'appLogoAlt',
 ]
 
 for (const key of requiredPaymentKeys) {
@@ -210,8 +230,9 @@ assert.ok(en.payment.chooseUpiApp.includes('Choose your UPI app'), 'Title must b
 assert.ok(en.payment.chooseUpiAppSubtitle.includes('Your QR is ready'), 'Subtitle must guide user with downloaded QR')
 assert.ok(en.payment.continueInUpiApp.includes('Continue in your UPI app'), 'Post-launch copy must instruct student')
 assert.ok(en.payment.couldNotOpenAppManual.includes("Couldn't open this app?"), 'Fallback must show friendly manual instruction')
+assert.ok(en.payment.appLogoAlt.includes('{name}'), 'appLogoAlt must support {name} interpolation')
 
-console.log('✓ TEST 4 PASSED: English and Telugu translations are 100% complete with correct copy')
+console.log('✓ TEST 4 PASSED: English and Telugu translations are 100% complete with correct copy & accessible alt text')
 
 // =========================================================================
 // TEST 5: Real Android vs Mocked Test Distinction Note
@@ -220,6 +241,6 @@ console.log('\n[TEST 5] Verifying test environment distinctions...')
 console.log('ℹ Note: The unit tests above run in Node.js with mocked navigator and window objects.')
 console.log('ℹ Real device verification requires Android Chrome on a mobile device where intent:// URIs trigger Android Package Manager directly.')
 
-console.log('\n======================================================')
-console.log('🎉 ALL UPI APP LAUNCHER (OPEN ONLY) TESTS PASSED!')
-console.log('======================================================\n')
+console.log('\n========================================================================')
+console.log('🎉 ALL UPI APP LAUNCHER (OPEN ONLY & AUTHENTIC LOGOS) TESTS PASSED!')
+console.log('========================================================================\n')

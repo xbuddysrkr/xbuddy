@@ -286,6 +286,7 @@ export const te = {
     guideStep1: '{name} తెరవండి',
     guideStep2: 'Scan QR పై నొక్కి → Gallery ఎంచుకోండి',
     guideStep3: 'సేవ్ చేసిన XBuddy QR ఎంచుకుని చెల్లించండి',
+    appLogoAlt: '{name} లోగో',
   },
   orderProgress: {
     stepUploadLabel: 'డాక్యుమెంట్ ప్రిపేర్ అవుతోంది',

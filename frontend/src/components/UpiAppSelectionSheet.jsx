@@ -140,7 +140,7 @@ export default function UpiAppSelectionSheet({
               </div>
 
               {/* Grid of Rounded App Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 {SUPPORTED_OPEN_ONLY_APPS.map((app) => {
                   return (
                     <motion.button
@@ -151,29 +151,23 @@ export default function UpiAppSelectionSheet({
                       onClick={() => handleAppClick(app)}
                       className={`p-3.5 rounded-2xl border ${app.borderColor} bg-gradient-to-b ${app.bgGradient} flex flex-col items-center justify-between text-center transition-all duration-150 cursor-pointer shadow-2xs hover:shadow-md group`}
                     >
-                      {/* App Icon Circle */}
-                      <div
-                        className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-base shadow-xs mb-2 transition-transform group-hover:scale-105"
-                        style={{
-                          backgroundColor: app.brandColor,
-                          color: '#ffffff',
-                        }}
-                      >
-                        {app.id === 'phonepe' && <span className="text-xl">पे</span>}
-                        {app.id === 'gpay' && (
-                          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-xs">
-                            <span className="font-extrabold text-[11px] tracking-tight">
-                              <span className="text-[#4285F4]">G</span>
-                              <span className="text-[#EA4335]">P</span>
-                              <span className="text-[#FBBC05]">a</span>
-                              <span className="text-[#34A853]">y</span>
-                            </span>
+                      {/* Authentic App Logo Container */}
+                      <div className="w-14 h-14 rounded-2xl bg-white border border-slate-100 flex items-center justify-center p-2 shadow-2xs mb-2 transition-transform group-hover:scale-105 overflow-hidden">
+                        {app.logoUrl ? (
+                          <img
+                            src={app.logoUrl}
+                            alt={t('payment.appLogoAlt', '{name} logo', { name: app.name })}
+                            className="w-full h-full object-contain"
+                            draggable={false}
+                          />
+                        ) : (
+                          <div
+                            className="w-full h-full rounded-xl flex items-center justify-center font-black text-xs text-white"
+                            style={{ backgroundColor: app.brandColor }}
+                          >
+                            {app.name.charAt(0)}
                           </div>
                         )}
-                        {app.id === 'paytm' && <span className="text-xs font-black">Paytm</span>}
-                        {app.id === 'bhim' && <span className="text-xs font-black">BHIM</span>}
-                        {app.id === 'cred' && <span className="text-xs font-black">CRED</span>}
-                        {app.id === 'amazon' && <span className="text-xs font-black">Amazon</span>}
                       </div>
 
                       {/* App Label */}
@@ -211,25 +205,22 @@ export default function UpiAppSelectionSheet({
             <div>
               {/* Header with App Info */}
               <div className="flex items-center gap-3 pr-8 mb-4">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm text-white shadow-xs shrink-0"
-                  style={{ backgroundColor: selectedApp.brandColor }}
-                >
-                  {selectedApp.id === 'phonepe' && <span className="text-xl">పే</span>}
-                  {selectedApp.id === 'gpay' && (
-                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-xs">
-                      <span className="font-extrabold text-[11px] tracking-tight">
-                        <span className="text-[#4285F4]">G</span>
-                        <span className="text-[#EA4335]">P</span>
-                        <span className="text-[#FBBC05]">a</span>
-                        <span className="text-[#34A853]">y</span>
-                      </span>
+                <div className="w-12 h-12 rounded-2xl bg-white border border-slate-100 flex items-center justify-center p-1.5 shadow-2xs shrink-0 overflow-hidden">
+                  {selectedApp.logoUrl ? (
+                    <img
+                      src={selectedApp.logoUrl}
+                      alt={t('payment.appLogoAlt', '{name} logo', { name: selectedApp.name })}
+                      className="w-full h-full object-contain"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div
+                      className="w-full h-full rounded-xl flex items-center justify-center font-black text-sm text-white"
+                      style={{ backgroundColor: selectedApp.brandColor }}
+                    >
+                      {selectedApp.name.charAt(0)}
                     </div>
                   )}
-                  {selectedApp.id === 'paytm' && <span className="text-xs">Paytm</span>}
-                  {selectedApp.id === 'bhim' && <span className="text-xs">BHIM</span>}
-                  {selectedApp.id === 'cred' && <span className="text-xs">CRED</span>}
-                  {selectedApp.id === 'amazon' && <span className="text-xs">Amazon</span>}
                 </div>
                 <div>
                   <h4 className="font-black text-slate-900 text-lg sm:text-xl">
