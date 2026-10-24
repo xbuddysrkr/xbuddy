@@ -31,6 +31,8 @@ import XBuddyLogo from './components/XBuddyLogo'
 import Footer from './components/Footer'
 import { Menu, ClipboardList, Check } from 'lucide-react'
 import { useLanguage, LanguageSwitcher } from './i18n/LanguageContext'
+import InteractiveTourSpotlight from './components/InteractiveTourSpotlight'
+import { STORAGE_KEYS, isTourCompleted, markTourCompleted } from './utils/tourStorage'
 
 const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin', ADS: 'ads' }
 const DEFAULT_SETTINGS = {
@@ -132,6 +134,21 @@ export default function App() {
   const settingsRef = useRef(null)
   const isNavigatingRef = useRef(false)
   const orderIdRef = useRef(null)
+
+  // First-Time Printing Guided Tour State
+  const [printTourStep, setPrintTourStep] = useState(0)
+  const [isPrintTourActive, setIsPrintTourActive] = useState(false)
+
+  // Auto-launch printing tour for first-time visitors once brand intro finishes
+  useEffect(() => {
+    if (showIntro) return
+    if (!isTourCompleted(STORAGE_KEYS.PRINT_TOUR)) {
+      if (step === STEP.HERO || step === STEP.UPLOAD) {
+        setIsPrintTourActive(true)
+        setPrintTourStep(step === STEP.UPLOAD ? 1 : 0)
+      }
+    }
+  }, [showIntro, step])
 
   // 1. Initial history entry setup (use replaceState so initial load does NOT create duplicate history entry)
   useEffect(() => {
@@ -340,6 +357,13 @@ export default function App() {
         const el = document.getElementById('how-it-works')
         if (el) el.scrollIntoView({ behavior: 'smooth' })
       }, 150)
+    } else if (target === 'tutorial') {
+      if (fileInfo?.isTourSample) {
+        setFileInfo(null)
+      }
+      goToStep(STEP.HERO, { replace })
+      setPrintTourStep(0)
+      setIsPrintTourActive(true)
     }
   }
 
@@ -406,6 +430,9 @@ export default function App() {
   async function handleFileReady(info) {
     setFileInfo(info)
     goToStep(STEP.SETTINGS, { preserveScroll: true })
+    if (isPrintTourActive && printTourStep === 1) {
+      setPrintTourStep(2)
+    }
     setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
@@ -492,10 +519,114 @@ export default function App() {
       return
     }
 
+    if (isPrintTourActive && printTourStep === 0) {
+      setPrintTourStep(1)
+    }
     goToStep(STEP.UPLOAD)
   }
 
+  // Printing Guided Tour Step Transition Handlers
+  const printTourSteps = [
+    {
+      targetSelector: '[data-tour="start-printing"]',
+      title: t('tour.printStep1Title', 'Ready to print? 🚀'),
+      description: t('tour.printStep1Desc', 'Tap here to start your printing journey!'),
+      pulseShape: 'pill',
+      padding: 8,
+    },
+    {
+      targetSelector: '[data-tour="upload-area"]',
+      title: t('tour.printStep2Title', 'Bring your PDF! 📄'),
+      description: t('tour.printStep2Desc', 'Upload your notes, assignments, or records here.'),
+      pulseShape: 'rect',
+      padding: 10,
+    },
+    {
+      targetSelector: '[data-tour="print-settings"]',
+      title: t('tour.printStep3Title', 'Make it your way! ✨'),
+      description: t('tour.printStep3Desc', 'Choose B&W or Color, copies, and single or double-sided printing.'),
+      pulseShape: 'rect',
+      padding: 8,
+    },
+    {
+      targetSelector: '[data-tour="order-summary"]',
+      title: t('tour.printStep4Title', 'Check your total! 💰'),
+      description: t('tour.printStep4Desc', 'Your price updates based on your print settings.'),
+      pulseShape: 'rect',
+      padding: 8,
+    },
+    {
+      targetSelector: '[data-tour="review-and-pay"]',
+      title: t('tour.printStep5Title', 'Almost there! 🎉'),
+      description: t('tour.printStep5Desc', 'Review your order before continuing to payment.'),
+      pulseShape: 'pill',
+      padding: 8,
+    },
+  ]
+
+  function handlePrintTourNext() {
+    if (printTourStep === 0) {
+      goToStep(STEP.UPLOAD, { preserveScroll: true })
+      setPrintTourStep(1)
+    } else if (printTourStep === 1) {
+      if (!fileInfo) {
+        setFileInfo({
+          name: 'Sample_Assignment.pdf',
+          totalPages: 4,
+          size: '240 KB',
+          typeInfo: { label: 'PDF', icon: 'pdf', category: 'document' },
+          isTourSample: true,
+        })
+      }
+      goToStep(STEP.SETTINGS, { preserveScroll: true })
+      setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth' }), 120)
+      setPrintTourStep(2)
+    } else if (printTourStep === 2) {
+      setPrintTourStep(3)
+    } else if (printTourStep === 3) {
+      setPrintTourStep(4)
+    }
+  }
+
+  function handlePrintTourBack() {
+    if (printTourStep === 4) {
+      setPrintTourStep(3)
+    } else if (printTourStep === 3) {
+      setPrintTourStep(2)
+    } else if (printTourStep === 2) {
+      if (fileInfo?.isTourSample) {
+        setFileInfo(null)
+      }
+      goToStep(STEP.UPLOAD, { preserveScroll: true })
+      setPrintTourStep(1)
+    } else if (printTourStep === 1) {
+      goToStep(STEP.HERO, { preserveScroll: true })
+      setPrintTourStep(0)
+    }
+  }
+
+  function handlePrintTourFinish() {
+    markTourCompleted(STORAGE_KEYS.PRINT_TOUR, 'completed')
+    setIsPrintTourActive(false)
+    if (fileInfo?.isTourSample) {
+      setFileInfo(null)
+      goToStep(STEP.UPLOAD, { preserveScroll: true })
+    }
+  }
+
+  function handlePrintTourSkip() {
+    markTourCompleted(STORAGE_KEYS.PRINT_TOUR, 'dismissed')
+    setIsPrintTourActive(false)
+    if (fileInfo?.isTourSample) {
+      setFileInfo(null)
+      goToStep(STEP.UPLOAD, { preserveScroll: true })
+    }
+  }
+
   function handleReset() {
+    if (fileInfo?.isTourSample) {
+      setIsPrintTourActive(false)
+    }
     goToStep(STEP.HERO)
     setFileInfo(null)
     setSettings(DEFAULT_SETTINGS)
@@ -718,6 +849,28 @@ export default function App() {
               window.sessionStorage.setItem('xbuddy_intro_seen', 'true')
             } catch {}
             setShowIntro(false)
+          }}
+        />
+      )}
+
+      {/* First-Time Interactive Printing Guided Tour */}
+      {isPrintTourActive && !showIntro && !showPayment && printTourSteps[printTourStep] && (
+        <InteractiveTourSpotlight
+          isOpen={isPrintTourActive}
+          stepIndex={printTourStep}
+          totalSteps={5}
+          stepData={printTourSteps[printTourStep]}
+          onNext={handlePrintTourNext}
+          onBack={handlePrintTourBack}
+          onFinish={handlePrintTourFinish}
+          onSkip={handlePrintTourSkip}
+          onMissingTarget={(idx) => {
+            // If target is missing or route changed, safely adjust or wait
+            if (idx === 0 && step !== STEP.HERO) {
+              setPrintTourStep(1)
+            } else if (idx >= 2 && !fileInfo) {
+              setPrintTourStep(1)
+            }
           }}
         />
       )}

@@ -80,7 +80,7 @@ export default function PrintSettings({ fileInfo, settings, onChange }) {
 
       <h2 className="text-2xl font-bold text-[#222222] mb-5">{t('settings.title', 'Print Settings')}</h2>
 
-      <div className="space-y-4">
+      <div id="tour-print-settings" data-tour="print-settings" className="space-y-4">
         {/* Color Mode */}
         <SettingCard title={t('settings.printType', 'Print Type')}>
           <div className="flex gap-2">

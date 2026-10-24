@@ -53,7 +53,7 @@ export default function PriceCard({ fileInfo, settings, onPayAndPrint }) {
 
   return (
     <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-2xl mx-auto px-4 py-4 pb-8">
-      <div className="bg-white border border-orange-100 rounded-2xl p-6 shadow-sm glow-orange-sm">
+      <div id="tour-order-summary" data-tour="order-summary" className="bg-white border border-orange-100 rounded-2xl p-6 shadow-sm glow-orange-sm">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-[#222222]">{t('pricing.summaryTitle', 'Print Summary')}</h3>
           <span className="text-[11px] font-semibold px-2.5 py-1 bg-orange-50 text-[#F78C25] rounded-lg border border-orange-200">
@@ -142,6 +142,8 @@ export default function PriceCard({ fileInfo, settings, onPayAndPrint }) {
           </button>
         ) : (
           <motion.button
+            id="tour-review-and-pay"
+            data-tour="review-and-pay"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={onPayAndPrint}

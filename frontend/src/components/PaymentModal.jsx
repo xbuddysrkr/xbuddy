@@ -24,6 +24,8 @@ import { detectPlatform, getPhonePeLaunchUrl, buildUpiQuery, getUpiUrls, openPho
 import { buildQrFilename, generateSharpQrPng, triggerQrDownload } from '../utils/qrDownload'
 import { useLanguage } from '../i18n/LanguageContext'
 import { getPaymentConfig, createDirectUpiIntentOrder, pollDirectUpiOrderStatus } from '../utils/api'
+import InteractiveTourSpotlight from './InteractiveTourSpotlight'
+import { STORAGE_KEYS, isTourCompleted, markTourCompleted } from '../utils/tourStorage'
 
 // Official Xerox Shopkeeper Receiving UPI Credentials
 const OFFICIAL_UPI_ID = '9100280705@ybl'
@@ -152,6 +154,12 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
   // 5-Minute Checkout Expiry Countdown (300 seconds)
   const [remainingSeconds, setRemainingSeconds] = useState(300)
+
+  // First-Time Payment Interactive Guided Tour State
+  const [paymentTourStep, setPaymentTourStep] = useState(0)
+  const [isPaymentTourActive, setIsPaymentTourActive] = useState(() => {
+    return !isTourCompleted(STORAGE_KEYS.PAYMENT_TOUR)
+  })
 
   const launchingTimeoutRef = useRef(null)
   const isLaunchingRef = useRef(false)
@@ -581,7 +589,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                   </div>
 
                   {/* Order & Receiving Details */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 text-xs space-y-1 text-left">
+                  <div id="tour-payment-review-details" data-tour="payment-review-details" className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 text-xs space-y-1 text-left">
                     <div className="flex justify-between text-slate-500 text-[11px]">
                       <span>Shop Name:</span>
                       <strong className="text-slate-800">{receiverConfig.payeeName}</strong>
@@ -738,7 +746,12 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
       {/* Dynamic Payment QR Instructions Popup */}
       <PaymentQrInstructionsModal
         isOpen={showInstructionsPopup}
-        onClose={() => setShowInstructionsPopup(false)}
+        onClose={() => {
+          setShowInstructionsPopup(false)
+          if (isPaymentTourActive && paymentTourStep === 0) {
+            setPaymentTourStep(1)
+          }
+        }}
         amount={total}
         orderId={activeOrderId}
         payeeName={receiverConfig.payeeName}
@@ -747,6 +760,54 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
         isDownloaded={isDownloaded}
         downloadError={downloadError}
       />
+
+      {/* First-Time Interactive Payment Tour */}
+      {isPaymentTourActive && (
+        <InteractiveTourSpotlight
+          isOpen={isPaymentTourActive}
+          stepIndex={paymentTourStep}
+          totalSteps={2}
+          stepData={
+            paymentTourStep === 0
+              ? {
+                  targetSelector: '[data-tour="payment-qr-got-it"]',
+                  title: t('tour.paymentStep1Title', 'Your QR is ready! 🎉'),
+                  description: isDownloaded
+                    ? t('tour.paymentStep1DescDownloaded', 'Your payment QR has been downloaded. Open your UPI app and select the QR from Gallery.')
+                    : t('tour.paymentStep1DescStarted', 'Your payment QR download started. Open your UPI app and select the QR from Gallery.'),
+                  pulseShape: 'pill',
+                  padding: 8,
+                }
+              : {
+                  targetSelector: '[data-tour="payment-review-details"]',
+                  title: t('tour.paymentStep2Title', 'One last check! 💳'),
+                  description: t('tour.paymentStep2Desc', 'Check the recipient and amount before confirming your payment.'),
+                  pulseShape: 'rect',
+                  padding: 8,
+                }
+          }
+          onNext={() => {
+            if (paymentTourStep === 0) {
+              setShowInstructionsPopup(false)
+              setPaymentTourStep(1)
+            }
+          }}
+          onBack={() => {
+            if (paymentTourStep === 1) {
+              setShowInstructionsPopup(true)
+              setPaymentTourStep(0)
+            }
+          }}
+          onFinish={() => {
+            markTourCompleted(STORAGE_KEYS.PAYMENT_TOUR, 'completed')
+            setIsPaymentTourActive(false)
+          }}
+          onSkip={() => {
+            markTourCompleted(STORAGE_KEYS.PAYMENT_TOUR, 'dismissed')
+            setIsPaymentTourActive(false)
+          }}
+        />
+      )}
     </AnimatePresence>
   )
 }

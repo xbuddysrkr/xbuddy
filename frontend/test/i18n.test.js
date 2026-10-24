@@ -143,6 +143,7 @@ const requiredDomains = [
   'footer',
   'intro',
   'ads',
+  'tour',
 ]
 
 for (const domain of requiredDomains) {

@@ -115,6 +115,8 @@ export default function Hero({ onGetStarted, onResumeBuilder, onMyOrders }) {
         >
           <motion.button
             ref={startBtnRef}
+            id="tour-start-printing"
+            data-tour="start-printing"
             whileHover={{ scale: 1.04, y: -2 }}
             whileTap={{ scale: 0.98 }}
             onMouseEnter={() => setIsBtnHovered(true)}

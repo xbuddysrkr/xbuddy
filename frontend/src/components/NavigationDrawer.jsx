@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-import { Home, ClipboardList, Store, Megaphone, Info, HelpCircle, X } from 'lucide-react'
+import { Home, ClipboardList, Store, Megaphone, Info, HelpCircle, X, Compass } from 'lucide-react'
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext'
 
 export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentStep }) {
@@ -65,6 +65,7 @@ export default function NavigationDrawer({ isOpen, onClose, onNavigate, currentS
     { id: 'my_orders', label: t('nav.drawerMyOrders', 'My Orders'), icon: ClipboardList, action: () => onNavigate('my_orders') },
     { id: 'admin', label: t('nav.drawerShopDashboard', 'Shop Dashboard'), icon: Store, action: () => onNavigate('admin') },
     { id: 'ads', label: t('nav.drawerCampusAds', 'Campus Ads'), icon: Megaphone, action: () => onNavigate('ads') },
+    { id: 'tutorial', label: t('nav.drawerTutorial', 'Replay Tour'), icon: Compass, action: () => onNavigate('tutorial') },
     { id: 'about', label: t('nav.drawerAbout', 'About X Buddy'), icon: Info, action: () => onNavigate('about') },
     { id: 'help', label: t('nav.drawerHelp', 'Help'), icon: HelpCircle, action: () => onNavigate('help') },
   ]

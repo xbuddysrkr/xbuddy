@@ -453,6 +453,8 @@ export default function PaymentQrInstructionsModal({
           {/* Primary Action Button: Got It / Review & Pay */}
           <button
             type="button"
+            id="tour-payment-qr-got-it"
+            data-tour="payment-qr-got-it"
             onClick={onClose}
             className="w-full py-2.5 px-4 bg-gradient-to-r from-[#F78C25] to-orange-500 hover:from-orange-600 hover:to-orange-700 text-white font-extrabold text-xs sm:text-sm rounded-2xl shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
           >
