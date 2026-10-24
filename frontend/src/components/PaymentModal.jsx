@@ -132,6 +132,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [step, setStep] = useState('SELECT')
   const [selectedApp, setSelectedApp] = useState(null)
   const [copiedUpi, setCopiedUpi] = useState(false)
+  const [copiedOrderId, setCopiedOrderId] = useState(false)
   const [viewMode, setViewMode] = useState('qr') // Default to 'qr' for instant QR download & display
   const [desktopNotice, setDesktopNotice] = useState('')
   const [fallbackNotice, setFallbackNotice] = useState('')
@@ -180,9 +181,9 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const phonePeLaunchUrl = getPhonePeLaunchUrl()
 
   const activeOrderId = orderMeta?.orderId || intentData?.orderId || ''
-  const note = orderMeta?.isReprint
-    ? `XBuddy Reprint ${activeOrderId}`
-    : `XBuddy Print ${activeOrderId}`
+  const note = activeOrderId
+    ? `XBuddy ${activeOrderId}`
+    : (orderMeta?.isReprint ? 'XBuddy Reprint' : 'XBuddy Print')
 
   // Build standard UPI URI for QR code and generic fallback
   const upiQuery = buildUpiQuery({
@@ -482,6 +483,14 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     }
   }
 
+  function copyOrderId() {
+    if (activeOrderId && navigator.clipboard) {
+      navigator.clipboard.writeText(activeOrderId)
+      setCopiedOrderId(true)
+      setTimeout(() => setCopiedOrderId(false), 2000)
+    }
+  }
+
   return (
     <AnimatePresence>
       <motion.div
@@ -529,13 +538,51 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
           {/* ─── STEP 1: PAYMENT APP SELECTOR & QR CODE ─── */}
           {step === 'SELECT' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              {/* Amount Banner */}
+              {/* Amount Banner & Order ID Badge */}
               <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl p-4 text-center border border-orange-100 mb-4 shadow-2xs">
                 <span className="text-xs text-slate-500 font-medium block mb-1">
                   {orderMeta?.isReprint ? t('payment.amountToPayReprint', 'Reprint Amount:') : t('payment.amountToPay', 'Amount to Pay:')}
                 </span>
                 <span className="text-3xl font-black text-[#F78C25] tracking-tight">₹{Number(total || 0).toFixed(2)}</span>
-                <div className="flex items-center justify-center gap-1.5 mt-2 text-[11px] text-slate-500">
+
+                {/* Clearly Visible XBuddy Order ID Card with 1-click Copy */}
+                <div className="mt-3 bg-white/95 border border-orange-200 rounded-xl p-2.5 flex items-center justify-between shadow-2xs">
+                  <div className="text-left">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                      {t('payment.orderReference', 'XBuddy Order ID')}
+                    </span>
+                    <span className="font-mono text-base font-extrabold text-slate-900 tracking-wider">
+                      {activeOrderId || 'XP----'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={copyOrderId}
+                    disabled={!activeOrderId}
+                    className="px-2.5 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-[#F78C25] border border-orange-200 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
+                    title="Copy Order ID"
+                  >
+                    {copiedOrderId ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700">{t('common.copied', 'Copied')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{t('common.copy', 'Copy')}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Instruction for Payment Confirmation */}
+                <p className="text-[11px] text-slate-600 font-semibold mt-2.5 flex items-center justify-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-[#F78C25] shrink-0" />
+                  <span>{t('payment.keepOrderIdNotice', 'Keep this Order ID for payment confirmation.')}</span>
+                </p>
+
+                <div className="flex items-center justify-center gap-1.5 mt-2 pt-2 border-t border-orange-200/50 text-[10px] text-slate-500">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Direct UPI · Receiver: <strong>{receiverConfig.payeeName}</strong></span>
                 </div>

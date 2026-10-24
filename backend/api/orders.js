@@ -1469,9 +1469,33 @@ export default async function handler(req, res) {
 
       try {
         const { db } = await connectToDatabase()
+        const isVerified = ['paid', 'verified'].includes(paymentStatus.toLowerCase())
+        const existing = await db.collection('orders').findOne({ orderId }, { projection: { verifiedAt: 1, paymentStatus: 1 } })
+        
+        const setFields = {
+          paymentStatus,
+          isPaid: isVerified,
+          updatedAt: nowIso,
+        }
+        if (isVerified) {
+          setFields.verifiedAt = existing?.verifiedAt || nowIso
+          setFields.verifiedBy = req.body?.verifiedBy || 'shopkeeper'
+        }
+
         await db.collection('orders').updateOne(
           { orderId },
-          { $set: { paymentStatus, updatedAt: nowIso } }
+          {
+            $set: setFields,
+            $push: {
+              auditLog: {
+                action: isVerified ? 'payment_verified' : 'payment_status_updated',
+                status: paymentStatus,
+                timestamp: nowIso,
+                verifiedBy: req.body?.verifiedBy || 'shopkeeper',
+                note: req.body?.note || 'Payment status updated by shopkeeper',
+              },
+            },
+          }
         )
         mongoUpdated = true
       } catch (mErr) {

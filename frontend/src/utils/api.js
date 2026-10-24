@@ -528,13 +528,15 @@ export async function updateOrderStatus(orderId, printStatus) {
   return { success: false, error: 'Failed to update order status' }
 }
 
-export async function updatePaymentStatus(orderId, paymentStatus) {
+export async function updatePaymentStatus(orderId, paymentStatus, options = {}) {
   const cleanId = String(orderId || '').trim().toUpperCase()
   if (!cleanId) return { success: false, error: 'orderId is required' }
 
   const boothToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
+  const adminPassword = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_admin_password') : null) || 'xbuddy@4921'
   const headers = { 'Content-Type': 'application/json' }
   if (boothToken) headers['X-Booth-Token'] = boothToken
+  if (adminPassword) headers['X-Admin-Password'] = adminPassword
 
   const endpoints = getCandidateOrdersEndpoints()
   for (const endpoint of endpoints) {
@@ -542,7 +544,13 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ action: 'updatePaymentStatus', orderId: cleanId, paymentStatus }),
+        body: JSON.stringify({
+          action: 'updatePaymentStatus',
+          orderId: cleanId,
+          paymentStatus,
+          adminPassword,
+          ...options,
+        }),
         signal: AbortSignal.timeout(10000),
       })
       if (res.ok) {
@@ -558,7 +566,27 @@ export async function updatePaymentStatus(orderId, paymentStatus) {
     }
   }
 
+  // Fallback to /api/payments/verify-order if paymentStatus is 'verified' or 'paid'
+  if (paymentStatus === 'verified' || paymentStatus === 'paid') {
+    try {
+      const pRes = await fetch('/api/payments/verify-order', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ orderId: cleanId, adminPassword, ...options }),
+        signal: AbortSignal.timeout(8000),
+      })
+      if (pRes.ok) {
+        const pData = await pRes.json()
+        if (pData?.success) return pData
+      }
+    } catch {}
+  }
+
   return { success: false, error: 'Failed to update payment status in authoritative MongoDB' }
+}
+
+export async function verifyAndApprovePayment(orderId, options = {}) {
+  return updatePaymentStatus(orderId, 'verified', options)
 }
 
 export async function initiateReprint(orderId, options = {}) {

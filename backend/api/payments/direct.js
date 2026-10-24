@@ -11,6 +11,7 @@
 
 import { connectToDatabase } from '../_lib/mongodb.js'
 import { calculateOrderPrice } from '../_lib/retention.js'
+import { isBoothAuthorized } from '../_lib/boothAuth.js'
 import {
   getShopkeeperUpiConfig,
   toPaise,
@@ -54,9 +55,9 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
       const cfg = getShopkeeperUpiConfig()
       const payload = req.body || {}
 
-      // Normalize or generate unique Order ID
+      // Normalize or generate unique Order ID (e.g. XP1234 or XB1234)
       const rawOrderId = payload.orderId || payload.orderMeta?.orderId || ''
-      const cleanOrderId = String(rawOrderId).trim().toUpperCase() || `XB${Math.floor(1000 + Math.random() * 9000)}`
+      const cleanOrderId = String(rawOrderId).trim().toUpperCase() || `XP${Math.floor(1000 + Math.random() * 9000)}`
 
       // ── Server-Side Authoritative Price Calculation ──
       // Never trust client amount; recalculate from actual print job parameters
@@ -77,10 +78,8 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
       const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString()
       const nowIso = now.toISOString()
 
-      // Description for UPI payment transaction note
-      const fileName = String(payload.fileName || payload.orderMeta?.fileName || 'Document').slice(0, 25)
-      const isReprint = Boolean(payload.isReprint || payload.orderMeta?.isReprint)
-      const description = isReprint ? `XBuddy Reprint ${cleanOrderId}` : `XBuddy Print ${cleanOrderId}`
+      // Description for UPI payment transaction note: concise e.g. "XBuddy XP1234"
+      const description = `XBuddy ${cleanOrderId}`
 
       // Build canonical UPI URI and app-specific intents
       const upiUri = buildDirectUpiUri({
@@ -116,6 +115,8 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
             orderId: cleanOrderId,
             amount: existingOrder.amount,
             amountPaise: existingOrder.amountPaise || toPaise(existingOrder.amount),
+            currency: 'INR',
+            paymentReference: cleanOrderId,
             payeeVpa: cfg.upiId,
             payeeName: cfg.payeeName,
             upiUri,
@@ -133,6 +134,8 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
             $set: {
               amount: authoritativeRupees,
               amountPaise: expectedPaise,
+              currency: 'INR',
+              paymentReference: cleanOrderId,
               payeeVpa: cfg.upiId,
               payeeName: cfg.payeeName,
               checkoutExpiresAt: expiresAt,
@@ -153,6 +156,8 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
           printSide: printJob.duplex ? 'Double' : 'Single',
           amount: authoritativeRupees,
           amountPaise: expectedPaise,
+          currency: 'INR',
+          paymentReference: cleanOrderId,
           payeeVpa: cfg.upiId,
           payeeName: cfg.payeeName,
           paymentStatus: 'pending',
@@ -165,13 +170,15 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
         })
       }
 
-      console.log(`[DIRECT_UPI] Created checkout intent for Order ${cleanOrderId}: ₹${authoritativeRupees} (${expectedPaise} paise) to ${cfg.upiId}`)
+      console.log(`[DIRECT_UPI] Created checkout intent for Order ${cleanOrderId}: ₹${authoritativeRupees} (${expectedPaise} paise INR) to ${cfg.upiId}`)
 
       return res.status(200).json({
         success: true,
         orderId: cleanOrderId,
         amount: authoritativeRupees,
         amountPaise: expectedPaise,
+        currency: 'INR',
+        paymentReference: cleanOrderId,
         payeeVpa: cfg.upiId,
         payeeName: cfg.payeeName,
         upiUri,
@@ -209,6 +216,10 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
       return res.status(200).json({
         success: true,
         orderId: cleanId,
+        amount: order.amount,
+        amountPaise: order.amountPaise || toPaise(order.amount),
+        currency: order.currency || 'INR',
+        paymentReference: order.paymentReference || cleanId,
         paymentStatus,
         isPaid,
         printStatus: order.printStatus || 'waiting_for_shopkeeper',
@@ -217,6 +228,75 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
       })
     } catch (dbErr) {
       return res.status(503).json({ success: false, error: dbErr.message })
+    }
+  }
+
+  // ── 3.5 POST /api/payments/verify-order (SHOPKEEPER MANUAL APPROVAL) ──────
+  if (action === 'verify-order' || action === 'approve-payment') {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ success: false, error: 'Method not allowed' })
+    }
+    if (!isBoothAuthorized(req)) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: staff authentication required.' })
+    }
+
+    const rawId = req.body?.orderId || req.query?.orderId || ''
+    const cleanId = String(rawId).trim().toUpperCase()
+    if (!cleanId) {
+      return res.status(400).json({ success: false, error: 'orderId is required' })
+    }
+
+    try {
+      const { db } = await connectToDatabase()
+      const orders = db.collection('orders')
+      const existing = await orders.findOne({ orderId: cleanId }, { projection: { pdfBase64: 0 } })
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Order not found' })
+      }
+
+      const nowIso = new Date().toISOString()
+      const isAlreadyVerified = ['paid', 'verified'].includes(String(existing.paymentStatus || '').toLowerCase())
+
+      // Idempotent state transition
+      const result = await orders.findOneAndUpdate(
+        { orderId: cleanId },
+        {
+          $set: {
+            paymentStatus: 'verified',
+            isPaid: true,
+            verifiedAt: existing.verifiedAt || nowIso,
+            verifiedBy: req.body?.verifiedBy || 'shopkeeper',
+            updatedAt: nowIso,
+          },
+          $push: {
+            auditLog: {
+              action: isAlreadyVerified ? 'payment_already_verified' : 'payment_verified',
+              status: 'verified',
+              verifiedAt: nowIso,
+              verifiedBy: req.body?.verifiedBy || 'shopkeeper',
+              note: req.body?.note || 'Manually verified against merchant UPI record',
+            },
+          },
+        },
+        { returnDocument: 'after' }
+      )
+
+      console.log(`[PAYMENT_VERIFIED] Shopkeeper verified Order ${cleanId} (₹${existing.amount})`)
+
+      return res.status(200).json({
+        success: true,
+        orderId: cleanId,
+        paymentStatus: 'verified',
+        isPaid: true,
+        amount: existing.amount,
+        amountPaise: existing.amountPaise || toPaise(existing.amount),
+        currency: 'INR',
+        paymentReference: cleanId,
+        verifiedAt: result?.verifiedAt || nowIso,
+        order: result,
+      })
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message })
     }
   }
 

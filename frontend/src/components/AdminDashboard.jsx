@@ -29,6 +29,7 @@ import {
   BarChart3,
   ArrowUpRight,
   Inbox,
+  Copy,
 } from 'lucide-react'
 import {
   fetchAdminOrders,
@@ -36,6 +37,7 @@ import {
   fetchHealthStatus,
   updateOrderStatus,
   validateAndRelease,
+  verifyAndApprovePayment,
 } from '../utils/api'
 
 const STATUS_BADGES = {
@@ -70,6 +72,8 @@ export default function AdminDashboard() {
   const [authError, setAuthError] = useState('')
   const [realConnected, setRealConnected] = useState(false)
   const [actionLoading, setActionLoading] = useState(null)
+  const [copiedId, setCopiedId] = useState(null)
+  const [reconcileFeedback, setReconcileFeedback] = useState(null)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -163,10 +167,12 @@ export default function AdminDashboard() {
               digitalProcessingFee: Number(o.digitalProcessingFee ?? o.serviceFee ?? 0),
               stationId: dynamicStation,
               paymentStatus: o.paymentStatus || 'Pending',
+              isPaid: ['paid', 'verified'].includes(String(o.paymentStatus || '').toLowerCase()) || Boolean(o.isPaid),
               status: currentStatus,
               time: timeStr || 'Just now',
               date: dateStr || new Date().toISOString().split('T')[0],
               timestamp: o.timestamp || o.createdAt || '',
+              expiresAt: o.expiresAt || o.checkoutExpiresAt || '',
               pdfUrl: o.pdfUrl || o.driveUrl || '',
               driveUrl: o.driveUrl || '',
               transactionId: o.transactionId ? String(o.transactionId) : '',
@@ -328,6 +334,10 @@ export default function AdminDashboard() {
       if (!matchSearch) return false
 
       if (statusFilter === 'ALL') return true
+      if (statusFilter === 'PENDING_PAYMENT') {
+        const pStatus = String(order.paymentStatus || '').toLowerCase()
+        return pStatus === 'pending' || order.status === 'Payment Submitted' || (!order.isPaid && order.status === 'Waiting')
+      }
       if (statusFilter === 'PENDING') return order.status === 'Pending' || order.status === 'Payment Submitted' || order.status === 'Waiting' || order.status === 'Accepted' || order.status === 'Order Received'
       if (statusFilter === 'PRINTING') return order.status === 'Printing'
       if (statusFilter === 'READY') return order.status === 'Ready for Collection' || order.status === 'Ready' || order.status === 'Printed'
@@ -336,6 +346,76 @@ export default function AdminDashboard() {
       return true
     })
   }, [orders, searchQuery, statusFilter])
+
+  const handleCopyOrderId = (id) => {
+    if (!id || typeof navigator === 'undefined') return
+    navigator.clipboard.writeText(id)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 1800)
+  }
+
+  const getOrderExpiryInfo = (order) => {
+    const isPaid = order.isPaid || ['paid', 'verified'].includes(String(order.paymentStatus || '').toLowerCase())
+    if (isPaid) {
+      return { isExpired: false, label: 'Paid / Verified', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+    }
+    const created = order.timestamp ? new Date(order.timestamp).getTime() : 0
+    const expires = order.expiresAt ? new Date(order.expiresAt).getTime() : (created ? created + 300000 : 0)
+    if (!expires) return { isExpired: false, label: 'Pending Payment', color: 'text-amber-700 bg-amber-50 border-amber-200' }
+    const now = Date.now()
+    if (now > expires) {
+      const mins = Math.floor((now - expires) / 60000)
+      return { isExpired: true, label: `Expired ${mins}m ago (Can Reconcile)`, color: 'text-rose-700 bg-rose-50 border-rose-200' }
+    }
+    const leftMins = Math.ceil((expires - now) / 60000)
+    return { isExpired: false, label: `Expires in ${leftMins}m`, color: 'text-blue-700 bg-blue-50 border-blue-200' }
+  }
+
+  async function handleVerifyAndApprove(order) {
+    setActionLoading(order.id)
+    try {
+      const res = await verifyAndApprovePayment(order.id, {
+        adminPassword: ADMIN_PASSWORD,
+        verifiedBy: 'Shopkeeper Staff',
+        note: `Manual reconciliation for ₹${order.amount} on ${new Date().toLocaleTimeString()}`,
+      })
+
+      if (res && res.success) {
+        setOrders(prev => prev.map(o => o.id === order.id ? {
+          ...o,
+          paymentStatus: 'verified',
+          isPaid: true,
+          status: o.status === 'Pending' || o.status === 'Payment Submitted' ? 'Accepted' : o.status,
+        } : o))
+
+        if (selectedOrder && selectedOrder.id === order.id) {
+          setSelectedOrder(prev => ({
+            ...prev,
+            paymentStatus: 'verified',
+            isPaid: true,
+            status: prev.status === 'Pending' || prev.status === 'Payment Submitted' ? 'Accepted' : prev.status,
+          }))
+        }
+
+        setReconcileFeedback({
+          type: 'success',
+          message: `Order ${order.id} verified and approved successfully!`,
+        })
+        setTimeout(() => setReconcileFeedback(null), 4000)
+      } else {
+        throw new Error(res?.error || 'Verification failed')
+      }
+    } catch (err) {
+      console.error('Failed to verify order payment:', err)
+      setReconcileFeedback({
+        type: 'error',
+        message: `Failed to verify payment: ${err.message}`,
+      })
+      setTimeout(() => setReconcileFeedback(null), 5000)
+    } finally {
+      setActionLoading(null)
+    }
+  }
 
   // Status transition handler for staff
   async function handleStatusChange(orderId, newStatus) {
@@ -818,7 +898,8 @@ export default function AdminDashboard() {
                 <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 text-xs">
                   {[
                     { key: 'ALL', label: 'All Orders' },
-                    { key: 'PENDING', label: 'Pending' },
+                    { key: 'PENDING_PAYMENT', label: 'Pending Payments ⏳' },
+                    { key: 'PENDING', label: 'Pending Queue' },
                     { key: 'PRINTING', label: 'Printing' },
                     { key: 'READY', label: 'Ready' },
                     { key: 'COLLECTED', label: 'Collected' },
@@ -838,6 +919,30 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               </div>
+
+              {/* Reconciliation Feedback Alert */}
+              {reconcileFeedback && (
+                <div className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-xs ${
+                  reconcileFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {reconcileFeedback.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    )}
+                    <span>{reconcileFeedback.message}</span>
+                  </div>
+                  <button
+                    onClick={() => setReconcileFeedback(null)}
+                    className="p-1 hover:bg-black/5 rounded cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
               {/* Orders Table */}
               <div className="rounded-2xl border border-[#F1E2D2] bg-[#FFFCF8] overflow-hidden shadow-xs">
@@ -878,8 +983,32 @@ export default function AdminDashboard() {
 
                           return (
                             <tr key={order.id} className="hover:bg-[#FFF8F0] transition-colors">
-                              <td className="py-3 px-4 font-mono font-bold text-[#EA580C] text-sm">
-                                {order.id}
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-1.5 font-mono font-bold text-[#EA580C] text-sm">
+                                  <span>{order.id}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyOrderId(order.id)}
+                                    className="p-1 rounded hover:bg-orange-100 text-[#EA580C] transition-colors cursor-pointer"
+                                    title="Copy Order ID"
+                                  >
+                                    {copiedId === order.id ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5 text-orange-400 hover:text-orange-600" />
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="mt-1">
+                                  {(() => {
+                                    const exp = getOrderExpiryInfo(order)
+                                    return (
+                                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${exp.color}`}>
+                                        {exp.label}
+                                      </span>
+                                    )
+                                  })()}
+                                </div>
                               </td>
 
                               <td className="py-3 px-4">
@@ -909,7 +1038,10 @@ export default function AdminDashboard() {
                               </td>
 
                               <td className="py-3 px-4 font-bold text-[#18181B]">
-                                {formatCurrency(order.amount)}
+                                <span className="block">{formatCurrency(order.amount)}</span>
+                                <span className={`text-[10px] font-semibold block ${order.isPaid || order.paymentStatus === 'verified' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                  {order.isPaid || order.paymentStatus === 'verified' ? '✓ Verified' : '⏳ Pending'}
+                                </span>
                               </td>
 
                               <td className="py-3 px-4">
@@ -924,6 +1056,17 @@ export default function AdminDashboard() {
 
                               <td className="py-3 px-4 text-right">
                                 <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                  {(!order.isPaid && order.paymentStatus !== 'verified') && (
+                                    <button
+                                      disabled={isBusy}
+                                      onClick={() => handleVerifyAndApprove(order)}
+                                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                                      title="Verify against PhonePe merchant transaction"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" /> Verify &amp; Approve
+                                    </button>
+                                  )}
+
                                   <button
                                     onClick={() => setSelectedOrder(order)}
                                     className="px-2.5 py-1 rounded-lg bg-[#FFF8F0] hover:bg-[#FFEDD5] text-[#18181B] text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
@@ -1017,6 +1160,18 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between mb-4 border-b border-[#F1E2D2] pb-3">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xl font-extrabold text-[#EA580C]">{selectedOrder.id}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyOrderId(selectedOrder.id)}
+                    className="p-1 rounded-lg bg-[#FFF8F0] hover:bg-[#FFEDD5] text-[#EA580C] transition-colors cursor-pointer"
+                    title="Copy Order ID"
+                  >
+                    {copiedId === selectedOrder.id ? (
+                      <Check className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-orange-500" />
+                    )}
+                  </button>
                   <span className={`px-2.5 py-0.5 rounded-full text-[11px] ${STATUS_BADGES[selectedOrder.status] || ''}`}>
                     {selectedOrder.status}
                   </span>
@@ -1028,6 +1183,47 @@ export default function AdminDashboard() {
                 >
                   <X className="w-4 h-4" />
                 </button>
+              </div>
+
+              {/* Payment Reconciliation Box */}
+              <div className="mb-4">
+                {(!selectedOrder.isPaid && selectedOrder.paymentStatus !== 'verified') ? (
+                  <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="text-[11px] text-amber-900 leading-relaxed">
+                        <strong>Payment Reconciliation:</strong> Compare with PhonePe / UPI merchant notification for transaction note <strong className="font-mono text-amber-950 font-bold">XBuddy {selectedOrder.id}</strong> and exact amount <strong>{formatCurrency(selectedOrder.amount)}</strong>.
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      {(() => {
+                        const exp = getOrderExpiryInfo(selectedOrder)
+                        return (
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${exp.color}`}>
+                            {exp.label}
+                          </span>
+                        )
+                      })()}
+                      <button
+                        disabled={actionLoading === selectedOrder.id}
+                        onClick={() => handleVerifyAndApprove(selectedOrder)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-4 h-4" /> Verify &amp; Approve Payment
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-xs text-emerald-800">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span className="font-bold">Payment Verified &amp; Approved</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded">
+                      Reconciled ✓
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Order Details Grid */}
