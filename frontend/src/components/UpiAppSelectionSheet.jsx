@@ -19,6 +19,7 @@ import {
 import { launchAppOnly, detectPlatform } from '../utils/upiLauncher'
 import { UPI_APP_REGISTRY, searchUpiApps } from '../utils/upiRegistry'
 import { useLanguage } from '../i18n/LanguageContext'
+import { saveSessionState } from '../utils/sessionStore'
 
 /**
  * UpiAppSelectionSheet
@@ -93,12 +94,26 @@ export default function UpiAppSelectionSheet({
     setSelectedApp(app)
     setLaunchAttempted(true)
 
+    // Persist session snapshot synchronously before launching external app
+    saveSessionState({
+      orderId,
+      showPayment: true,
+      lastLaunchedApp: app.id,
+      updatedAt: Date.now(),
+    })
+
     // Execute pure app launch (strictly OPEN ONLY)
     launchAppOnly(app)
   }
 
   const handleRetryLaunch = () => {
     if (selectedApp) {
+      saveSessionState({
+        orderId,
+        showPayment: true,
+        lastLaunchedApp: selectedApp.id,
+        updatedAt: Date.now(),
+      })
       launchAppOnly(selectedApp)
     }
   }

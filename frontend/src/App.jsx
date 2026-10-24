@@ -33,6 +33,15 @@ import { Menu, ClipboardList, Check } from 'lucide-react'
 import { useLanguage, LanguageSwitcher } from './i18n/LanguageContext'
 import InteractiveTourSpotlight from './components/InteractiveTourSpotlight'
 import { STORAGE_KEYS, isTourCompleted, markTourCompleted } from './utils/tourStorage'
+import {
+  saveActivePdf,
+  getActivePdf,
+  clearEntireSession,
+  saveSessionState,
+  getSessionState,
+  isSessionExpired,
+  reconcileSessionWithBackend,
+} from './utils/sessionStore'
 
 const STEP = { HERO: 'hero', UPLOAD: 'upload', SETTINGS: 'settings', PRINTING: 'printing', RESUME: 'resume', MY_ORDERS: 'my_orders', ADMIN: 'admin', ADS: 'ads' }
 const DEFAULT_SETTINGS = {
@@ -203,6 +212,136 @@ export default function App() {
     }
   }, [])
 
+  // ── 1b. Automatic Session & PDF Restoration on Mount (Survives Reloads/App Switching) ──
+  useEffect(() => {
+    let isCancelled = false
+
+    async function restoreActiveSession() {
+      const saved = getSessionState()
+      if (!saved || isSessionExpired(saved)) return
+
+      // Check if there is an active order
+      const activeId = saved.orderId
+      if (activeId) {
+        setOrderId(activeId)
+        orderIdRef.current = activeId
+
+        try {
+          const status = await reconcileSessionWithBackend(activeId)
+          if (isCancelled) return
+
+          if (status.isPaid) {
+            setStep(STEP.PRINTING)
+            setShowPayment(false)
+            return
+          }
+        } catch (e) {
+          console.warn('[Session Reconcile Warning]:', e)
+        }
+      }
+
+      // Restore print settings
+      if (saved.settings) {
+        setSettings(saved.settings)
+      }
+
+      // Restore PDF binary & metadata from IndexedDB
+      try {
+        const storedPdf = await getActivePdf()
+        if (isCancelled) return
+
+        if (storedPdf && storedPdf.pdfBlob) {
+          const meta = storedPdf.metadata || {}
+          setFileInfo({
+            file: storedPdf.pdfBlob,
+            originalFile: storedPdf.originalFileBlob || storedPdf.pdfBlob,
+            name: meta.name || 'document.pdf',
+            size: meta.size || '',
+            totalPages: meta.totalPages || 1,
+            thumbnail: meta.thumbnail || null,
+            typeInfo: meta.typeInfo || { label: 'PDF', icon: 'FileText', category: 'document' },
+            requiresAgent: meta.requiresAgent || false,
+            isTourSample: meta.isTourSample || false,
+            reprintOrderId: meta.reprintOrderId || null,
+            isReprint: meta.isReprint || false,
+          })
+
+          if (saved.showPayment || (typeof window !== 'undefined' && window.location.hash === '#payment')) {
+            setStep(STEP.SETTINGS)
+            setShowPayment(true)
+          } else if (saved.step && [STEP.SETTINGS, STEP.UPLOAD, STEP.PRINTING].includes(saved.step)) {
+            setStep(saved.step)
+          } else {
+            setStep(STEP.SETTINGS)
+          }
+        }
+      } catch (pdfErr) {
+        console.warn('[Session PDF Restore Error]:', pdfErr)
+      }
+    }
+
+    restoreActiveSession()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [])
+
+  // ── 1c. Mobile App-Switching & Lifecycle Listeners (Flushes state before backgrounding) ──
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        if (fileInfo) {
+          saveSessionState({
+            step,
+            settings,
+            orderId: orderIdRef.current,
+            showPayment,
+          })
+        }
+      } else if (document.visibilityState === 'visible') {
+        if (orderIdRef.current) {
+          reconcileSessionWithBackend(orderIdRef.current).then((res) => {
+            if (res.isPaid) {
+              handleOrderSuccess(orderIdRef.current)
+            }
+          })
+        }
+      }
+    }
+
+    function handlePageHide() {
+      if (fileInfo) {
+        saveSessionState({
+          step,
+          settings,
+          orderId: orderIdRef.current,
+          showPayment,
+        })
+      }
+    }
+
+    function handlePageShow() {
+      if (orderIdRef.current) {
+        reconcileSessionWithBackend(orderIdRef.current).then((res) => {
+          if (res.isPaid) {
+            handleOrderSuccess(orderIdRef.current)
+          }
+        })
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pagehide', handlePageHide)
+    window.addEventListener('pageshow', handlePageShow)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', handlePageHide)
+      window.removeEventListener('pageshow', handlePageShow)
+    }
+  }, [fileInfo, step, settings, showPayment])
+
   // 2. Browser Back / Forward handler (popstate)
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -294,6 +433,12 @@ export default function App() {
   // 4. Modal Controls with History Integration
   function openPayment() {
     if (showPayment) return
+    saveSessionState({
+      step: STEP.SETTINGS,
+      settings,
+      orderId: orderIdRef.current,
+      showPayment: true,
+    })
     const currentState = window.history.state || { step, showPayment: false, isDrawerOpen: false }
     try {
       window.history.pushState({ ...currentState, showPayment: true }, '', window.location.pathname + '#payment')
@@ -303,6 +448,7 @@ export default function App() {
 
   function closePayment() {
     if (!showPayment) return
+    saveSessionState({ showPayment: false })
     if (window.history.state?.showPayment) {
       window.history.back()
     } else {
@@ -413,6 +559,7 @@ export default function App() {
 
   const orderMeta = fileInfo && normalizedSettings
     ? {
+        orderId: orderId || orderIdRef.current || undefined,
         fileName: fileInfo.name,
         totalPages: fileInfo.totalPages,
         ...normalizedSettings,
@@ -427,8 +574,32 @@ export default function App() {
       }
     : null
 
+  function handleSettingsChange(newSettings) {
+    setSettings(newSettings)
+    saveSessionState({ settings: newSettings })
+  }
+
   async function handleFileReady(info) {
     setFileInfo(info)
+    if (info?.file) {
+      saveActivePdf(info.file, {
+        name: info.name,
+        size: info.size,
+        totalPages: info.totalPages,
+        thumbnail: info.thumbnail,
+        typeInfo: info.typeInfo,
+        requiresAgent: info.requiresAgent,
+        isTourSample: info.isTourSample,
+        reprintOrderId: info.reprintOrderId,
+        isReprint: info.isReprint,
+      }, info.originalFile)
+    }
+    saveSessionState({
+      step: STEP.SETTINGS,
+      settings,
+      orderId: null,
+      showPayment: false,
+    })
     goToStep(STEP.SETTINGS, { preserveScroll: true })
     if (isPrintTourActive && printTourStep === 1) {
       setPrintTourStep(2)
@@ -446,7 +617,24 @@ export default function App() {
       file = fileOrUrl
     }
     const result = await processFile(file)
-    setFileInfo({ file: result.pdfBlob, originalFile: file, name: file.name, size: '', totalPages: result.totalPages, thumbnail: result.thumbnail, typeInfo: { label: 'PDF', icon: 'pdf', category: 'document' }, requiresAgent: false })
+    const info = {
+      file: result.pdfBlob,
+      originalFile: file,
+      name: file.name,
+      size: '',
+      totalPages: result.totalPages,
+      thumbnail: result.thumbnail,
+      typeInfo: { label: 'PDF', icon: 'pdf', category: 'document' },
+      requiresAgent: false,
+    }
+    setFileInfo(info)
+    saveActivePdf(result.pdfBlob, info, file)
+    saveSessionState({
+      step: STEP.SETTINGS,
+      settings,
+      orderId: null,
+      showPayment: false,
+    })
     goToStep(STEP.SETTINGS)
     setTimeout(() => settingsRef.current?.scrollIntoView({ behavior: 'smooth' }), 300)
   }
@@ -455,6 +643,7 @@ export default function App() {
     setOrderId(id)
     orderIdRef.current = id
     setShowPayment(false)
+    clearEntireSession()
     goToStep(STEP.PRINTING, { replace: true })
   }
 
@@ -627,6 +816,7 @@ export default function App() {
     if (fileInfo?.isTourSample) {
       setIsPrintTourActive(false)
     }
+    clearEntireSession()
     goToStep(STEP.HERO)
     setFileInfo(null)
     setSettings(DEFAULT_SETTINGS)
@@ -791,7 +981,7 @@ export default function App() {
               <AnimatePresence>
                 {fileInfo && step === STEP.SETTINGS && (
                   <motion.div ref={settingsRef} key="settings" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                    <PrintSettings fileInfo={fileInfo} settings={settings} onChange={setSettings} />
+                    <PrintSettings fileInfo={fileInfo} settings={settings} onChange={handleSettingsChange} />
                     <PriceCard fileInfo={fileInfo} settings={settings} onPayAndPrint={openPayment} />
                   </motion.div>
                 )}

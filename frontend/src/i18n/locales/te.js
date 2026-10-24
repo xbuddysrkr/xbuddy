@@ -298,6 +298,10 @@ export const te = {
     clearSearch: 'క్లియర్',
     verifiedBadge: 'ధృవీకరించబడింది',
     backToApps: 'అన్ని యాప్‌లకు తిరిగి వెళ్లండి',
+    sessionExpired: 'చెల్లింపు గడువు ముగిసింది',
+    expiredNotice: 'మీరు ఇప్పటికే మీ UPI యాప్‌లో చెల్లించినట్లయితే, నిర్ధారించడానికి క్రింద నొక్కండి. లేదంటే, సెషన్‌ను పునరుద్ధరించండి.',
+    alreadyPaidBtn: 'నేను ఇప్పటికే చెల్లించాను',
+    renewSessionBtn: 'సెషన్ పునరుద్ధరించండి',
   },
   orderProgress: {
     stepUploadLabel: 'డాక్యుమెంట్ ప్రిపేర్ అవుతోంది',

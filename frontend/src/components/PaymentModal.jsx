@@ -27,6 +27,7 @@ import { getPaymentConfig, createDirectUpiIntentOrder, pollDirectUpiOrderStatus 
 import InteractiveTourSpotlight from './InteractiveTourSpotlight'
 import UpiAppSelectionSheet from './UpiAppSelectionSheet'
 import { STORAGE_KEYS, isTourCompleted, markTourCompleted } from '../utils/tourStorage'
+import { saveSessionState, getSessionState } from '../utils/sessionStore'
 
 // Official Xerox Shopkeeper Receiving UPI Credentials
 const OFFICIAL_UPI_ID = '9100280705@ybl'
@@ -153,8 +154,14 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
   const [downloadError, setDownloadError] = useState(false)
   const autoDownloadedOrdersRef = useRef(new Set())
 
-  // 5-Minute Checkout Expiry Countdown (300 seconds)
-  const [remainingSeconds, setRemainingSeconds] = useState(300)
+  // 5-Minute Checkout Expiry Countdown (recalculated from absolute timestamp)
+  const [remainingSeconds, setRemainingSeconds] = useState(() => {
+    const session = getSessionState()
+    if (session?.expiresAt) {
+      return Math.max(0, Math.floor((Number(session.expiresAt) - Date.now()) / 1000))
+    }
+    return 300
+  })
 
   // Custom UPI App Selection Bottom Sheet State (Open Only)
   const [showAppSelector, setShowAppSelector] = useState(false)
@@ -256,6 +263,14 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     if (!pngDataUrl || !activeOrderId) return
     if (autoDownloadedOrdersRef.current.has(activeOrderId)) return
 
+    // Verify whether QR was already downloaded in this or previous session
+    const session = getSessionState()
+    if (session?.orderId === activeOrderId && session?.isDownloaded) {
+      autoDownloadedOrdersRef.current.add(activeOrderId)
+      setIsDownloaded(true)
+      return
+    }
+
     autoDownloadedOrdersRef.current.add(activeOrderId)
     const filename = buildQrFilename(activeOrderId)
     const success = triggerQrDownload(pngDataUrl, filename)
@@ -263,6 +278,12 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     setIsDownloaded(true)
     setDownloadError(!success)
     setShowInstructionsPopup(true)
+
+    // Save download state so reload does not trigger duplicate download
+    saveSessionState({
+      orderId: activeOrderId,
+      isDownloaded: true,
+    })
   }, [pngDataUrl, activeOrderId])
 
   // ── 4. Re-Download & App Launcher Handlers ────────────────────────────────
@@ -282,13 +303,38 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     }
   }
 
-  // ── 3. 5-Minute Checkout Countdown Timer ──────────────────────────────────
+  // ── 5. Absolute Timestamp Countdown Timer (Tab-Switch & Reload Immune) ────
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
+    const tickCountdown = () => {
+      const session = getSessionState()
+      const expiry = session?.expiresAt || intentData?.expiresAt
+      if (expiry) {
+        const expiryMs = typeof expiry === 'string' ? new Date(expiry).getTime() : Number(expiry)
+        const diff = Math.max(0, Math.floor((expiryMs - Date.now()) / 1000))
+        setRemainingSeconds(diff)
+      } else {
+        setRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0))
+      }
+    }
+
+    tickCountdown()
+    const timer = setInterval(tickCountdown, 1000)
+
+    const handleVisibilityOrShow = () => {
+      if (document.visibilityState === 'visible') {
+        tickCountdown()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityOrShow)
+    window.addEventListener('pageshow', handleVisibilityOrShow)
+
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', handleVisibilityOrShow)
+      window.removeEventListener('pageshow', handleVisibilityOrShow)
+    }
+  }, [intentData])
 
   const formatCountdown = (seconds) => {
     const m = Math.floor(seconds / 60)
@@ -296,11 +342,11 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
 
-  // ── 4. Authoritative Server Order Persistence on Click ───────────────────
-  async function registerIntentOrderOnServer() {
+  // ── 6. Authoritative Server Order Persistence on Click & Mount ───────────
+  async function registerIntentOrderOnServer(forceRefresh = false) {
     try {
       const orderPayload = {
-        orderId: orderMeta?.orderId,
+        orderId: orderMeta?.orderId || activeOrderId || undefined,
         fileName: orderMeta?.fileName,
         totalPages: orderMeta?.totalPages || orderMeta?.filePages || 1,
         copies: orderMeta?.copies || 1,
@@ -316,12 +362,31 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
         if (data.qrSvg) {
           setVectorQrSvg(data.qrSvg)
         }
+
+        const expiryMs = data.expiresAt ? new Date(data.expiresAt).getTime() : (Date.now() + 300 * 1000)
+        saveSessionState({
+          orderId: data.orderId,
+          expiresAt: expiryMs,
+          showPayment: true,
+          paymentStatus: data.alreadyPaid ? 'paid' : 'pending',
+        })
+
+        const remaining = Math.max(0, Math.floor((expiryMs - Date.now()) / 1000))
+        setRemainingSeconds(remaining)
+
+        if (data.alreadyPaid) {
+          onSuccess(data.orderId, data)
+        }
         return data
       }
     } catch (err) {
       console.warn('[Direct UPI Order Registration Notice]:', err.message)
     }
     return null
+  }
+
+  function handleRenewSession() {
+    registerIntentOrderOnServer(true)
   }
 
   // ── 5. Background Verification Polling ────────────────────────────────────
@@ -386,6 +451,16 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
     setGenericFallbackUri(genericFallback)
     setStep('LAUNCHING')
+
+    // Persist session snapshot synchronously before launching external app
+    saveSessionState({
+      orderId: activeOrderId || serverIntent?.orderId,
+      showPayment: true,
+      lastLaunchedApp: app.id,
+      isDownloaded: true,
+      step: 'LAUNCHING',
+      updatedAt: Date.now(),
+    })
 
     try {
       window.location.href = primary
@@ -552,11 +627,38 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                     <p className="text-xs text-slate-500 mb-2">{t('payment.scanWithApps', 'Scan using PhonePe, Google Pay, Paytm, or BHIM')}</p>
                   )}
 
-                  {/* 5-Minute Expiry Countdown Badge */}
-                  <div className="flex items-center justify-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full py-1 px-3 w-fit mx-auto mb-3">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Session expires in: <strong>{formatCountdown(remainingSeconds)}</strong></span>
-                  </div>
+                  {/* 5-Minute Expiry Countdown or Expired Session Banner */}
+                  {remainingSeconds === 0 ? (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-2xl mb-3 text-center shadow-xs">
+                      <p className="text-xs font-bold text-red-700 mb-1">
+                        ⚠️ {t('payment.sessionExpired', 'Payment Window Expired')}
+                      </p>
+                      <p className="text-[11px] text-red-600 mb-2">
+                        {t('payment.expiredNotice', 'If you already paid in your UPI app, tap below to confirm. Otherwise, renew the session.')}
+                      </p>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setStep('FORM')}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer active:scale-98"
+                        >
+                          {t('payment.alreadyPaidBtn', 'I Already Paid')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRenewSession}
+                          className="px-3 py-1.5 bg-white border border-red-300 text-red-700 font-bold text-xs rounded-xl hover:bg-red-50 cursor-pointer active:scale-98"
+                        >
+                          {t('payment.renewSessionBtn', 'Renew Session')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full py-1 px-3 w-fit mx-auto mb-3">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Session expires in: <strong>{formatCountdown(remainingSeconds)}</strong></span>
+                    </div>
+                  )}
 
                   {/* Crisp Vector SVG QR Code with Tap to Open Trigger */}
                   <div

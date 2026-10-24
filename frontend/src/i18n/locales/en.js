@@ -298,6 +298,10 @@ export const en = {
     clearSearch: 'Clear',
     verifiedBadge: 'Verified',
     backToApps: 'Back to all apps',
+    sessionExpired: 'Payment Window Expired',
+    expiredNotice: 'If you already paid in your UPI app, tap below to confirm. Otherwise, renew the session.',
+    alreadyPaidBtn: 'I Already Paid',
+    renewSessionBtn: 'Renew Session',
   },
   orderProgress: {
     stepUploadLabel: 'Preparing Document',
