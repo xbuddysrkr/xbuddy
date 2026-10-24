@@ -599,7 +599,7 @@ export const en = {
     printStep4Desc: 'Your price updates based on your print settings.',
     printStep5Title: 'Almost there! 🎉',
     printStep5Desc: 'Review your order before continuing to payment.',
-    paymentStep1Title: 'Your QR is ready! 🎉',
+    paymentStep1Title: 'Your QR is ready!',
     paymentStep1DescDownloaded: 'Your payment QR has been downloaded. Open your UPI app and select the QR from Gallery.',
     paymentStep1DescStarted: 'Your payment QR download started. Open your UPI app and select the QR from Gallery.',
     paymentStep2Title: 'One last check! 💳',

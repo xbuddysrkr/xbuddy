@@ -790,12 +790,13 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
             paymentTourStep === 0
               ? {
                   targetSelector: '[data-tour="payment-qr-got-it"]',
-                  title: t('tour.paymentStep1Title', 'Your QR is ready! 🎉'),
+                  title: t('tour.paymentStep1Title', 'Your QR is ready!'),
                   description: isDownloaded
                     ? t('tour.paymentStep1DescDownloaded', 'Your payment QR has been downloaded. Open your UPI app and select the QR from Gallery.')
                     : t('tour.paymentStep1DescStarted', 'Your payment QR download started. Open your UPI app and select the QR from Gallery.'),
                   pulseShape: 'pill',
                   padding: 8,
+                  mascot: '/xbuddy-mascot.png',
                 }
               : {
                   targetSelector: '[data-tour="payment-review-details"]',

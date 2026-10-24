@@ -330,9 +330,45 @@ export default function InteractiveTourSpotlight({
 
           {/* Heading & Explanatory Sentence */}
           <div className="mb-4">
-            <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
-              {stepData.title}
-            </h3>
+            <div className="flex items-center gap-2 sm:gap-2.5">
+              {stepData.mascot && (
+                <motion.div
+                  initial={shouldReduceMotion ? false : { scale: 0.8, y: 3, opacity: 0 }}
+                  animate={
+                    shouldReduceMotion
+                      ? { opacity: 1, scale: 1, y: 0 }
+                      : {
+                          opacity: 1,
+                          scale: 1,
+                          y: [0, -3.5, 0],
+                          rotate: [0, 1.8, -1.8, 0],
+                        }
+                  }
+                  transition={
+                    shouldReduceMotion
+                      ? { duration: 0.1 }
+                      : {
+                          opacity: { duration: 0.22 },
+                          scale: { type: 'spring', stiffness: 360, damping: 20 },
+                          y: { duration: 2.8, repeat: Infinity, ease: 'easeInOut' },
+                          rotate: { duration: 3.6, repeat: Infinity, ease: 'easeInOut' },
+                        }
+                  }
+                  className="shrink-0 relative select-none flex items-center justify-center pointer-events-none"
+                  aria-hidden="true"
+                >
+                  <img
+                    src={stepData.mascot}
+                    alt={t('common.mascot', 'XBuddy Mascot')}
+                    className="w-8 h-6 sm:w-10 sm:h-7.5 object-contain filter drop-shadow-xs"
+                    draggable={false}
+                  />
+                </motion.div>
+              )}
+              <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
+                {stepData.mascot ? (stepData.title || '').replace(/\s*🎉\s*$/, '').trim() : stepData.title}
+              </h3>
+            </div>
             <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed mt-1.5">
               {stepData.description}
             </p>

@@ -599,7 +599,7 @@ export const te = {
     printStep4Desc: 'మీ ప్రింట్ సెట్టింగ్‌ల ఆధారంగా ధర స్వయంచాలకంగా అప్‌డేట్ అవుతుంది.',
     printStep5Title: 'దాదాపు పూర్తయింది! 🎉',
     printStep5Desc: 'చెల్లింపుకు వెళ్లే ముందు మీ ఆర్డర్‌ను సమీక్షించండి.',
-    paymentStep1Title: 'మీ QR సిద్ధంగా ఉంది! 🎉',
+    paymentStep1Title: 'మీ QR సిద్ధంగా ఉంది!',
     paymentStep1DescDownloaded: 'మీ చెల్లింపు QR డౌన్‌లోడ్ అయింది. మీ UPI యాప్‌ని తెరిచి గ్యాలరీ నుండి QRని ఎంచుకోండి.',
     paymentStep1DescStarted: 'మీ చెల్లింపు QR డౌన్‌లోడ్ ప్రారంభమైంది. మీ UPI యాప్‌ని తెరిచి గ్యాలరీ నుండి QRని ఎంచుకోండి.',
     paymentStep2Title: 'చివరి సమీక్ష! 💳',

@@ -305,6 +305,33 @@ assert.equal(currentStep, 4)
 
 console.log('✓ TEST 8 PASSED: State machine safely transitions and strictly clamps bounds')
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [TEST 9] XBuddy Bird Mascot Asset & Tour Integration
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n[TEST 9] Verifying XBuddy Bird Mascot Asset and Integration in Payment Onboarding...')
+
+const mascotAssetPath = path.resolve(__dirname, '../public/xbuddy-mascot.png')
+assert.ok(fs.existsSync(mascotAssetPath), 'public/xbuddy-mascot.png must exist')
+
+const mascotBuffer = fs.readFileSync(mascotAssetPath)
+assert.ok(mascotBuffer.length > 5000, 'mascot asset must be a valid non-empty file')
+// Verify PNG magic numbers: 0x89, 0x50, 0x4E, 0x47
+assert.equal(mascotBuffer[0], 0x89)
+assert.equal(mascotBuffer[1], 0x50)
+assert.equal(mascotBuffer[2], 0x4e)
+assert.equal(mascotBuffer[3], 0x47)
+
+// Verify PaymentModal.jsx passes mascot prop
+assert.ok(paymentModalSrc.includes("mascot: '/xbuddy-mascot.png'"), 'PaymentModal must pass mascot: "/xbuddy-mascot.png"')
+
+// Verify InteractiveTourSpotlight.jsx contains responsive mascot rendering logic
+const tourSpotlightSrc = fs.readFileSync(path.resolve(__dirname, '../src/components/InteractiveTourSpotlight.jsx'), 'utf-8')
+assert.ok(tourSpotlightSrc.includes('stepData.mascot'), 'InteractiveTourSpotlight must support stepData.mascot')
+assert.ok(tourSpotlightSrc.includes('alt={t(\'common.mascot\', \'XBuddy Mascot\')}'), 'InteractiveTourSpotlight must provide accessible alt text')
+assert.ok(tourSpotlightSrc.includes('shouldReduceMotion'), 'InteractiveTourSpotlight must respect reduced motion preferences')
+
+console.log('✓ TEST 9 PASSED: Original XBuddy Bird Mascot asset, responsive layout, and motion safety verified')
+
 console.log('\n========================================================================')
-console.log('🎉 ALL 8 XBUDDY INTERACTIVE ONBOARDING & PAYMENT TESTS PASSED PERFECTLY!')
+console.log('🎉 ALL 9 XBUDDY INTERACTIVE ONBOARDING & PAYMENT TESTS PASSED PERFECTLY!')
 console.log('========================================================================')
