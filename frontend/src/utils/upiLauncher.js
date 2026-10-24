@@ -11,56 +11,163 @@
  */
 
 /**
- * Returns the exact URL to launch PhonePe app with ZERO payment data.
- * Android: intent://#Intent;package=com.phonepe.app;end
- * iOS: phonepe://
+ * Registry of official UPI applications supported for direct app-launch (OPEN ONLY).
+ * Strictly contains package names and store listings with ZERO payment parameters.
+ */
+export const SUPPORTED_OPEN_ONLY_APPS = [
+  {
+    id: 'phonepe',
+    name: 'PhonePe',
+    packageName: 'com.phonepe.app',
+    iosScheme: 'phonepe://',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.phonepe.app',
+    brandColor: '#5f259f',
+    textColor: '#5f259f',
+    borderColor: 'border-purple-200',
+    bgGradient: 'from-purple-50 to-white',
+    symbol: 'పే',
+  },
+  {
+    id: 'gpay',
+    name: 'Google Pay',
+    packageName: 'com.google.android.apps.nbu.paisa.user',
+    iosScheme: 'gpay://',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.paisa.user',
+    brandColor: '#1a73e8',
+    textColor: '#1a73e8',
+    borderColor: 'border-blue-200',
+    bgGradient: 'from-blue-50 to-white',
+    symbol: 'GPay',
+  },
+  {
+    id: 'paytm',
+    name: 'Paytm',
+    packageName: 'net.one97.paytm',
+    iosScheme: 'paytmmp://',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=net.one97.paytm',
+    brandColor: '#002970',
+    textColor: '#00b9f5',
+    borderColor: 'border-sky-200',
+    bgGradient: 'from-sky-50 to-white',
+    symbol: 'Paytm',
+  },
+  {
+    id: 'bhim',
+    name: 'BHIM UPI',
+    packageName: 'in.org.npci.upiapp',
+    iosScheme: 'bhim://',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=in.org.npci.upiapp',
+    brandColor: '#007849',
+    textColor: '#007849',
+    borderColor: 'border-emerald-200',
+    bgGradient: 'from-emerald-50 to-white',
+    symbol: 'BHIM',
+  },
+  {
+    id: 'cred',
+    name: 'CRED',
+    packageName: 'com.dreamplug.androidapp',
+    iosScheme: 'cred://',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.dreamplug.androidapp',
+    brandColor: '#121212',
+    textColor: '#1e293b',
+    borderColor: 'border-slate-300',
+    bgGradient: 'from-slate-100 to-white',
+    symbol: 'CRED',
+  },
+  {
+    id: 'amazon',
+    name: 'Amazon Pay',
+    packageName: 'in.amazon.mShop.android.shopping',
+    iosScheme: 'amazon://',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=in.amazon.mShop.android.shopping',
+    brandColor: '#FF9900',
+    textColor: '#d97706',
+    borderColor: 'border-amber-200',
+    bgGradient: 'from-amber-50 to-white',
+    symbol: 'Amazon',
+  },
+]
+
+/**
+ * Returns the exact URL to launch a selected app with ZERO payment data.
+ * Strictly no pa, pn, am, cu, tn, tr or upi query parameters.
+ * Android: intent://#Intent;package=<packageName>;end
+ * iOS: <scheme>://
  * Desktop: null
  */
-export function getPhonePeLaunchUrl() {
+export function getAppOnlyLaunchUrl(appOrId) {
+  const app = typeof appOrId === 'string'
+    ? SUPPORTED_OPEN_ONLY_APPS.find((a) => a.id === appOrId)
+    : appOrId
+
+  if (!app) return null
+
   const platform = detectPlatform()
   if (platform === 'android') {
-    return 'intent://#Intent;package=com.phonepe.app;end'
+    return `intent://#Intent;package=${app.packageName};end`
   }
   if (platform === 'ios') {
-    return 'phonepe://'
+    return app.iosScheme
   }
   return null
 }
 
 /**
- * Opens PhonePe application without ANY payment parameters or UPI queries.
- * Pure app launch only — no merchant, no amount, no recipient, no prefilled screen.
- * 
- * Android: Official Chrome Intent syntax targeting com.phonepe.app package
- * iOS: Registered PhonePe URL scheme phonepe:// (no intent:// on iOS)
- * Desktop: Returns false so UI can show desktop QR
+ * Opens selected application without ANY payment parameters or UPI queries.
+ * Pure app launch only — student scans their saved QR manually inside the app.
  */
-export function openPhonePeAppOnly() {
+export function launchAppOnly(appOrId) {
+  const app = typeof appOrId === 'string'
+    ? SUPPORTED_OPEN_ONLY_APPS.find((a) => a.id === appOrId)
+    : appOrId
+
+  if (!app) {
+    return { platform: 'unknown', success: false, url: null, playStoreUrl: null }
+  }
+
   const platform = detectPlatform()
+  const targetUrl = getAppOnlyLaunchUrl(app)
 
-  if (platform === 'desktop' || typeof window === 'undefined') {
-    return { platform, success: false, url: null }
+  if (platform === 'desktop' || typeof window === 'undefined' || !targetUrl) {
+    return {
+      platform,
+      success: false,
+      url: targetUrl,
+      playStoreUrl: app.playStoreUrl,
+      app,
+    }
   }
 
-  // Pure app launch - strictly NO pa, pn, am, cu, tn, tr or upi query
-  const targetUrl = getPhonePeLaunchUrl()
-  if (!targetUrl) return { platform, success: false, url: null }
-
-  if (import.meta.env.DEV) {
-    console.group('[X Buddy PhonePe App Launcher] Pure App Launch (No Payment Data)')
-    console.log('Platform:', platform)
-    console.log('Target URL:', targetUrl)
-    console.groupEnd()
+  try {
+    window.location.href = targetUrl
+  } catch (err) {
+    console.warn(`[X Buddy App Launcher] Could not open ${app.name}:`, err)
   }
-
-  // Synchronous direct top-level navigation from user tap gesture
-  window.location.href = targetUrl
 
   return {
     platform,
     success: true,
     url: targetUrl,
+    playStoreUrl: app.playStoreUrl,
+    app,
   }
+}
+
+/**
+ * Returns the exact URL to launch PhonePe app with ZERO payment data.
+ * Backwards compatibility helper.
+ */
+export function getPhonePeLaunchUrl() {
+  return getAppOnlyLaunchUrl('phonepe')
+}
+
+/**
+ * Opens PhonePe application without ANY payment parameters or UPI queries.
+ * Backwards compatibility helper.
+ */
+export function openPhonePeAppOnly() {
+  return launchAppOnly('phonepe')
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   QrCode,
   Image as ImageIcon,
   Check,
+  Smartphone,
 } from 'lucide-react'
 import { useLanguage } from '../i18n/LanguageContext'
 
@@ -295,6 +296,7 @@ function AnimatedPhoneVisual({ step, onSelectStep, amount, payeeName, shouldRedu
 export default function PaymentQrInstructionsModal({
   isOpen,
   onClose,
+  onOpenUpiApps,
   amount,
   orderId,
   payeeName,
@@ -461,6 +463,21 @@ export default function PaymentQrInstructionsModal({
             <span>{t('payment.gotItPay', 'Got it, Review & Pay')}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
+
+          {/* Quick UPI App Launcher button */}
+          {onOpenUpiApps && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose?.()
+                onOpenUpiApps?.()
+              }}
+              className="w-full mt-2 py-2 px-3 bg-orange-50 hover:bg-orange-100 text-[#F78C25] font-bold text-xs rounded-xl border border-orange-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99]"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>{t('payment.chooseUpiApp', 'Choose your UPI app 📱')}</span>
+            </button>
+          )}
         </motion.div>
       </div>
     </AnimatePresence>
