@@ -78,8 +78,8 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
       const expiresAt = new Date(now.getTime() + 5 * 60 * 1000).toISOString()
       const nowIso = now.toISOString()
 
-      // Description for UPI payment transaction note: concise e.g. "XBuddy XP1234"
-      const description = `XBuddy ${cleanOrderId}`
+      // Description for UPI payment transaction note: concise e.g. "XBuddy Order XP1234"
+      const description = `XBuddy Order ${cleanOrderId}`
 
       // Build canonical UPI URI and app-specific intents
       const upiUri = buildDirectUpiUri({

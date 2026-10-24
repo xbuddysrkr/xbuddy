@@ -100,7 +100,7 @@ export function buildDirectUpiUri({ payeeVpa, payeeName, amountPaise, orderId, d
   if (!orderId) throw new Error('orderId is required')
 
   const formattedAmount = toRupeesString(amountPaise)
-  const cleanDesc = String(description || `XBuddy Print ${orderId}`).trim().slice(0, 50)
+  const cleanDesc = String(description || `XBuddy Order ${orderId}`).trim().slice(0, 50)
 
   const params = [
     `pa=${encodeURIComponent(payeeVpa)}`,

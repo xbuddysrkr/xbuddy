@@ -182,7 +182,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
   const activeOrderId = orderMeta?.orderId || intentData?.orderId || ''
   const note = activeOrderId
-    ? `XBuddy ${activeOrderId}`
+    ? `XBuddy Order ${activeOrderId}`
     : (orderMeta?.isReprint ? 'XBuddy Reprint' : 'XBuddy Print')
 
   // Build standard UPI URI for QR code and generic fallback
@@ -434,7 +434,7 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
 
     if (platform === 'desktop') {
       setViewMode('qr')
-      setDesktopNotice(`Please scan the QR code below using ${app.name} on your mobile phone to pay ₹${Number(total || 0).toFixed(2)}.`)
+      setDesktopNotice(`Please scan the QR code below using ${app.name} on your mobile phone to pay ₹${Number(total || 0).toFixed(2)} for Order ${activeOrderId || ''}.`)
       setFallbackNotice('')
       return
     }
@@ -579,7 +579,11 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
                 {/* Instruction for Payment Confirmation */}
                 <p className="text-[11px] text-slate-600 font-semibold mt-2.5 flex items-center justify-center gap-1.5">
                   <Info className="w-3.5 h-3.5 text-[#F78C25] shrink-0" />
-                  <span>{t('payment.keepOrderIdNotice', 'Keep this Order ID for payment confirmation.')}</span>
+                  <span>
+                    {t('payment.keepOrderIdNotice', 'Keep Order ID ({orderId}) for payment confirmation.', {
+                      orderId: activeOrderId || 'XP----',
+                    })}
+                  </span>
                 </p>
 
                 <div className="flex items-center justify-center gap-1.5 mt-2 pt-2 border-t border-orange-200/50 text-[10px] text-slate-500">
@@ -813,7 +817,13 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
               </div>
               <div>
                 <h4 className="font-bold text-slate-900 text-base">{t('payment.openingApp', { name: selectedApp?.name || 'UPI App' })}</h4>
-                <p className="text-xs text-slate-500 mt-1">{t('payment.payInAppAndReturn', { amount: Number(total || 0).toFixed(2), name: selectedApp?.name || 'your UPI app' })}</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {t('payment.payInAppAndReturn', {
+                    amount: Number(total || 0).toFixed(2),
+                    name: selectedApp?.name || 'your UPI app',
+                    orderId: activeOrderId || '',
+                  })}
+                </p>
               </div>
 
               {/* Action Hierarchy: Fallback Generic UPI -> Payment Completed -> QR Code fallback */}

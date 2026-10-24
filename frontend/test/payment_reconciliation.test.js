@@ -39,7 +39,7 @@ const sampleOrderId = 'XP4921'
 const sampleAmount = 3.00
 const sampleVpa = '9100280705@ybl'
 const samplePayee = 'THANALA VS NSP SAILOKESH'
-const sampleNote = `XBuddy ${sampleOrderId}`
+const sampleNote = `XBuddy Order ${sampleOrderId}`
 
 const queryString = buildUpiQuery({
   upiId: sampleVpa,
@@ -57,7 +57,7 @@ assert.equal(queryParams.get('pn'), samplePayee, 'Payee name (pn) must match rec
 assert.equal(queryParams.get('am'), '3.00', 'Amount (am) must be formatted to 2 decimal places')
 assert.equal(queryParams.get('cu'), 'INR', 'Currency (cu) must be INR')
 assert.equal(queryParams.get('tr'), sampleOrderId, 'Transaction reference (tr) must map uniquely to XBuddy order ID')
-assert.equal(queryParams.get('tn'), `XBuddy ${sampleOrderId}`, 'Transaction note (tn) must be concise e.g. "XBuddy XP4921"')
+assert.equal(queryParams.get('tn'), `XBuddy Order ${sampleOrderId}`, 'Transaction note (tn) must be concise e.g. "XBuddy Order XP4921"')
 
 // Check length limits per NPCI standard: tr <= 35 chars, tn <= 50 chars
 assert.ok(queryParams.get('tr').length <= 35, 'tr must be <= 35 characters for UPI compliance')
@@ -101,9 +101,9 @@ assert.ok(en.payment, 'English translation must have payment section')
 assert.ok(te.payment, 'Telugu translation must have payment section')
 
 assert.equal(en.payment.orderReference, 'XBuddy Order ID')
-assert.equal(en.payment.keepOrderIdNotice, 'Keep this Order ID for payment confirmation.')
+assert.ok(en.payment.keepOrderIdNotice.includes('{orderId}'), 'keepOrderIdNotice must contain {orderId} placeholder')
 assert.equal(te.payment.orderReference, 'XBuddy ఆర్డర్ ID')
-assert.equal(te.payment.keepOrderIdNotice, 'చెల్లింపు నిర్ధారణ కోసం ఈ ఆర్డర్ IDని ఉంచండి.')
+assert.ok(te.payment.keepOrderIdNotice.includes('{orderId}'), 'keepOrderIdNotice must contain {orderId} placeholder in Telugu')
 
 // Verify PaymentModal.jsx contains Order ID card and instruction
 const modalSource = fs.readFileSync(path.join(__dirname, '../src/components/PaymentModal.jsx'), 'utf-8')

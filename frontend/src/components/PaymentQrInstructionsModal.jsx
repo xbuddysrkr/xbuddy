@@ -428,8 +428,8 @@ export default function PaymentQrInstructionsModal({
             <p>
               {t(
                 'payment.upiAmountPreFilled',
-                'Your ₹{amount} should be pre-filled. Verify the shop name and amount, then confirm payment.',
-                { amount: formattedAmount }
+                'Your ₹{amount} and Order ID {orderId} will be pre-filled in UPI message. Verify the shop name and amount, then confirm payment.',
+                { amount: formattedAmount, orderId: orderId || '' }
               )}
             </p>
           </div>
