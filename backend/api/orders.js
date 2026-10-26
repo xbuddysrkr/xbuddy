@@ -82,14 +82,13 @@ export function parseMultipartOrder(req) {
   })
 }
 
-export function savePdfToDiskCache(orderId, pdfInput) {
+export function savePdfToDiskCache(orderId, pdfInput, originalFileName = '') {
   if (!orderId || !pdfInput) return false
   try {
     if (!fs.existsSync(PDF_CACHE_DIR)) {
       fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
     }
     const cleanId = String(orderId).trim().toUpperCase()
-    const filePath = path.join(PDF_CACHE_DIR, `${cleanId}.pdf`)
     let pdfBuffer = null
     if (Buffer.isBuffer(pdfInput)) {
       pdfBuffer = pdfInput
@@ -97,12 +96,22 @@ export function savePdfToDiskCache(orderId, pdfInput) {
       pdfBuffer = Buffer.from(pdfInput, 'base64')
     }
     if (pdfBuffer && pdfBuffer.length > 0) {
+      let ext = '.pdf'
+      if (originalFileName) {
+        const matchExt = path.extname(originalFileName).toLowerCase()
+        if (['.docx', '.doc', '.pdf'].includes(matchExt)) ext = matchExt
+      } else if (pdfBuffer.length >= 4) {
+        if (pdfBuffer[0] === 0x50 && pdfBuffer[1] === 0x4B) ext = '.docx'
+        else if (pdfBuffer[0] === 0xD0 && pdfBuffer[1] === 0xCF) ext = '.doc'
+      }
+
+      const filePath = path.join(PDF_CACHE_DIR, `${cleanId}${ext}`)
       fs.writeFileSync(filePath, pdfBuffer)
-      console.log(`[PDF_CACHE] Cached ${cleanId}.pdf (${pdfBuffer.length} bytes) to disk`)
+      console.log(`[FILE_CACHE] Cached ${cleanId}${ext} (${pdfBuffer.length} bytes) to disk`)
       return true
     }
   } catch (err) {
-    console.warn(`[PDF_CACHE_WARN] Failed to write disk cache for ${orderId}: ${err.message}`)
+    console.warn(`[FILE_CACHE_WARN] Failed to write disk cache for ${orderId}: ${err.message}`)
   }
   return false
 }
@@ -204,26 +213,32 @@ export function validateOrderPayload(data) {
     errors.push('Amount must be a non-negative number')
   }
 
-  // Strict PDF Validation: order MUST include either a valid binary PDF, Base64 PDF, or Google Drive URL
+  // Document Validation: order MUST include either a valid binary document (PDF, DOCX, DOC), Base64 document, or Google Drive URL
   const hasDriveUrl = Boolean(data.driveUrl && typeof data.driveUrl === 'string' && data.driveUrl.trim().startsWith('http'))
   const rawPdfBase64 = data.pdfBase64
   const hasBase64 = Boolean(rawPdfBase64 && typeof rawPdfBase64 === 'string' && rawPdfBase64.length >= 50)
-  const hasBuffer = Boolean(data.pdfBuffer && Buffer.isBuffer(data.pdfBuffer) && data.pdfBuffer.length >= 5)
+  const hasBuffer = Boolean(data.pdfBuffer && Buffer.isBuffer(data.pdfBuffer) && data.pdfBuffer.length >= 4)
 
   if (!hasDriveUrl && !hasBase64 && !hasBuffer) {
-    errors.push('Order must include a valid PDF file (binary/Base64) or Google Drive URL')
+    errors.push('Order must include a valid document file (PDF, DOCX, DOC) or Google Drive URL')
   } else if (hasBuffer) {
-    if (data.pdfBuffer.subarray(0, 4).toString('ascii') !== '%PDF') {
-      errors.push('Uploaded file is not a valid PDF document (missing %PDF- header)')
+    const isPdf = data.pdfBuffer.subarray(0, 4).toString('ascii') === '%PDF'
+    const isDocx = data.pdfBuffer[0] === 0x50 && data.pdfBuffer[1] === 0x4B && data.pdfBuffer[2] === 0x03 && data.pdfBuffer[3] === 0x04
+    const isDoc = data.pdfBuffer[0] === 0xD0 && data.pdfBuffer[1] === 0xCF && data.pdfBuffer[2] === 0x11 && data.pdfBuffer[3] === 0xE0
+    if (!isPdf && !isDocx && !isDoc) {
+      errors.push('Uploaded file is not a valid document (must be PDF with %PDF- header, DOCX, or DOC)')
     }
   } else if (hasBase64) {
     try {
       const sample = Buffer.from(rawPdfBase64.slice(0, 100), 'base64')
-      if (sample.length < 5 || sample.subarray(0, 4).toString('ascii') !== '%PDF') {
-        errors.push('Uploaded file is not a valid PDF document (missing %PDF- header)')
+      const isPdf = sample.length >= 4 && sample.subarray(0, 4).toString('ascii') === '%PDF'
+      const isDocx = sample.length >= 4 && sample[0] === 0x50 && sample[1] === 0x4B && sample[2] === 0x03 && sample[3] === 0x04
+      const isDoc = sample.length >= 4 && sample[0] === 0xD0 && sample[1] === 0xCF && sample[2] === 0x11 && sample[3] === 0xE0
+      if (!isPdf && !isDocx && !isDoc) {
+        errors.push('Uploaded file is not a valid document (must be PDF with %PDF- header, DOCX, or DOC)')
       }
     } catch {
-      errors.push('Invalid Base64 encoding for PDF document')
+      errors.push('Invalid Base64 encoding for document')
     }
   }
 
@@ -399,14 +414,23 @@ export default async function handler(req, res) {
 
       const rawPdfBase64 = typeof payload.pdfBase64 === 'string' ? payload.pdfBase64.trim() : ''
       let pdfBuffer = payload.pdfBuffer || null
-      let hasValidPdf = Boolean(pdfBuffer && pdfBuffer.length >= 5 && pdfBuffer.subarray(0, 4).toString('ascii') === '%PDF')
+      let hasValidDoc = false
+      if (pdfBuffer && pdfBuffer.length >= 4) {
+        const isPdf = pdfBuffer.subarray(0, 4).toString('ascii') === '%PDF'
+        const isDocx = pdfBuffer[0] === 0x50 && pdfBuffer[1] === 0x4B && pdfBuffer[2] === 0x03 && pdfBuffer[3] === 0x04
+        const isDoc = pdfBuffer[0] === 0xD0 && pdfBuffer[1] === 0xCF && pdfBuffer[2] === 0x11 && pdfBuffer[3] === 0xE0
+        hasValidDoc = isPdf || isDocx || isDoc
+      }
       const tDecodeStart = performance.now()
-      if (!pdfBuffer && rawPdfBase64 && rawPdfBase64.length >= 50) {
+      if (!hasValidDoc && rawPdfBase64 && rawPdfBase64.length >= 50) {
         try {
           const buf = Buffer.from(rawPdfBase64, 'base64')
-          if (buf.length >= 5 && buf.subarray(0, 4).toString('ascii') === '%PDF') {
+          const isPdf = buf.length >= 4 && buf.subarray(0, 4).toString('ascii') === '%PDF'
+          const isDocx = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04
+          const isDoc = buf.length >= 4 && buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0
+          if (isPdf || isDocx || isDoc) {
             pdfBuffer = buf
-            hasValidPdf = true
+            hasValidDoc = true
           }
         } catch {}
       }
@@ -633,7 +657,7 @@ export default async function handler(req, res) {
         // Ephemeral local cache write for read acceleration
         if (pdfBuffer) {
           const tDiskStart = performance.now()
-          cacheSaved = savePdfToDiskCache(cleanId, pdfBuffer)
+          cacheSaved = savePdfToDiskCache(cleanId, pdfBuffer, orderDoc.fileName)
           diskCacheMs = Math.round(performance.now() - tDiskStart)
         }
 
@@ -768,7 +792,7 @@ export default async function handler(req, res) {
               console.error(`[GRIDFS_ERROR] ${cleanId}:`, gErr.message)
             }
           }
-          if (pdfBuffer) savePdfToDiskCache(cleanId, pdfBuffer)
+          if (pdfBuffer) savePdfToDiskCache(cleanId, pdfBuffer, orderDoc.fileName)
 
           const isInlineDurable = Boolean(!isLargePdf && orderDoc.pdfBase64 && orderDoc.pdfBase64.length > 50)
           const isDurablyStored = isLargePdf
@@ -1014,7 +1038,6 @@ export default async function handler(req, res) {
       }
 
       const tStart = Date.now()
-      const cachePath = path.join(PDF_CACHE_DIR, `${orderId}.pdf`)
 
       // Authoritative existence verification:
       // An order must exist in MongoDB Atlas to be retrieved.
@@ -1027,37 +1050,67 @@ export default async function handler(req, res) {
         )
         if (!order) {
           // If order does not exist in authoritative MongoDB, purge any stale disk cache file
-          if (fs.existsSync(cachePath)) {
-            try { fs.unlinkSync(cachePath) } catch {}
+          for (const ext of ['.pdf', '.docx', '.doc']) {
+            const stalePath = path.join(PDF_CACHE_DIR, `${orderId}${ext}`)
+            if (fs.existsSync(stalePath)) {
+              try { fs.unlinkSync(stalePath) } catch {}
+            }
           }
           return res.status(404).json({ success: false, error: 'Order not found in database', hasPdf: false })
         }
 
+        const origExt = path.extname(order.fileName || '').toLowerCase()
+        const docExt = ['.docx', '.doc', '.pdf'].includes(origExt) ? origExt : '.pdf'
+        const safeFileName = (order.fileName || `${orderId}${docExt}`).replace(/[^a-zA-Z0-9._-]/g, '_')
+
+        let defaultContentType = 'application/pdf'
+        if (docExt === '.docx' || safeFileName.toLowerCase().endsWith('.docx')) {
+          defaultContentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        } else if (docExt === '.doc' || safeFileName.toLowerCase().endsWith('.doc')) {
+          defaultContentType = 'application/msword'
+        }
+
+        const candidateCachePaths = [
+          path.join(PDF_CACHE_DIR, `${orderId}${docExt}`),
+          path.join(PDF_CACHE_DIR, `${orderId}.docx`),
+          path.join(PDF_CACHE_DIR, `${orderId}.doc`),
+          path.join(PDF_CACHE_DIR, `${orderId}.pdf`),
+        ]
+
         // RETENTION POLICY GATE: Document permanently expired or deleted
         const effectiveExpiry = getEffectiveExpiryTimestamp(order)
         if (order.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
-          if (fs.existsSync(cachePath)) {
-            try { fs.unlinkSync(cachePath) } catch {}
+          for (const cPath of candidateCachePaths) {
+            if (fs.existsSync(cPath)) {
+              try { fs.unlinkSync(cPath) } catch {}
+            }
           }
           return res.status(410).json({
             success: false,
-            error: 'Document retention window expired; PDF permanently deleted.',
+            error: 'Document retention window expired; document permanently deleted.',
             expired: true,
             hasPdf: false,
           })
         }
 
-        const safeFileName = (order.fileName || `${orderId}.pdf`).replace(/[^a-zA-Z0-9._-]/g, '_')
-
         // FAST PATH 1: Serve directly from local disk cache (< 10ms response) if cached
-        if (fs.existsSync(cachePath)) {
+        const activeCachePath = candidateCachePaths.find(p => fs.existsSync(p))
+        if (activeCachePath) {
           try {
-            const stat = fs.statSync(cachePath)
-            if (stat.size > 100) {
-              const buf = fs.readFileSync(cachePath)
-              if (buf.subarray(0, 4).toString('ascii') === '%PDF') {
-                console.log(`[GET_PDF_CACHE_HIT] Serving ${orderId}.pdf from disk cache (${buf.length} bytes in ${Date.now() - tStart}ms)`)
-                res.setHeader('Content-Type', 'application/pdf')
+            const stat = fs.statSync(activeCachePath)
+            if (stat.size > 50) {
+              const buf = fs.readFileSync(activeCachePath)
+              const isPdf = buf.length >= 4 && buf.subarray(0, 4).toString('ascii') === '%PDF'
+              const isDocx = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04
+              const isDoc = buf.length >= 4 && buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0
+              if (isPdf || isDocx || isDoc) {
+                let ct = defaultContentType
+                if (isDocx) ct = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                else if (isDoc) ct = 'application/msword'
+                else if (isPdf) ct = 'application/pdf'
+
+                console.log(`[GET_PDF_CACHE_HIT] Serving ${path.basename(activeCachePath)} from disk cache (${buf.length} bytes in ${Date.now() - tStart}ms)`)
+                res.setHeader('Content-Type', ct)
                 res.setHeader('Content-Length', buf.length)
                 res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
                 res.setHeader('Access-Control-Allow-Origin', '*')
@@ -1075,13 +1128,24 @@ export default async function handler(req, res) {
           const gridResult = await getPdfStreamFromGridFS(db, orderId)
           if (gridResult) {
             const { file, stream } = gridResult
-            console.log(`[GET_PDF_GRIDFS_SERVED] Serving ${orderId}.pdf from MongoDB Atlas GridFS (${file.length} bytes in ${Date.now() - tStart}ms)`)
-            res.setHeader('Content-Type', 'application/pdf')
+            console.log(`[GET_PDF_GRIDFS_SERVED] Serving ${file.filename} from MongoDB Atlas GridFS (${file.length} bytes in ${Date.now() - tStart}ms)`)
+            let streamCt = file.contentType || defaultContentType
+            if (!streamCt || streamCt === 'application/octet-stream') {
+              if (file.filename.toLowerCase().endsWith('.docx') || safeFileName.toLowerCase().endsWith('.docx')) {
+                streamCt = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              } else if (file.filename.toLowerCase().endsWith('.doc') || safeFileName.toLowerCase().endsWith('.doc')) {
+                streamCt = 'application/msword'
+              } else {
+                streamCt = 'application/pdf'
+              }
+            }
+            res.setHeader('Content-Type', streamCt)
             res.setHeader('Content-Length', file.length)
             res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
             res.setHeader('Access-Control-Allow-Origin', '*')
             res.setHeader('X-PDF-Source', 'mongo-gridfs')
 
+            const diskWriterTarget = path.join(PDF_CACHE_DIR, `${orderId}${path.extname(file.filename) || docExt}`)
             await new Promise((resolve, reject) => {
               stream.on('error', (streamErr) => {
                 console.error(`[GET_PDF_GRIDFS_STREAM_ERR] ${orderId}:`, streamErr.message)
@@ -1092,7 +1156,7 @@ export default async function handler(req, res) {
               })
               try {
                 if (!fs.existsSync(PDF_CACHE_DIR)) fs.mkdirSync(PDF_CACHE_DIR, { recursive: true })
-                const diskWriter = fs.createWriteStream(cachePath)
+                const diskWriter = fs.createWriteStream(diskWriterTarget)
                 stream.pipe(diskWriter)
               } catch {}
               res.on('finish', () => resolve())
@@ -1109,9 +1173,17 @@ export default async function handler(req, res) {
         const inlineDoc = await db.collection('orders').findOne({ orderId }, { projection: { pdfBase64: 1 } })
         if (inlineDoc?.pdfBase64 && typeof inlineDoc.pdfBase64 === 'string' && inlineDoc.pdfBase64.length > 50) {
           const pdfBuffer = Buffer.from(inlineDoc.pdfBase64, 'base64')
-          savePdfToDiskCache(orderId, pdfBuffer)
+          savePdfToDiskCache(orderId, pdfBuffer, safeFileName)
+          let ct = defaultContentType
+          if (pdfBuffer.length >= 4 && pdfBuffer[0] === 0x50 && pdfBuffer[1] === 0x4B) {
+            ct = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          } else if (pdfBuffer.length >= 4 && pdfBuffer[0] === 0xD0 && pdfBuffer[1] === 0xCF) {
+            ct = 'application/msword'
+          } else if (pdfBuffer.length >= 4 && pdfBuffer.subarray(0, 4).toString('ascii') === '%PDF') {
+            ct = 'application/pdf'
+          }
           console.log(`[GET_PDF_MONGO_SERVED] Served ${orderId} from MongoDB Atlas inline Base64 (${pdfBuffer.length} bytes in ${Date.now() - tStart}ms)`)
-          res.setHeader('Content-Type', 'application/pdf')
+          res.setHeader('Content-Type', ct)
           res.setHeader('Content-Length', pdfBuffer.length)
           res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`)
           res.setHeader('Access-Control-Allow-Origin', '*')

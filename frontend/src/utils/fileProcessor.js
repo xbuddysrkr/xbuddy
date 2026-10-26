@@ -533,120 +533,40 @@ async function estimateOfficePages(file) {
 async function processOffice(file, typeInfo) {
   const buffer = await file.arrayBuffer()
   const estimatedPages = await countOfficeDocumentPages(buffer, file.name)
-  const ext = file.name.split('.').pop().toLowerCase()
+  const finalPages = Math.max(1, estimatedPages)
 
+  // Generate a lightweight card preview exclusively for UI thumbnail generation.
+  // The authentic file bytes are preserved byte-for-byte in pdfBlob and originalFile.
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const pageW = doc.internal.pageSize.getWidth()
-  const pageH = doc.internal.pageSize.getHeight()
-  const margin = 15
-  const lineH = 5.5
-  const maxW = pageW - margin * 2
-  const bottomLimit = pageH - margin - 8
+  doc.setFillColor(255, 248, 242)
+  doc.rect(0, 0, pageW, 297, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(247, 140, 37)
+  doc.text('X Buddy Print Station', pageW / 2, 45, { align: 'center' })
 
-  let renderedPdfPages = 1
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(12)
+  doc.setTextColor(60, 60, 60)
+  doc.text(`File: ${file.name}`, pageW / 2, 65, { align: 'center' })
+  doc.text(`Format: ${typeInfo.label} Document`, pageW / 2, 75, { align: 'center' })
+  doc.text(`Total Document Pages: ${finalPages}`, pageW / 2, 85, { align: 'center' })
 
-  // If DOCX, extract non-empty paragraphs and render real multi-page text
-  if (ext === 'docx') {
-    try {
-      const docXml = await readZipEntryText(buffer, /word\/document\.xml$/i)
-      if (docXml) {
-        const paragraphs = []
-        const pRegex = /<w:p\b[\s\S]*?<\/w:p>/gi
-        let match
-        while ((match = pRegex.exec(docXml)) !== null) {
-          const pXml = match[0]
-          const tMatches = pXml.match(/<w:t\b[^>]*>(.*?)<\/w:t>/gi)
-          if (tMatches) {
-            const text = tMatches.map(t => t.replace(/<[^>]+>/g, '')).join('')
-            if (text.trim()) paragraphs.push(text.trim())
-          }
-        }
+  doc.setFontSize(10)
+  doc.setTextColor(140, 140, 140)
+  doc.text(`Native Office print queue · Size: ${formatBytes(file.size)}`, pageW / 2, 110, { align: 'center' })
 
-        if (paragraphs.length > 0) {
-          doc.setFont('helvetica', 'normal')
-          doc.setFontSize(10)
-          doc.setTextColor(30, 30, 30)
-
-          let y = margin
-          for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
-            const p = paragraphs[pIdx]
-            const isHeading = p.length < 80 && (pIdx === 0 || /^[A-Z0-9\s:–—•]+$/.test(p) || p.endsWith(':'))
-            if (isHeading) {
-              doc.setFont('helvetica', 'bold')
-              doc.setFontSize(11)
-            } else {
-              doc.setFont('helvetica', 'normal')
-              doc.setFontSize(10)
-            }
-
-            const wrapped = doc.splitTextToSize(p, maxW)
-            for (const line of wrapped) {
-              if (y + lineH > bottomLimit) {
-                // Add page number footer before adding new page
-                doc.setFont('helvetica', 'normal')
-                doc.setFontSize(8)
-                doc.setTextColor(150, 150, 150)
-                doc.text(`Page ${renderedPdfPages}`, pageW / 2, pageH - 10, { align: 'center' })
-
-                doc.addPage()
-                renderedPdfPages++
-                y = margin
-                doc.setTextColor(30, 30, 30)
-                doc.setFontSize(isHeading ? 11 : 10)
-                if (isHeading) doc.setFont('helvetica', 'bold')
-              }
-              doc.text(line, margin, y)
-              y += lineH
-            }
-            y += 2.5 // Paragraph spacing
-          }
-
-          // Footer for last page
-          doc.setFont('helvetica', 'normal')
-          doc.setFontSize(8)
-          doc.setTextColor(150, 150, 150)
-          doc.text(`Page ${renderedPdfPages}`, pageW / 2, pageH - 10, { align: 'center' })
-        }
-      }
-    } catch (e) {
-      console.warn('DOCX text rendering error:', e)
-    }
-  }
-
-  // If not rendered or DOC/PPT/XLS, create placeholder pages matching estimatedPages
-  if (renderedPdfPages === 1 && estimatedPages > 1) {
-    for (let p = 1; p <= estimatedPages; p++) {
-      if (p > 1) doc.addPage()
-      doc.setFillColor(255, 248, 242)
-      doc.rect(0, 0, pageW, 297, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(20)
-      doc.setTextColor(247, 140, 37)
-      doc.text('X Buddy Print Station', pageW / 2, 45, { align: 'center' })
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(12)
-      doc.setTextColor(60, 60, 60)
-      doc.text(`File: ${file.name}`, pageW / 2, 65, { align: 'center' })
-      doc.text(`Format: ${typeInfo.label} Document · Sheet/Page ${p} of ${estimatedPages}`, pageW / 2, 75, { align: 'center' })
-      doc.text(`Total Document Pages: ${estimatedPages}`, pageW / 2, 85, { align: 'center' })
-
-      doc.setFontSize(10)
-      doc.setTextColor(140, 140, 140)
-      doc.text(`Converted for campus print queue · Size: ${formatBytes(file.size)}`, pageW / 2, 110, { align: 'center' })
-    }
-  }
-
-  const finalPages = Math.max(1, Math.max(estimatedPages, renderedPdfPages))
-  const pdfBlob = doc.output('blob')
+  const previewPdfBlob = doc.output('blob')
   let thumbnail = null
   try {
-    const ab = await pdfBlob.arrayBuffer()
+    const ab = await previewPdfBlob.arrayBuffer()
     thumbnail = await pdfThumbnail(ab)
   } catch {}
 
   return {
-    pdfBlob,
+    pdfBlob: file, // Authentic Office document preserved byte-for-byte
+    previewPdfBlob,
     totalPages: finalPages,
     thumbnail,
     requiresAgent: true,

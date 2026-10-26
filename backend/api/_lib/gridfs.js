@@ -25,25 +25,56 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
   const isStream = Boolean(pdfSource && typeof pdfSource.pipe === 'function')
 
   if (!isBuffer && !isStream) {
-    throw new Error('Valid PDF Buffer or Readable stream is required')
+    throw new Error('Valid Document Buffer or Readable stream is required')
+  }
+
+  let ext = '.pdf'
+  let contentType = 'application/pdf'
+  const origName = metadata.fileName || ''
+  if (origName.toLowerCase().endsWith('.docx')) {
+    ext = '.docx'
+    contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  } else if (origName.toLowerCase().endsWith('.doc')) {
+    ext = '.doc'
+    contentType = 'application/msword'
   }
 
   if (isBuffer) {
-    if (pdfSource.length === 0) throw new Error('PDF Buffer is empty')
+    if (pdfSource.length === 0) throw new Error('Document Buffer is empty')
     // Validate magic header
-    const magic = pdfSource.subarray(0, 5).toString('ascii')
-    if (magic !== '%PDF-') {
-      throw new Error(`Invalid PDF header: expected "%PDF-", got "${magic}"`)
+    const isPdf = pdfSource.length >= 5 && pdfSource.subarray(0, 5).toString('ascii') === '%PDF-'
+    const isDocx = pdfSource.length >= 4 && pdfSource[0] === 0x50 && pdfSource[1] === 0x4B && pdfSource[2] === 0x03 && pdfSource[3] === 0x04
+    const isDoc = pdfSource.length >= 4 && pdfSource[0] === 0xD0 && pdfSource[1] === 0xCF && pdfSource[2] === 0x11 && pdfSource[3] === 0xE0
+
+    if (isDocx) {
+      ext = '.docx'
+      contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    } else if (isDoc) {
+      ext = '.doc'
+      contentType = 'application/msword'
+    } else if (isPdf) {
+      ext = '.pdf'
+      contentType = 'application/pdf'
+    } else {
+      const magic = pdfSource.subarray(0, 5).toString('ascii')
+      throw new Error(`Invalid document header: expected PDF, DOCX, or DOC magic bytes, got "${magic}"`)
     }
   }
 
   const cleanId = String(orderId).trim().toUpperCase()
-  const filename = `${cleanId}.pdf`
+  const filename = `${cleanId}${ext}`
   const bucket = getGridFSBucket(db)
 
-  // Clean up any existing file versions for this order using indexed filename
+  // Clean up any existing file versions for this order using indexed filename and metadata
   try {
-    const existingFiles = await bucket.find({ filename }).toArray()
+    const existingFiles = await bucket.find({
+      $or: [
+        { filename: `${cleanId}.pdf` },
+        { filename: `${cleanId}.docx` },
+        { filename: `${cleanId}.doc` },
+        { 'metadata.orderId': cleanId },
+      ]
+    }).toArray()
     for (const file of existingFiles) {
       try {
         await bucket.delete(file._id)
@@ -64,10 +95,12 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
 
     const uploadStream = bucket.openUploadStream(filename, {
       chunkSizeBytes: GRIDFS_CHUNK_SIZE,
-      contentType: 'application/pdf',
+      contentType,
       metadata: {
         orderId: cleanId,
         fileName: metadata.fileName || filename,
+        fileExtension: ext,
+        contentType,
         size: isBuffer ? pdfSource.length : (metadata.size || 0),
         uploadedAt: metadata.uploadedAt || new Date().toISOString(),
         expiresAt: metadata.expiresAt || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
@@ -97,10 +130,12 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
       // Validate stream signature on first chunk
       pdfSource.on('data', (chunk) => {
         bytesWritten += chunk.length
-        if (!validatedHeader && bytesWritten >= 5) {
-          const magic = chunk.subarray(0, 5).toString('ascii')
-          if (magic !== '%PDF-') {
-            uploadStream.destroy(new Error(`Invalid PDF header: expected "%PDF-", got "${magic}"`))
+        if (!validatedHeader && bytesWritten >= 4) {
+          const isPdf = chunk.subarray(0, 4).toString('ascii') === '%PDF'
+          const isDocx = chunk[0] === 0x50 && chunk[1] === 0x4B && chunk[2] === 0x03 && chunk[3] === 0x04
+          const isDoc = chunk[0] === 0xD0 && chunk[1] === 0xCF && chunk[2] === 0x11 && chunk[3] === 0xE0
+          if (!isPdf && !isDocx && !isDoc) {
+            uploadStream.destroy(new Error(`Invalid document header: expected PDF, DOCX, or DOC magic bytes`))
             return
           }
           validatedHeader = true
@@ -112,18 +147,22 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
 }
 
 /**
- * Retrieves a PDF from GridFS as a readable stream and file metadata.
+ * Retrieves a document from GridFS as a readable stream and file metadata.
  * Returns null if the file does not exist.
  */
 export async function getPdfStreamFromGridFS(db, orderId) {
   if (!db || !orderId) return null
   const cleanId = String(orderId).trim().toUpperCase()
-  const filename = `${cleanId}.pdf`
   const bucket = getGridFSBucket(db)
 
   try {
     const files = await bucket.find({
-      $or: [{ filename }, { 'metadata.orderId': cleanId }]
+      $or: [
+        { filename: `${cleanId}.docx` },
+        { filename: `${cleanId}.doc` },
+        { filename: `${cleanId}.pdf` },
+        { 'metadata.orderId': cleanId },
+      ]
     }).sort({ uploadDate: -1 }).limit(1).toArray()
 
     if (!files || files.length === 0) return null

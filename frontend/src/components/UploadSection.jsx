@@ -48,7 +48,7 @@ export default function UploadSection({ onFileReady }) {
       await tick()
 
       const info = {
-        file: result.pdfBlob,
+        file: result.originalFile || result.pdfBlob || file,
         originalFile: result.originalFile || file,
         name: file.name,
         size: formatBytes(file.size),

@@ -349,6 +349,117 @@ $word.Quit([ref]0);
     console.log('✓ TEST 7 PASSED: Fidelity audit records adhere strictly to PII privacy invariants')
   })
 
+  await t.test('8. Representative DOCX Preservation & Word Spacing: XML runs preserve spaces at source', async () => {
+    const affectedDocx = path.join(TEST_TMP_DIR, 'ACM_Board_Letter.docx')
+    const convertedPdf = path.join(TEST_TMP_DIR, 'ACM_Board_Letter_converted.pdf')
+
+    // Create representative document containing the exact phrases from the bug report:
+    // "To The Senior Board Members", "(SBMs) Association for Computing Machinery", "(ACM) Sagi Rama Krishnam Raju"
+    const createDocScript = `
+$word = New-Object -ComObject Word.Application;
+$word.Visible = $false;
+$doc = $word.Documents.Add();
+$p1 = $doc.Paragraphs.Add();
+$p1.Range.Text = "To The Senior Board Members";
+$p1.Range.Font.Bold = 1;
+$p1.Range.Font.Size = 14;
+$p1.Range.InsertParagraphAfter();
+
+$p2 = $doc.Paragraphs.Add();
+$p2.Range.Text = "(SBMs) Association for Computing Machinery";
+$p2.Range.Font.Size = 12;
+$p2.Range.InsertParagraphAfter();
+
+$p3 = $doc.Paragraphs.Add();
+$p3.Range.Text = "(ACM) Sagi Rama Krishnam Raju Engineering College";
+$p3.Range.Font.Size = 12;
+$p3.Range.InsertParagraphAfter();
+
+$table = $doc.Tables.Add($doc.Paragraphs.Add().Range, 2, 2);
+$table.Cell(1,1).Range.Text = "Department";
+$table.Cell(1,2).Range.Text = "Designation";
+$table.Cell(2,1).Range.Text = "Computer Science";
+$table.Cell(2,2).Range.Text = "Chairperson";
+
+$doc.SaveAs([ref]'${affectedDocx.replace(/'/g, "''")}');
+$doc.Close([ref]0);
+$word.Quit([ref]0);
+`
+    execSync('powershell.exe', { input: createDocScript, windowsHide: true })
+    assert.ok(fs.existsSync(affectedDocx), 'Representative DOCX must exist')
+
+    // 1. Record original file properties
+    const originalBytes = fs.readFileSync(affectedDocx)
+    const originalHash = crypto.createHash('sha256').update(originalBytes).digest('hex')
+    const originalMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+    assert.ok(originalBytes.length > 1000, 'Original DOCX should be a valid Office package')
+    assert.strictEqual(originalBytes[0], 0x50, 'Original DOCX must start with PK')
+    assert.strictEqual(originalBytes[1], 0x4B, 'Original DOCX must start with PK')
+
+    // 2. Validate backend payload handling
+    const { validateOrderPayload } = await import('../api/orders.js')
+    const validationResult = validateOrderPayload({
+      orderId: 'XB8888',
+      fileName: 'ACM_Board_Letter.docx',
+      copies: 1,
+      amount: 10,
+      pdfBuffer: originalBytes,
+    })
+    assert.strictEqual(validationResult.isValid, true, `Backend validateOrderPayload must accept genuine DOCX buffer (errors: ${validationResult.errors?.join(', ')})`)
+
+    // 3. Convert on print agent via native Word COM
+    await convertDocxToPdfViaWord(affectedDocx, convertedPdf)
+    assert.ok(fs.existsSync(convertedPdf), 'Print agent converted PDF must exist')
+
+    // 4. Verify original DOCX remains completely untouched on disk
+    const postConversionBytes = fs.readFileSync(affectedDocx)
+    const postConversionHash = crypto.createHash('sha256').update(postConversionBytes).digest('hex')
+    assert.strictEqual(postConversionHash, originalHash, 'Source DOCX must be 100% byte-identical after conversion')
+
+    // 5. Verify converted PDF artifact
+    const convertedGeom = await getPdfGeometry(convertedPdf)
+    assert.ok(convertedGeom.pageCount >= 1, 'Converted PDF must have valid pages')
+
+    // 6. Fidelity validation audit
+    const fidelity = await validateDocumentFidelity({
+      orderId: 'XB-DOCX-SOURCE-TEST',
+      originalFilePath: affectedDocx,
+      printArtifactPath: convertedPdf,
+      originalFileName: 'ACM_Board_Letter.docx',
+      detectedFormat: 'DOCX',
+      conversionOccurred: true,
+      printerName: 'EPSON L130 Series',
+      paperSize: 'A4',
+      scale: 'noscale',
+      orientation: 'portrait',
+      pageRange: 'All',
+    })
+
+    assert.strictEqual(fidelity.auditRecord.sourceHash, originalHash)
+    assert.notStrictEqual(fidelity.auditRecord.artifactHash, originalHash, 'PDF artifact hash should be distinct from DOCX')
+    assert.ok(fidelity.auditRecord.fidelityVerdict.includes('NATIVE_DOCUMENT_CONVERTED'))
+
+    console.log(`✓ TEST 8 PASSED: DOCX preserved end-to-end (SHA-256: ${originalHash.slice(0, 16)}...) and converted via Word COM`)
+  })
+
+  await t.test('9. Conversion Safety Guard: Corrupted or non-genuine files fail cleanly without corrupt print', async () => {
+    const fakeDocx = path.join(TEST_TMP_DIR, 'fake_document.docx')
+    const fakePdf = path.join(TEST_TMP_DIR, 'fake_output.pdf')
+    fs.writeFileSync(fakeDocx, Buffer.from('NOT_A_REAL_DOCX_FILE_HEADER'))
+
+    await assert.rejects(
+      async () => {
+        await convertDocxToPdfViaWord(fakeDocx, fakePdf)
+      },
+      /not a genuine Word document/i,
+      'convertDocxToPdfViaWord must reject non-genuine Word documents before attempting automation'
+    )
+
+    assert.strictEqual(fs.existsSync(fakePdf), false, 'No fake PDF artifact should be produced on conversion failure')
+    console.log('✓ TEST 9 PASSED: Non-genuine Office files rejected safely before printer queue')
+  })
+
   // Cleanup temporary test directory
   t.after(() => {
     try {

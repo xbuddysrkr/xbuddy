@@ -108,7 +108,7 @@ async function downloadFile(url, destPath) {
 
   const contentType = String(response.headers?.['content-type'] || '').toLowerCase()
   if (contentType.includes('application/json') || contentType.includes('text/html')) {
-    throw new Error(`Endpoint returned non-PDF content-type: "${contentType}"`)
+    throw new Error(`Endpoint returned non-document content-type: "${contentType}"`)
   }
 
   await new Promise((resolve, reject) => {
@@ -118,15 +118,18 @@ async function downloadFile(url, destPath) {
     file.on('error', (err) => { fs.unlink(destPath, () => {}); reject(err) })
   })
 
-  // Validate PDF magic header
+  // Validate document magic header (PDF, DOCX, or DOC)
   if (fs.existsSync(destPath)) {
     const fd = fs.openSync(destPath, 'r')
     const headerBuf = Buffer.alloc(5)
     fs.readSync(fd, headerBuf, 0, 5, 0)
     fs.closeSync(fd)
-    if (headerBuf.toString() !== '%PDF-') {
+    const isPdf = headerBuf.subarray(0, 4).toString('ascii') === '%PDF'
+    const isDocx = headerBuf[0] === 0x50 && headerBuf[1] === 0x4B && headerBuf[2] === 0x03 && headerBuf[3] === 0x04
+    const isDoc = headerBuf[0] === 0xD0 && headerBuf[1] === 0xCF && headerBuf[2] === 0x11 && headerBuf[3] === 0xE0
+    if (!isPdf && !isDocx && !isDoc) {
       try { fs.unlinkSync(destPath) } catch {}
-      throw new Error(`Downloaded file is invalid: magic header is "${headerBuf.toString()}", expected "%PDF-"`)
+      throw new Error(`Downloaded file is invalid: magic header is "${headerBuf.toString('hex')}", expected PDF, DOCX, or DOC`)
     }
   }
 }
@@ -190,9 +193,16 @@ app.post('/save-order', async (req, res) => {
 
     if (pdfBase64) {
       const pdfBuffer = Buffer.from(pdfBase64, 'base64')
-      const filePath = path.join(PENDING_DIR, `${cleanId}.pdf`)
+      const targetName = fileName || mongoOrder.fileName || ''
+      const rawExt = path.extname(targetName).toLowerCase()
+      let docExt = ['.docx', '.doc', '.pdf'].includes(rawExt) ? rawExt : '.pdf'
+      if (pdfBuffer.length >= 4) {
+        if (pdfBuffer[0] === 0x50 && pdfBuffer[1] === 0x4B) docExt = '.docx'
+        else if (pdfBuffer[0] === 0xD0 && pdfBuffer[1] === 0xCF) docExt = '.doc'
+      }
+      const filePath = path.join(PENDING_DIR, `${cleanId}${docExt}`)
       fs.writeFileSync(filePath, pdfBuffer)
-      logger.success(`[AGENT] PDF saved locally for ${cleanId} (${(pdfBuffer.length / 1024).toFixed(1)} KB)`)
+      logger.success(`[AGENT] Document saved locally for ${cleanId} (${(pdfBuffer.length / 1024).toFixed(1)} KB)`)
     }
 
     const normalizedColorMode = ['color', 'colour'].includes(String(colorMode || mongoOrder.colorMode).toLowerCase()) ? 'color' : 'bw'
@@ -913,8 +923,21 @@ app.post('/release-print', async (req, res) => {
     })
   }
 
-  // Local disk file path for physical PDF transmission
-  const filePath = path.join(PENDING_DIR, `${id}.pdf`)
+  // Local disk file path for physical document transmission (DOCX, DOC, or PDF)
+  const origExt = path.extname(order.fileName || '').toLowerCase()
+  const docExt = ['.docx', '.doc', '.pdf'].includes(origExt) ? origExt : '.pdf'
+  let filePath = path.join(PENDING_DIR, `${id}${docExt}`)
+
+  // Check if file exists under alternate extension locally
+  if (!fs.existsSync(filePath)) {
+    for (const altExt of ['.docx', '.doc', '.pdf']) {
+      const altPath = path.join(PENDING_DIR, `${id}${altExt}`)
+      if (fs.existsSync(altPath) && fs.statSync(altPath).size > 50) {
+        filePath = altPath
+        break
+      }
+    }
+  }
 
   // Check payment authorization on authoritative order record
   const normPay = String(order.paymentStatus || 'pending').trim().toLowerCase()
@@ -941,20 +964,20 @@ app.post('/release-print', async (req, res) => {
     })
   }
 
-  // 2.5 Verify PDF presence before claiming: prevent claiming an order that has no document
+  // 2.5 Verify document presence before claiming: prevent claiming an order that has no document
   const hasKnownPdf = Boolean(
     order.hasPdf === true ||
     order.hasGridFsPdf === true ||
     Boolean(order.driveUrl && order.driveUrl.trim()) ||
     Boolean(order.pdfBase64 && order.pdfBase64.length > 50) ||
-    (fs.existsSync(filePath) && fs.statSync(filePath).size > 100)
+    (fs.existsSync(filePath) && fs.statSync(filePath).size > 50)
   )
 
   if (!hasKnownPdf) {
-    logger.warn(`[AGENT] Release rejected for ${id}: Order has no associated PDF`)
+    logger.warn(`[AGENT] Release rejected for ${id}: Order has no associated document`)
     return res.status(400).json({
       success: false,
-      error: 'Cannot release order: no PDF file is associated with this order. Re-upload or repair required.',
+      error: 'Cannot release order: no document file is associated with this order. Re-upload or repair required.',
       missingPdf: true,
       orderId: id,
     })
@@ -1008,13 +1031,23 @@ app.post('/release-print', async (req, res) => {
   try {
     const settings = loadSettings(order.orderId)
 
-    // 1. Try local PDF or decode b64 file
+    // 1. Try local document or decode b64 file
     let pdfReady = fs.existsSync(filePath)
+    if (!pdfReady) {
+      for (const altExt of ['.docx', '.doc', '.pdf']) {
+        const altPath = path.join(PENDING_DIR, `${id}${altExt}`)
+        if (fs.existsSync(altPath) && fs.statSync(altPath).size > 50) {
+          filePath = altPath
+          pdfReady = true
+          break
+        }
+      }
+    }
     if (!pdfReady) {
       pdfReady = decodePendingPdf(order.orderId, filePath)
     }
     if (pdfReady) {
-      logger.success(`[AGENT] PDF loaded from local storage`)
+      logger.success(`[AGENT] Document loaded from local storage (${path.basename(filePath)})`)
     }
 
     // 2. Try driveUrl from settings or order (following redirects correctly)

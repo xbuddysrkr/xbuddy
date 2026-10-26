@@ -55,4 +55,7 @@ backend/installer/Provisioning.cs
 backend/.pdf_cache/
 downloads/
 backend/downloads/
+release/
+backend/release/
+
 

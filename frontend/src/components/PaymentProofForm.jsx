@@ -59,23 +59,30 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
           // Document PDF is already stored durably in MongoDB Atlas GridFS; skip re-encoding
           setStep('upload_file', 'done')
         } else if (orderMeta?.pdfFile) {
-          // Fast binary validation: check %PDF- header in first 5 bytes (< 1ms) without blocking
+          // Fast binary validation: check document magic headers in first 5 bytes (< 1ms) without blocking
           try {
             const headerSlice = await orderMeta.pdfFile.slice(0, 5).arrayBuffer()
-            const headerStr = String.fromCharCode(...new Uint8Array(headerSlice))
-            if (headerStr !== '%PDF-') {
-              throw new Error('Selected file is not a valid PDF document (missing %PDF- header)')
+            const bytes = new Uint8Array(headerSlice)
+            const isPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 // %PDF
+            const isDocx = bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04 // PK\x03\x04
+            const isDoc = bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0 // OLE CFB
+            if (!isPdf && !isDocx && !isDoc) {
+              throw new Error('Selected file is not a valid document (must be PDF, DOCX, or DOC)')
             }
           } catch (err) {
-            throw { step: 'upload_file', reason: err.message || 'Invalid PDF header' }
+            throw { step: 'upload_file', reason: err.message || 'Invalid document header' }
           }
           setStep('upload_file', 'active')
         } else {
           try {
             if (!cache.pdfBase64) {
               const b64 = await fileToBase64(orderMeta.pdfFile)
-              if (!b64 || b64.length < 50 || (!b64.startsWith('JVBERi0') && !b64.slice(0, 10).includes('JVBE'))) {
-                throw new Error('Selected file is not a valid PDF document (missing %PDF- header)')
+              const isValid = b64 && b64.length >= 50 && (
+                b64.startsWith('JVBERi0') || b64.slice(0, 10).includes('JVBE') ||
+                b64.startsWith('UEsDB') || b64.startsWith('0M8R4')
+              )
+              if (!isValid) {
+                throw new Error('Selected file is not a valid document (must be PDF, DOCX, or DOC)')
               }
               cache.pdfBase64 = b64
             }
