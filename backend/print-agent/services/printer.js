@@ -5,6 +5,8 @@ const { execFile } = require('child_process')
 const logger = require('../utils/logger')
 const { convertPdfToGrayscale, getMutoolPath } = require('./converter')
 const { getConfig, saveConfig } = require('./config')
+const { validateDocumentFidelity, getPdfGeometry } = require('./fidelityValidator')
+const { convertDocxToPdfViaWord } = require('./wordConverter')
 
 function resolveMutoolBin() {
   const p = getMutoolPath()
@@ -164,7 +166,8 @@ async function configureWindowsDriver(printerName, { isColor, paperSize }) {
 
 /**
  * Pre-slice PDF if custom page ranges are specified (Requirement 11).
- * Extracts exact pages (e.g. 2,4-6 -> 2,4,5,6) into an isolated PDF buffer.
+ * Extracts exact pages (e.g. 2,4-6 -> 2,4,5,6) into an isolated PDF buffer
+ * using mutool merge (preserves vector graphics, fonts, and geometry).
  */
 function slicePdfCustomPages(inputPath, pageRangeStr, outputPath) {
   return new Promise((resolve) => {
@@ -187,7 +190,8 @@ function slicePdfCustomPages(inputPath, pageRangeStr, outputPath) {
 }
 
 /**
- * Print a PDF file with complete end-to-end hardware settings enforcement.
+ * Print a PDF or supported office document with complete end-to-end formatting fidelity.
+ * Preserves original uploaded PDF bytes, dimensions, fonts, and layout without rasterization.
  */
 async function printPdf(filePath, options = {}) {
   const {
@@ -198,10 +202,12 @@ async function printPdf(filePath, options = {}) {
     orientation = 'portrait',
     pageRange   = 'all',
     orderId     = '',
+    fileName    = '',
   } = options
 
   let convertedTempPath = null
   let slicedTempPath = null
+  let wordConvertedPath = null
 
   try {
     // 1. Verify file exists
@@ -216,7 +222,23 @@ async function printPdf(filePath, options = {}) {
     }
     const printerName = active.name
 
-    // 3. Resolve color mode strictly
+    // 3. Document format detection & Native Office conversion
+    const ext = path.extname(filePath).toLowerCase()
+    let conversionOccurred = false
+    let detectedFormat = 'PDF'
+    let printTargetFile = filePath
+
+    if (ext === '.docx' || ext === '.doc') {
+      detectedFormat = ext.replace('.', '').toUpperCase()
+      wordConvertedPath = path.join(path.dirname(filePath), `converted_${Date.now()}_${path.basename(filePath, ext)}.pdf`)
+      logger.info(`[OFFICE_CONVERSION] Detected ${detectedFormat} document. Converting via native Word COM engine...`)
+      await convertDocxToPdfViaWord(filePath, wordConvertedPath)
+      printTargetFile = wordConvertedPath
+      conversionOccurred = true
+      logger.success(`[OFFICE_CONVERSION] Converted ${detectedFormat} with 100% layout fidelity -> ${path.basename(wordConvertedPath)}`)
+    }
+
+    // 4. Resolve color mode strictly
     const rawColor = String(colorMode).trim().toLowerCase()
     let isBw = true
     if (rawColor === 'color' || rawColor === 'colour') {
@@ -228,12 +250,31 @@ async function printPdf(filePath, options = {}) {
     }
     const isColor = !isBw
 
-    // 4. Copies & Orientation & Page size
-    const validCopies = Math.max(1, parseInt(copies, 10) || 1)
-    const validOrientation = String(orientation).trim().toLowerCase() === 'landscape' ? 'landscape' : 'portrait'
-    const validPaperSize = String(pageSize || 'A4').trim().toUpperCase()
+    // 5. Inspect PDF Geometry & Dimensions
+    const sourceGeom = await getPdfGeometry(printTargetFile)
 
-    // 5. Resolve custom pages (Requirement 11)
+    // 6. Copies & Orientation & Page size resolution
+    const validCopies = Math.max(1, parseInt(copies, 10) || 1)
+    
+    // Auto-detect orientation from document geometry if not explicitly specified
+    let resolvedOrientation = orientation
+    if (!options.orientation || options.orientation === 'auto') {
+      resolvedOrientation = sourceGeom.primaryOrientation === 'landscape' ? 'landscape' : 'portrait'
+    }
+    const validOrientation = String(resolvedOrientation).trim().toLowerCase() === 'landscape' ? 'landscape' : 'portrait'
+
+    // Match paper size to document geometry if default 'A4' was passed but document is Letter/Legal
+    let resolvedPaperSize = String(pageSize || '').trim().toUpperCase()
+    if (!resolvedPaperSize || resolvedPaperSize === 'A4') {
+      if (sourceGeom.primaryPaperSize && sourceGeom.primaryPaperSize !== 'Custom') {
+        resolvedPaperSize = sourceGeom.primaryPaperSize
+      } else {
+        resolvedPaperSize = 'A4'
+      }
+    }
+    const validPaperSize = resolvedPaperSize
+
+    // 7. Resolve custom pages (Requirement 11)
     let targetPages = pageRange
     if (targetPages === 'custom') {
       if (options.customPages && String(options.customPages).trim()) {
@@ -268,21 +309,19 @@ async function printPdf(filePath, options = {}) {
       paperSize: validPaperSize,
     })
 
-    let printTargetFile = filePath
-
-    // Pre-slice custom pages if not "All"
+    // Pre-slice custom pages if not "All" (uses vector mutool merge, preserving vector fidelity)
     if (resolvedPages !== 'All' && resolvedPages !== 'all') {
-      slicedTempPath = path.join(path.dirname(filePath), `sliced_${Date.now()}_${path.basename(filePath)}`)
-      const sliced = await slicePdfCustomPages(filePath, resolvedPages, slicedTempPath)
+      slicedTempPath = path.join(path.dirname(filePath), `sliced_${Date.now()}_${path.basename(printTargetFile)}`)
+      const sliced = await slicePdfCustomPages(printTargetFile, resolvedPages, slicedTempPath)
       if (sliced) {
         printTargetFile = slicedTempPath
       }
     }
 
-    // Grayscale enforcement via native DeviceGray rasterizer (Requirement 12)
-    if (isBw) {
+    // Optional legacy grayscale rasterizer fallback (preserved for testing/safeguards, NOT run on unchanged PDFs)
+    if (options.forceGrayscaleRaster && isBw) {
       convertedTempPath = path.join(path.dirname(filePath), `mono_${Date.now()}_${path.basename(printTargetFile)}`)
-      logger.info(`Converting document to pure DeviceGray grayscale...`)
+      logger.info(`Converting document to DeviceGray raster safeguard...`)
       try {
         await convertPdfToGrayscale(printTargetFile, convertedTempPath)
         printTargetFile = convertedTempPath
@@ -292,13 +331,16 @@ async function printPdf(filePath, options = {}) {
       }
     }
 
-    // Build pdf-to-printer options with silent hardware execution (Requirement 13)
+    // Build pdf-to-printer options with silent hardware execution
+    // Default to 'noscale' (100% exact size) to preserve true margins, diagrams, and layout
+    const requestedScale = options.scale || 'noscale'
     const printOptions = {
       printer:    printerName,
       copies:     validCopies,
       silent:     true,
       paperSize:  validPaperSize,
-      scale:      'fit',
+      scale:      requestedScale,
+      monochrome: isBw,
     }
 
     // Duplex printing flag
@@ -308,15 +350,34 @@ async function printPdf(filePath, options = {}) {
       printOptions.sides = 'simplex'
     }
 
-    // If orientation is landscape, specify in options
-    if (validOrientation === 'landscape') {
+    // Orientation: if mixed, omit orientation to let driver auto-rotate per page
+    if (sourceGeom.primaryOrientation === 'mixed' && !options.orientation) {
+      // Allow driver auto-rotation for mixed pages
+    } else if (validOrientation === 'landscape') {
       printOptions.orientation = 'landscape'
+    } else {
+      printOptions.orientation = 'portrait'
     }
 
     // If not sliced, pass page range string to printer driver
     if (!slicedTempPath && resolvedPages !== 'All') {
       printOptions.pageRange = resolvedPages
     }
+
+    // 8. Document Fidelity Validation Layer
+    await validateDocumentFidelity({
+      orderId,
+      originalFilePath: filePath,
+      printArtifactPath: printTargetFile,
+      originalFileName: fileName || path.basename(filePath),
+      detectedFormat,
+      conversionOccurred,
+      printerName,
+      paperSize: validPaperSize,
+      scale: requestedScale,
+      orientation: validOrientation,
+      pageRange: resolvedPages,
+    })
 
     logger.info(`Dispatching silent print via pdf-to-printer to "${printerName}"...`)
     await ptp.print(printTargetFile, printOptions)
@@ -334,6 +395,9 @@ async function printPdf(filePath, options = {}) {
       if (convertedTempPath && fs.existsSync(convertedTempPath)) {
         try { fs.unlinkSync(convertedTempPath) } catch {}
       }
+      if (wordConvertedPath && fs.existsSync(wordConvertedPath)) {
+        try { fs.unlinkSync(wordConvertedPath) } catch {}
+      }
     }, 120000)
   }
 }
@@ -345,4 +409,5 @@ module.exports = {
   configureWindowsDriver,
   slicePdfCustomPages,
   printPdf,
+  convertPdfToGrayscale,
 }

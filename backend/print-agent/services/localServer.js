@@ -1111,6 +1111,7 @@ app.post('/release-print', async (req, res) => {
       orientation: resolvedOrientation,
       pageRange:   printPages,
       orderId:     order.orderId,
+      fileName:    order.fileName,
     })
 
     if (ok) {
