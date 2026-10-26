@@ -50,12 +50,20 @@ export function LanguageProvider({ children }) {
     if (!path || typeof path !== 'string') return ''
 
     let params = null
-    let defaultText = fallback
+    let defaultText = null
 
     if (paramsOrFallback !== null && typeof paramsOrFallback === 'object') {
       params = paramsOrFallback
+      defaultText = typeof fallback === 'string' ? fallback : null
     } else if (typeof paramsOrFallback === 'string') {
       defaultText = paramsOrFallback
+      if (fallback !== null && typeof fallback === 'object') {
+        params = fallback
+      }
+    } else if (typeof fallback === 'string') {
+      defaultText = fallback
+    } else if (fallback !== null && typeof fallback === 'object') {
+      params = fallback
     }
 
     const keys = path.split('.')
@@ -123,10 +131,27 @@ export function useLanguage() {
       isTelugu: false,
       setLanguage: () => {},
       t: (path, paramsOrFallback, fallback) => {
-        if (typeof paramsOrFallback === 'string') return paramsOrFallback
-        if (typeof fallback === 'string') return fallback
-        const parts = path.split('.')
-        return parts[parts.length - 1] || path
+        let text = ''
+        let params = null
+        if (paramsOrFallback !== null && typeof paramsOrFallback === 'object') {
+          params = paramsOrFallback
+          text = typeof fallback === 'string' ? fallback : (path.split('.').pop() || path)
+        } else if (typeof paramsOrFallback === 'string') {
+          text = paramsOrFallback
+          if (fallback !== null && typeof fallback === 'object') {
+            params = fallback
+          }
+        } else if (typeof fallback === 'string') {
+          text = fallback
+        } else {
+          text = path.split('.').pop() || path
+        }
+        if (params && typeof params === 'object') {
+          Object.entries(params).forEach(([k, v]) => {
+            text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v))
+          })
+        }
+        return text
       },
     }
   }

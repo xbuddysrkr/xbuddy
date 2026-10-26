@@ -6,7 +6,7 @@ const logger = require('../utils/logger')
 const { convertPdfToGrayscale, getMutoolPath } = require('./converter')
 const { getConfig, saveConfig } = require('./config')
 const { validateDocumentFidelity, getPdfGeometry } = require('./fidelityValidator')
-const { convertDocxToPdfViaWord } = require('./wordConverter')
+const { convertDocxToPdfViaWord, inspectFileMagic } = require('./wordConverter')
 
 function resolveMutoolBin() {
   const p = getMutoolPath()
@@ -223,15 +223,28 @@ async function printPdf(filePath, options = {}) {
     const printerName = active.name
 
     // 3. Document format detection & Native Office conversion
+    const magicFormat = inspectFileMagic(filePath)
     const ext = path.extname(filePath).toLowerCase()
+    const hintExt = path.extname(fileName || '').toLowerCase()
+
     let conversionOccurred = false
     let detectedFormat = 'PDF'
     let printTargetFile = filePath
 
-    if (ext === '.docx' || ext === '.doc') {
-      detectedFormat = ext.replace('.', '').toUpperCase()
-      wordConvertedPath = path.join(path.dirname(filePath), `converted_${Date.now()}_${path.basename(filePath, ext)}.pdf`)
-      logger.info(`[OFFICE_CONVERSION] Detected ${detectedFormat} document. Converting via native Word COM engine...`)
+    const isOfficeDoc = (
+      magicFormat === 'DOCX' ||
+      magicFormat === 'DOC' ||
+      ext === '.docx' ||
+      ext === '.doc' ||
+      hintExt === '.docx' ||
+      hintExt === '.doc'
+    ) && magicFormat !== 'PDF'
+
+    if (isOfficeDoc) {
+      detectedFormat = magicFormat !== 'UNKNOWN' ? magicFormat : (ext.replace('.', '') || hintExt.replace('.', '')).toUpperCase()
+      const baseName = path.basename(filePath, path.extname(filePath))
+      wordConvertedPath = path.join(path.dirname(filePath), `converted_${Date.now()}_${baseName}.pdf`)
+      logger.info(`[OFFICE_CONVERSION] Detected ${detectedFormat} document for Order ${orderId || 'Direct'}. Converting via high-fidelity Office engine...`)
       await convertDocxToPdfViaWord(filePath, wordConvertedPath)
       printTargetFile = wordConvertedPath
       conversionOccurred = true
@@ -382,9 +395,16 @@ async function printPdf(filePath, options = {}) {
     logger.info(`Dispatching silent print via pdf-to-printer to "${printerName}"...`)
     await ptp.print(printTargetFile, printOptions)
     logger.success(`[PRINT_SUCCESS] Physical print job queued successfully for Order ${orderId || 'Direct'}`)
+    printPdf.lastError = null
     return true
   } catch (err) {
     logger.error(`[PRINT_FAILURE] ${err.message}`)
+    const reason = err.message.toLowerCase().includes('conversion')
+      ? 'conversion_failed'
+      : err.message.toLowerCase().includes('offline')
+      ? 'printer_offline'
+      : 'print_failed'
+    printPdf.lastError = { message: err.message, errorReason: reason }
     return false
   } finally {
     // Clean up temporary files safely after slight delay

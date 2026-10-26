@@ -7,6 +7,7 @@ const { getOrderByIdForRelease, getAllOrders, claimOrder } = require('./sheets')
 const { updatePrintStatus, updateReleaseStatus } = require('./updater')
 const { printPdf, getDefaultPrinter, getAllWindowsPrinters, getActivePrinter } = require('./printer')
 const { downloadPdf, deletePdf } = require('./downloader')
+const { inspectFileMagic } = require('./wordConverter')
 const { getTunnelUrl } = require('./tunnel')
 const { getConfig, saveConfig, validateStationOrderAuthorization } = require('./config')
 const { getLastHeartbeat, startHeartbeat, sendHeartbeatNow } = require('./heartbeat')
@@ -1107,8 +1108,39 @@ app.post('/release-print', async (req, res) => {
 
     if (!pdfReady) {
       logger.warn(`No PDF found for ${id} - cannot print`)
-      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
+      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed', { errorMessage: 'Document file not found', errorReason: 'missing_document' })
       return
+    }
+
+    // 5. File type normalization based on actual magic bytes
+    if (pdfReady && fs.existsSync(filePath)) {
+      const magic = inspectFileMagic(filePath)
+      const currentExt = path.extname(filePath).toLowerCase()
+      if (magic === 'DOCX' && currentExt !== '.docx') {
+        const normalizedPath = path.join(path.dirname(filePath), `${id}.docx`)
+        try {
+          if (fs.existsSync(normalizedPath)) fs.unlinkSync(normalizedPath)
+          fs.copyFileSync(filePath, normalizedPath)
+          filePath = normalizedPath
+          logger.info(`[AGENT] Normalized file extension to .docx based on genuine PK header`)
+        } catch {}
+      } else if (magic === 'DOC' && currentExt !== '.doc') {
+        const normalizedPath = path.join(path.dirname(filePath), `${id}.doc`)
+        try {
+          if (fs.existsSync(normalizedPath)) fs.unlinkSync(normalizedPath)
+          fs.copyFileSync(filePath, normalizedPath)
+          filePath = normalizedPath
+          logger.info(`[AGENT] Normalized file extension to .doc based on genuine CFB header`)
+        } catch {}
+      } else if (magic === 'PDF' && currentExt !== '.pdf') {
+        const normalizedPath = path.join(path.dirname(filePath), `${id}.pdf`)
+        try {
+          if (fs.existsSync(normalizedPath)) fs.unlinkSync(normalizedPath)
+          fs.copyFileSync(filePath, normalizedPath)
+          filePath = normalizedPath
+          logger.info(`[AGENT] Normalized file extension to .pdf based on %PDF header`)
+        } catch {}
+      }
     }
 
     let printPages = settings.pageRange || order.pageRange || 'all'
@@ -1151,12 +1183,16 @@ app.post('/release-print', async (req, res) => {
       logger.success(`[AGENT] Physical print dispatched successfully for ${id}`)
       await updatePrintStatus(order.orderId, order.rowIndex, 'Printed')
     } else {
-      logger.error(`[AGENT] Physical print failed for ${id}`)
-      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
+      const lastErr = printPdf.lastError || {}
+      const errMsg = lastErr.message || 'Physical print dispatch failed'
+      const errReason = lastErr.errorReason || (errMsg.toLowerCase().includes('conversion') ? 'conversion_failed' : (errMsg.toLowerCase().includes('offline') ? 'printer_offline' : 'print_failed'))
+      logger.error(`[AGENT] Physical print failed for ${id}: ${errMsg}`)
+      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed', { errorMessage: errMsg, errorReason: errReason })
     }
   } catch (err) {
     logger.error(`Release error for ${id}: ${err.message}`)
-    await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
+    const errReason = err.message.toLowerCase().includes('conversion') ? 'conversion_failed' : (err.message.toLowerCase().includes('offline') ? 'printer_offline' : 'print_failed')
+    await updatePrintStatus(order.orderId, order.rowIndex, 'Failed', { errorMessage: err.message, errorReason: errReason })
   } finally {
     setTimeout(() => {
       try { if (fs.existsSync(filePath)) deletePdf(filePath) } catch {}

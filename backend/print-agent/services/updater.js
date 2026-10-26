@@ -40,18 +40,29 @@ function getAuth() {
  * Transitions: 'Printing', 'Printed', 'Failed'.
  * In Phase 4 mongo mode, Google Orders Sheet is NOT written to.
  */
-async function updatePrintStatus(orderIdOrRowIndex, statusOrRow, statusParam) {
+async function updatePrintStatus(orderIdOrRowIndex, statusOrRow, statusParam, extraData = {}) {
   let orderId = null
   let rowIndex = null
   let status = 'Printed'
+  let extra = {}
 
   if (typeof orderIdOrRowIndex === 'string') {
     orderId = orderIdOrRowIndex
-    if (typeof statusOrRow === 'number') rowIndex = statusOrRow
-    status = statusParam || (typeof statusOrRow === 'string' ? statusOrRow : 'Printed')
+    if (typeof statusOrRow === 'number') {
+      rowIndex = statusOrRow
+      status = statusParam || 'Printed'
+      extra = extraData || {}
+    } else if (typeof statusOrRow === 'string') {
+      status = statusOrRow
+      extra = (typeof statusParam === 'object' && statusParam !== null) ? statusParam : (extraData || {})
+    } else {
+      status = 'Printed'
+      extra = extraData || {}
+    }
   } else if (typeof orderIdOrRowIndex === 'number') {
     rowIndex = orderIdOrRowIndex
-    status = statusOrRow || 'Printed'
+    status = typeof statusOrRow === 'string' ? statusOrRow : 'Printed'
+    extra = (typeof statusParam === 'object' && statusParam !== null) ? statusParam : (extraData || {})
   }
 
   const cleanId = (orderId || '').trim().toUpperCase()
@@ -73,9 +84,10 @@ async function updatePrintStatus(orderIdOrRowIndex, statusOrRow, statusParam) {
     const secretKey = getAgentSecretKey()
     for (const baseUrl of urls) {
       try {
+        const payload = { status, ...extra }
         const res = await axios.post(
           `${baseUrl}/api/agent/orders/${encodeURIComponent(cleanId)}/status`,
-          { status },
+          payload,
           {
             headers: {
               'x-agent-key': secretKey,

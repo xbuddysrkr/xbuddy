@@ -69,6 +69,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
   const [progress, setProgress] = useState(33)
   const [serverOffline, setServerOffline] = useState(false)
   const [printFailed, setPrintFailed] = useState(false)
+  const [failReason, setFailReason] = useState(null)
   const [lastChecked, setLastChecked] = useState(null)
   const [collectionChoice, setCollectionChoice] = useState('now')
   const [copied, setCopied] = useState(false)
@@ -94,6 +95,7 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
           const step = statusToStep(status)
           if (step === -1) {
             setPrintFailed(true)
+            setFailReason(data.errorReason || data.errorMessage || data.error || null)
             clearInterval(pollRef.current)
             return
           }
@@ -325,8 +327,20 @@ export default function PrintStatus({ fileInfo = {}, settings = {}, orderId, onR
             className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-red-600 font-bold text-sm">{t('status.printIssueNotice', 'Print Issue Reported')}</p>
-              <p className="text-gray-600 text-xs mt-0.5">{t('status.printIssueDesc', 'There was an issue at the printer. Please inform the shopkeeper with Order ID {id}.', { id: orderId })}</p>
+              <p className="text-red-600 font-bold text-sm">
+                {String(failReason || '').toLowerCase().includes('conversion')
+                  ? t('status.conversionFailedNotice', 'Document Conversion Issue')
+                  : String(failReason || '').toLowerCase().includes('offline')
+                  ? t('status.printerOfflineNotice', 'Printer Offline')
+                  : t('status.printIssueNotice', 'Print Issue Reported')}
+              </p>
+              <p className="text-gray-600 text-xs mt-0.5">
+                {String(failReason || '').toLowerCase().includes('conversion')
+                  ? t('status.conversionFailedDesc', 'Could not convert Word document for printing. Please verify document formatting or inform shopkeeper with Order ID {id}.', { id: orderId })
+                  : String(failReason || '').toLowerCase().includes('offline')
+                  ? t('status.printerOfflineDesc', 'The Xerox printer is currently offline. Please notify the shopkeeper with Order ID {id}.', { id: orderId })
+                  : t('status.printIssueDesc', 'There was an issue at the printer. Please inform the shopkeeper with Order ID {id}.', { id: orderId })}
+              </p>
             </div>
           </motion.div>
         )}

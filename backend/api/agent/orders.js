@@ -432,8 +432,11 @@ export default async function handler(req, res) {
         updateDoc.printingAt = nowIso
       } else if (newStatus.toLowerCase().includes('fail')) {
         updateDoc.failedAt = nowIso
-        if (req.body?.errorMessage) {
-          updateDoc.errorMessage = String(req.body.errorMessage)
+        if (req.body?.errorMessage || req.body?.error) {
+          updateDoc.errorMessage = String(req.body.errorMessage || req.body.error)
+        }
+        if (req.body?.errorReason) {
+          updateDoc.errorReason = String(req.body.errorReason)
         }
         if (existing.reprintPending) {
           updateDoc.reprintPending = false
