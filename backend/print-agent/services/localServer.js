@@ -1185,14 +1185,12 @@ app.post('/release-print', async (req, res) => {
     } else {
       const lastErr = printPdf.lastError || {}
       const errMsg = lastErr.message || 'Physical print dispatch failed'
-      const errReason = lastErr.errorReason || (errMsg.toLowerCase().includes('conversion') ? 'conversion_failed' : (errMsg.toLowerCase().includes('offline') ? 'printer_offline' : 'print_failed'))
       logger.error(`[AGENT] Physical print failed for ${id}: ${errMsg}`)
-      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed', { errorMessage: errMsg, errorReason: errReason })
+      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
     }
   } catch (err) {
     logger.error(`Release error for ${id}: ${err.message}`)
-    const errReason = err.message.toLowerCase().includes('conversion') ? 'conversion_failed' : (err.message.toLowerCase().includes('offline') ? 'printer_offline' : 'print_failed')
-    await updatePrintStatus(order.orderId, order.rowIndex, 'Failed', { errorMessage: err.message, errorReason: errReason })
+    await updatePrintStatus(order.orderId, order.rowIndex, 'Failed')
   } finally {
     setTimeout(() => {
       try { if (fs.existsSync(filePath)) deletePdf(filePath) } catch {}

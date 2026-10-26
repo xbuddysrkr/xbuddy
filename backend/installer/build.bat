@@ -29,6 +29,18 @@ echo [3/5] Compiling Uninstall.exe (Elevated Uninstaller)...
 if %ERRORLEVEL% neq 0 ( echo [ERROR] Failed to compile Uninstall.exe & exit /b 1 )
 copy /y "Uninstall.exe" "payload\Uninstall.exe" >nul
 
+echo [3.5/5] Synchronizing latest print-agent services and utilities into payload...
+if not exist "payload\app\services" mkdir "payload\app\services"
+if not exist "payload\app\utils" mkdir "payload\app\utils"
+xcopy /E /I /Y "..\print-agent\services" "payload\app\services" >nul
+xcopy /E /I /Y "..\print-agent\utils" "payload\app\utils" >nul
+copy /y "..\print-agent\index.js" "payload\app\index.js" >nul
+if exist "..\print-agent\package.json" copy /y "..\print-agent\package.json" "payload\app\package.json" >nul
+if exist "..\print-agent\bin" (
+    if not exist "payload\app\bin" mkdir "payload\app\bin"
+    xcopy /E /I /Y "..\print-agent\bin" "payload\app\bin" >nul
+)
+
 echo [4/5] Packaging payload into package.zip...
 if exist "payload\bin\mutool.exe" (
     if not exist "payload\app\bin" mkdir "payload\app\bin"

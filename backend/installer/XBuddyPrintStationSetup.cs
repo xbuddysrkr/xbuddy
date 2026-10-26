@@ -624,6 +624,20 @@ namespace XBuddyPrintStation
                 if (!Directory.Exists(stationDataDir)) Directory.CreateDirectory(stationDataDir);
                 if (!Directory.Exists(logDir)) Directory.CreateDirectory(logDir);
 
+                // Ensure systemprofile Desktop folders for MS Word COM automation under SYSTEM service
+                try
+                {
+                    string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                    string sys32Desktop = Path.Combine(winDir, @"System32\config\systemprofile\Desktop");
+                    if (!Directory.Exists(sys32Desktop)) Directory.CreateDirectory(sys32Desktop);
+                    string sysWowDesktop = Path.Combine(winDir, @"SysWOW64\config\systemprofile\Desktop");
+                    if (Directory.Exists(Path.Combine(winDir, "SysWOW64")) && !Directory.Exists(sysWowDesktop))
+                    {
+                        Directory.CreateDirectory(sysWowDesktop);
+                    }
+                }
+                catch { }
+
                 // 2. Extract Embedded ZIP package
                 worker.ReportProgress(25, "Extracting bundled runtime & print engine...");
                 ExtractEmbeddedPackage(targetDir);

@@ -53,6 +53,7 @@ namespace XBuddyPrintStation
         protected override void OnStart(string[] args)
         {
             Log("Service starting...");
+            EnsureSystemProfileDesktopDirs();
             _isStopping = false;
             _workerThread = new Thread(WorkerLoop)
             {
@@ -61,6 +62,30 @@ namespace XBuddyPrintStation
             };
             _workerThread.Start();
             Log("Service started successfully.");
+        }
+
+        private static void EnsureSystemProfileDesktopDirs()
+        {
+            try
+            {
+                string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+                string sys32Desktop = Path.Combine(winDir, @"System32\config\systemprofile\Desktop");
+                if (!Directory.Exists(sys32Desktop))
+                {
+                    Directory.CreateDirectory(sys32Desktop);
+                    Log("Created systemprofile Desktop: " + sys32Desktop);
+                }
+                string sysWowDesktop = Path.Combine(winDir, @"SysWOW64\config\systemprofile\Desktop");
+                if (Directory.Exists(Path.Combine(winDir, "SysWOW64")) && !Directory.Exists(sysWowDesktop))
+                {
+                    Directory.CreateDirectory(sysWowDesktop);
+                    Log("Created systemprofile Desktop: " + sysWowDesktop);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("Notice ensuring systemprofile Desktop dirs: " + ex.Message);
+            }
         }
 
         protected override void OnStop()
