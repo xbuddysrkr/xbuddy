@@ -201,11 +201,15 @@ export async function getPdfBufferFromGridFS(db, orderId) {
 export async function hasPdfInGridFS(db, orderId) {
   if (!db || !orderId) return false
   const cleanId = String(orderId).trim().toUpperCase()
-  const filename = `${cleanId}.pdf`
   const bucket = getGridFSBucket(db)
   try {
     const count = await bucket.find({
-      $or: [{ filename }, { 'metadata.orderId': cleanId }]
+      $or: [
+        { filename: `${cleanId}.pdf` },
+        { filename: `${cleanId}.docx` },
+        { filename: `${cleanId}.doc` },
+        { 'metadata.orderId': cleanId },
+      ]
     }).limit(1).toArray()
     return count.length > 0
   } catch {

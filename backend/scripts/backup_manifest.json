@@ -1,0 +1,49 @@
+{
+  "utcTimestamp": "2026-10-10T12-58-44-382UTC",
+  "creationTime": "2026-10-10T12:58:45.253Z",
+  "cluster": "xbuddycluster.mihodba.mongodb.net",
+  "database": "xbuddy",
+  "tools": {
+    "node": "v22.23.3",
+    "mongodbDriver": "7.7.0",
+    "bson": "Standard MongoDB BSON Format",
+    "archiver": "Windows tar (bsdtar)"
+  },
+  "collections": [
+    {
+      "name": "order_pdfs.chunks",
+      "documentCount": 426,
+      "bsonBytes": 122918309,
+      "indexesCount": 2
+    },
+    {
+      "name": "order_pdfs.files",
+      "documentCount": 103,
+      "bsonBytes": 22187,
+      "indexesCount": 3
+    },
+    {
+      "name": "orders",
+      "documentCount": 288,
+      "bsonBytes": 65304774,
+      "indexesCount": 5
+    },
+    {
+      "name": "stations",
+      "documentCount": 1,
+      "bsonBytes": 470,
+      "indexesCount": 1
+    },
+    {
+      "name": "test_perf",
+      "documentCount": 1,
+      "bsonBytes": 5242954,
+      "indexesCount": 1
+    }
+  ],
+  "archive": {
+    "path": "C:\\Users\\SRKREC\\.xbuddy_backups\\xbuddy_backup_2026-10-10T12-58-44-382UTC.tar.gz",
+    "bytes": 73353809,
+    "sha256": "e2aeaaae39025127d5ad9bd3e6d58f3a870eec1c25c7f959279a2af4b9355331"
+  }
+}

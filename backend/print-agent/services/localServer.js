@@ -969,7 +969,12 @@ app.post('/release-print', async (req, res) => {
   const hasKnownPdf = Boolean(
     order.hasPdf === true ||
     order.hasGridFsPdf === true ||
+    order.hasDocument === true ||
+    Boolean(order.documentId) ||
+    Boolean(order.fileId) ||
     Boolean(order.driveUrl && order.driveUrl.trim()) ||
+    Boolean(order.pdfUrl && order.pdfUrl.trim()) ||
+    Boolean(order.fileUrl && order.fileUrl.trim()) ||
     Boolean(order.pdfBase64 && order.pdfBase64.length > 50) ||
     (fs.existsSync(filePath) && fs.statSync(filePath).size > 50)
   )
@@ -1069,13 +1074,16 @@ app.post('/release-print', async (req, res) => {
       }
     }
 
-    // 3. Try pdfUrl from order
-    if (!pdfReady && order.pdfUrl) {
-      logger.info(`Downloading PDF from cloud URL...`)
+    // 3. Try pdfUrl or fileUrl from order
+    const downloadDocUrl = order.fileUrl || order.pdfUrl
+    if (!pdfReady && downloadDocUrl) {
+      logger.info(`Downloading document from cloud URL...`)
       try {
-        await downloadFile(order.pdfUrl, filePath)
-        pdfReady = true
-        logger.success(`[AGENT] PDF downloaded from cloud URL`)
+        await downloadFile(downloadDocUrl, filePath)
+        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 50) {
+          pdfReady = true
+          logger.success(`[AGENT] Document downloaded from cloud URL`)
+        }
       } catch (e) {
         logger.error(`Cloud URL download failed: ${e.message}`)
       }
@@ -1086,8 +1094,8 @@ app.post('/release-print', async (req, res) => {
       const currentConfig = getConfig()
       const candidateBases = [...new Set([
         'https://xbuddy.onrender.com',
-        (currentConfig.cloudApiUrl || '').replace(/\/$/, ''),
         'https://xbuddysrkr.vercel.app',
+        (currentConfig.cloudApiUrl || '').replace(/\/$/, ''),
       ].filter(Boolean))]
 
       for (const base of candidateBases) {
@@ -1097,7 +1105,7 @@ app.post('/release-print', async (req, res) => {
           await downloadFile(cloudPdfUrl, filePath)
           if (fs.existsSync(filePath) && fs.statSync(filePath).size > 100) {
             pdfReady = true
-            logger.success(`[AGENT] PDF downloaded directly from cloud backend (${base}) for ${id}`)
+            logger.success(`[AGENT] Document downloaded directly from cloud backend (${base}) for ${id}`)
             break
           }
         } catch (e) {
@@ -1107,8 +1115,8 @@ app.post('/release-print', async (req, res) => {
     }
 
     if (!pdfReady) {
-      logger.warn(`No PDF found for ${id} - cannot print`)
-      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed', { errorMessage: 'Document file not found', errorReason: 'missing_document' })
+      logger.warn(`No document found for ${id} - cannot print`)
+      await updatePrintStatus(order.orderId, order.rowIndex, 'Failed', { errorMessage: 'Document file not found in storage. Please re-upload your document.', errorReason: 'missing_document' })
       return
     }
 

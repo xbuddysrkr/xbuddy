@@ -637,6 +637,7 @@ export default async function handler(req, res) {
 
         // DURABLE PERSISTENCE: Save PDF buffer to GridFS and Disk Cache before inserting orderDoc
         let gridFsSaved = false
+        let gridRes = null
         let cacheSaved = false
         let gridFsMs = 0
         let diskCacheMs = 0
@@ -644,7 +645,7 @@ export default async function handler(req, res) {
         if (pdfBuffer && mongoDb) {
           const tGridStart = performance.now()
           try {
-            const gridRes = await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
+            gridRes = await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
             gridFsSaved = true
             gridFsMs = gridRes?.durationMs || Math.round(performance.now() - tGridStart)
             console.log(`[GRIDFS] Order ${cleanId} PDF successfully stored in MongoDB Atlas GridFS (${pdfBuffer.length} bytes in ${gridFsMs}ms)`)
@@ -693,10 +694,24 @@ export default async function handler(req, res) {
           })
         }
 
+        const fileExt = path.extname(orderDoc.fileName || '').toLowerCase() || '.pdf'
+        const resolvedMime = fileExt === '.docx'
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : (fileExt === '.doc' ? 'application/msword' : 'application/pdf')
+
         // Set authoritative durable storage metadata on orderDoc
         orderDoc.hasGridFsPdf = Boolean(gridFsSaved)
         orderDoc.hasPdf = Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
+        orderDoc.hasDocument = Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
         orderDoc.pdfStorage = gridFsSaved ? 'gridfs' : (isInlineDurable ? 'inline' : (hasDriveUrl ? 'drive' : 'none'))
+        orderDoc.storageProvider = orderDoc.pdfStorage
+        orderDoc.fileId = gridRes?.fileId ? String(gridRes.fileId) : (orderDoc.fileId || null)
+        orderDoc.gridFsFileId = gridRes?.fileId ? String(gridRes.fileId) : (orderDoc.gridFsFileId || null)
+        orderDoc.documentId = gridRes?.fileId ? String(gridRes.fileId) : cleanId
+        orderDoc.fileExtension = fileExt
+        orderDoc.mimeType = resolvedMime
+        orderDoc.pdfUrl = orderDoc.pdfUrl || (hasDriveUrl ? orderDoc.driveUrl : `https://xbuddy.onrender.com/api/orders?action=getOrderPdf&orderId=${cleanId}`)
+        orderDoc.fileUrl = orderDoc.pdfUrl
 
         try {
           orderDoc.mongoSaved = true
@@ -723,7 +738,15 @@ export default async function handler(req, res) {
             orderId: cleanId,
             hasPdf: orderDoc.hasPdf,
             hasGridFsPdf: orderDoc.hasGridFsPdf,
+            hasDocument: orderDoc.hasDocument,
+            documentId: orderDoc.documentId,
+            fileId: orderDoc.fileId,
+            fileExtension: orderDoc.fileExtension,
+            mimeType: orderDoc.mimeType,
             pdfStorage: orderDoc.pdfStorage,
+            storageProvider: orderDoc.storageProvider,
+            pdfUrl: orderDoc.pdfUrl,
+            fileUrl: orderDoc.fileUrl,
             mongoSaved: true,
             sheetsSaved: false,
             syncStatus: 'mongo_only',
@@ -783,10 +806,11 @@ export default async function handler(req, res) {
         try {
           const isLargePdf = Boolean(pdfBuffer && pdfBuffer.length >= 2 * 1024 * 1024)
           let gridFsSaved = false
+          let gridRes = null
 
           if (pdfBuffer && mongoDb) {
             try {
-              await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
+              gridRes = await savePdfToGridFS(mongoDb, cleanId, pdfBuffer, { fileName: orderDoc.fileName })
               gridFsSaved = true
             } catch (gErr) {
               console.error(`[GRIDFS_ERROR] ${cleanId}:`, gErr.message)
@@ -805,9 +829,23 @@ export default async function handler(req, res) {
               : 'Failed to durably store order PDF in MongoDB Atlas (GridFS or inline document).')
           }
 
+          const fileExt = path.extname(orderDoc.fileName || '').toLowerCase() || '.pdf'
+          const resolvedMime = fileExt === '.docx'
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : (fileExt === '.doc' ? 'application/msword' : 'application/pdf')
+
           orderDoc.hasGridFsPdf = Boolean(gridFsSaved)
           orderDoc.hasPdf = Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
+          orderDoc.hasDocument = Boolean(gridFsSaved || isInlineDurable || hasDriveUrl)
           orderDoc.pdfStorage = gridFsSaved ? 'gridfs' : (isInlineDurable ? 'inline' : (hasDriveUrl ? 'drive' : 'none'))
+          orderDoc.storageProvider = orderDoc.pdfStorage
+          orderDoc.fileId = gridRes?.fileId ? String(gridRes.fileId) : (orderDoc.fileId || null)
+          orderDoc.gridFsFileId = gridRes?.fileId ? String(gridRes.fileId) : (orderDoc.gridFsFileId || null)
+          orderDoc.documentId = gridRes?.fileId ? String(gridRes.fileId) : cleanId
+          orderDoc.fileExtension = fileExt
+          orderDoc.mimeType = resolvedMime
+          orderDoc.pdfUrl = orderDoc.pdfUrl || (hasDriveUrl ? orderDoc.driveUrl : `https://xbuddy.onrender.com/api/orders?action=getOrderPdf&orderId=${cleanId}`)
+          orderDoc.fileUrl = orderDoc.pdfUrl
           orderDoc.mongoSaved = true
           orderDoc.sheetsSaved = existingInSheets
           orderDoc.syncStatus = existingInSheets ? 'synced' : 'pending'
@@ -945,22 +983,48 @@ export default async function handler(req, res) {
           )
           let hasPdf = !isExpired && Boolean(
             order.hasGridFsPdf === true ||
+            order.hasPdf === true ||
+            order.hasDocument === true ||
             Boolean(order.driveUrl && order.driveUrl.trim()) ||
             Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
           )
           // If not confirmed by document fields, check GridFS bucket directly (durable storage)
-          if (hasPdf && !order.hasGridFsPdf && !order.pdfBase64 && !order.driveUrl) {
+          if (!hasPdf && !isExpired) {
             hasPdf = await hasPdfInGridFS(db, orderId)
           }
           if (isExpired) {
             hasPdf = false
           }
+          const origExt = String(order.fileExtension || (order.fileName ? path.extname(order.fileName) : '') || '').toLowerCase()
+          const docExt = ['.docx', '.doc', '.pdf'].includes(origExt) ? origExt : '.pdf'
+          const docMime = String(
+            order.mimeType ||
+            (docExt === '.docx'
+              ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              : (docExt === '.doc'
+                ? 'application/msword'
+                : 'application/pdf'))
+          )
+          const downloadUrl = hasPdf ? `/api/orders?action=getOrderPdf&orderId=${orderId}` : null
+          const effectiveDriveUrl = (order.driveUrl && order.driveUrl.trim()) ? order.driveUrl.trim() : (downloadUrl || '')
+
           const reprintCheck = isOrderReprintEligible(order, new Date().toISOString(), { allowPending: true })
           const cleanOrder = {
             ...order,
             pdfExpiresAt: derivedExpiry,
             hasPdf,
+            hasGridFsPdf: order.hasGridFsPdf === true || (hasPdf && (order.pdfStorage === 'gridfs' || !order.pdfStorage)),
+            hasDocument: hasPdf,
+            documentId: order.documentId || order.fileId || (hasPdf ? orderId : null),
+            fileId: order.fileId || order.documentId || (hasPdf ? orderId : null),
+            gridFsFileId: order.gridFsFileId || null,
+            fileExtension: docExt,
+            mimeType: docMime,
             pdfStorage: isExpired ? 'none' : (order.pdfStorage || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
+            storageProvider: isExpired ? 'none' : (order.storageProvider || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
+            pdfUrl: order.pdfUrl || downloadUrl,
+            fileUrl: order.fileUrl || downloadUrl,
+            driveUrl: effectiveDriveUrl,
             reprintEligible: reprintCheck.eligible,
             reprintReason: reprintCheck.reason,
           }

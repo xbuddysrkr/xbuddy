@@ -1,3 +1,4 @@
+const path = require('path')
 const { google } = require('googleapis')
 const axios = require('axios')
 const logger = require('../utils/logger')
@@ -6,7 +7,7 @@ const { getConfig, validateStationOrderAuthorization } = require('./config')
 
 function getCandidateCloudUrls() {
   const primary = (process.env.CLOUD_API_URL || getConfig().cloudApiUrl || '').replace(/\/$/, '')
-  return [...new Set(['https://xbuddy.onrender.com', primary].filter(Boolean))]
+  return [...new Set(['https://xbuddy.onrender.com', 'https://xbuddysrkr.vercel.app', primary].filter(Boolean))]
 }
 
 function getAgentSecretKey() {
@@ -179,7 +180,20 @@ async function getOrderByIdForRelease(orderId) {
             amount:            o.amount || 0,
             paymentStatus:     o.paymentStatus || 'pending',
             printStatus:       o.printStatus || 'waiting_for_shopkeeper',
-            driveUrl:          o.driveUrl || '',
+            hasPdf:            Boolean(o.hasPdf === true || o.hasDocument === true || o.hasGridFsPdf === true),
+            hasGridFsPdf:      o.hasGridFsPdf === true,
+            hasDocument:       Boolean(o.hasDocument === true || o.hasPdf === true),
+            documentId:        o.documentId || o.fileId || cleanId,
+            fileId:            o.fileId || o.documentId || cleanId,
+            gridFsFileId:      o.gridFsFileId || null,
+            fileExtension:     o.fileExtension || (o.fileName ? path.extname(o.fileName).toLowerCase() : '.pdf'),
+            mimeType:          o.mimeType || '',
+            pdfStorage:        o.pdfStorage || (o.hasGridFsPdf ? 'gridfs' : 'none'),
+            storageProvider:   o.storageProvider || o.pdfStorage || 'gridfs',
+            pdfSize:           o.pdfSize || o.fileSize || 0,
+            fileSize:          o.fileSize || o.pdfSize || 0,
+            fileUrl:           o.fileUrl || o.pdfUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
+            driveUrl:          o.driveUrl || o.pdfUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
             pdfUrl:            o.pdfUrl || o.driveUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
             source:            'mongo',
           }
@@ -220,7 +234,20 @@ async function getOrderByIdForRelease(orderId) {
               amount:            o.amount || 0,
               paymentStatus:     o.paymentStatus || 'pending',
               printStatus:       o.printStatus || 'waiting_for_shopkeeper',
-              driveUrl:          o.driveUrl || '',
+              hasPdf:            Boolean(o.hasPdf === true || o.hasDocument === true || o.hasGridFsPdf === true),
+              hasGridFsPdf:      o.hasGridFsPdf === true,
+              hasDocument:       Boolean(o.hasDocument === true || o.hasPdf === true),
+              documentId:        o.documentId || o.fileId || cleanId,
+              fileId:            o.fileId || o.documentId || cleanId,
+              gridFsFileId:      o.gridFsFileId || null,
+              fileExtension:     o.fileExtension || (o.fileName ? path.extname(o.fileName).toLowerCase() : '.pdf'),
+              mimeType:          o.mimeType || '',
+              pdfStorage:        o.pdfStorage || (o.hasGridFsPdf ? 'gridfs' : 'none'),
+              storageProvider:   o.storageProvider || o.pdfStorage || 'gridfs',
+              pdfSize:           o.pdfSize || o.fileSize || 0,
+              fileSize:          o.fileSize || o.pdfSize || 0,
+              fileUrl:           o.fileUrl || o.pdfUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
+              driveUrl:          o.driveUrl || o.pdfUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
               pdfUrl:            o.pdfUrl || o.driveUrl || `${baseUrl}/api/orders?action=getOrderPdf&orderId=${encodeURIComponent(cleanId)}`,
               source:            'mongo',
             }

@@ -1,0 +1,365 @@
+{
+  "sanitizedCluster": "xbuddycluster.mihodba.mongodb.net",
+  "databaseName": "xbuddy",
+  "inventory": [
+    {
+      "name": "order_pdfs.chunks",
+      "type": "collection",
+      "options": {},
+      "count": 419,
+      "indexes": [
+        {
+          "name": "_id_",
+          "key": {
+            "_id": 1
+          },
+          "unique": false
+        },
+        {
+          "name": "files_id_1_n_1",
+          "key": {
+            "files_id": 1,
+            "n": 1
+          },
+          "unique": true
+        }
+      ],
+      "sampleKeys": [
+        "_id",
+        "files_id",
+        "n",
+        "data"
+      ]
+    },
+    {
+      "name": "order_pdfs.files",
+      "type": "collection",
+      "options": {},
+      "count": 97,
+      "indexes": [
+        {
+          "name": "_id_",
+          "key": {
+            "_id": 1
+          },
+          "unique": false
+        },
+        {
+          "name": "filename_1_uploadDate_1",
+          "key": {
+            "filename": 1,
+            "uploadDate": 1
+          },
+          "unique": false
+        },
+        {
+          "name": "metadata.orderId_1",
+          "key": {
+            "metadata.orderId": 1
+          },
+          "unique": false
+        }
+      ],
+      "sampleKeys": [
+        "_id",
+        "length",
+        "chunkSize",
+        "uploadDate",
+        "filename",
+        "metadata"
+      ]
+    },
+    {
+      "name": "test_perf",
+      "type": "collection",
+      "options": {},
+      "count": 1,
+      "indexes": [
+        {
+          "name": "_id_",
+          "key": {
+            "_id": 1
+          },
+          "unique": false
+        }
+      ],
+      "sampleKeys": [
+        "_id",
+        "testId",
+        "pdfBinary"
+      ]
+    },
+    {
+      "name": "orders",
+      "type": "collection",
+      "options": {},
+      "count": 279,
+      "indexes": [
+        {
+          "name": "_id_",
+          "key": {
+            "_id": 1
+          },
+          "unique": false
+        },
+        {
+          "name": "orderId_1",
+          "key": {
+            "orderId": 1
+          },
+          "unique": true
+        },
+        {
+          "name": "paymentStatus_1",
+          "key": {
+            "paymentStatus": 1
+          },
+          "unique": false
+        },
+        {
+          "name": "createdAt_-1",
+          "key": {
+            "createdAt": -1
+          },
+          "unique": false
+        },
+        {
+          "name": "printStatus_1_createdAt_-1",
+          "key": {
+            "printStatus": 1,
+            "createdAt": -1
+          },
+          "unique": false
+        }
+      ],
+      "sampleKeys": [
+        "_id",
+        "orderId",
+        "name",
+        "fileName",
+        "totalPages",
+        "copies",
+        "colorMode",
+        "printType",
+        "printSide",
+        "duplex",
+        "pageSize",
+        "paperSize",
+        "orientation",
+        "amount",
+        "printingCost",
+        "serviceFee",
+        "digitalProcessingFee",
+        "transactionId",
+        "pageRange",
+        "pageRangeMode",
+        "customPages",
+        "printableCount",
+        "selectedPages",
+        "selectedPageCount",
+        "driveUrl",
+        "paymentStatus",
+        "printStatus",
+        "createdAt",
+        "updatedAt",
+        "syncStatus",
+        "mongoSaved",
+        "sheetsSaved",
+        "isHistoricalBackfill"
+      ]
+    },
+    {
+      "name": "stations",
+      "type": "collection",
+      "options": {},
+      "count": 1,
+      "indexes": [
+        {
+          "name": "_id_",
+          "key": {
+            "_id": 1
+          },
+          "unique": false
+        }
+      ],
+      "sampleKeys": [
+        "_id",
+        "stationId",
+        "agentVersion",
+        "clientTimestamp",
+        "createdAt",
+        "lastHeartbeat",
+        "lastHeartbeatEpoch",
+        "printerAvailable",
+        "printerName",
+        "status",
+        "systemInfo",
+        "updatedAt",
+        "uptimeSeconds"
+      ]
+    }
+  ],
+  "orders": {
+    "totalOrders": 279,
+    "byPrintStatus": [
+      {
+        "_id": "waiting_for_shopkeeper",
+        "count": 215
+      },
+      {
+        "_id": "Printed",
+        "count": 43
+      },
+      {
+        "_id": "Failed",
+        "count": 10
+      },
+      {
+        "_id": "printed",
+        "count": 5
+      },
+      {
+        "_id": "Printing",
+        "count": 4
+      },
+      {
+        "_id": "Waiting",
+        "count": 1
+      },
+      {
+        "_id": "ready",
+        "count": 1
+      }
+    ],
+    "byPaymentStatus": [
+      {
+        "_id": "pending",
+        "count": 203
+      },
+      {
+        "_id": "paid",
+        "count": 39
+      },
+      {
+        "_id": "cancelled",
+        "count": 32
+      },
+      {
+        "_id": "completed",
+        "count": 3
+      },
+      {
+        "_id": "failed",
+        "count": 2
+      }
+    ],
+    "crossTab": [
+      {
+        "_id": {
+          "print": "waiting_for_shopkeeper",
+          "pay": "pending"
+        },
+        "count": 148
+      },
+      {
+        "_id": {
+          "print": "Printed",
+          "pay": "pending"
+        },
+        "count": 36
+      },
+      {
+        "_id": {
+          "print": "waiting_for_shopkeeper",
+          "pay": "paid"
+        },
+        "count": 33
+      },
+      {
+        "_id": {
+          "print": "waiting_for_shopkeeper",
+          "pay": "cancelled"
+        },
+        "count": 32
+      },
+      {
+        "_id": {
+          "print": "Failed",
+          "pay": "pending"
+        },
+        "count": 8
+      },
+      {
+        "_id": {
+          "print": "printed",
+          "pay": "pending"
+        },
+        "count": 5
+      },
+      {
+        "_id": {
+          "print": "Printing",
+          "pay": "pending"
+        },
+        "count": 4
+      },
+      {
+        "_id": {
+          "print": "Printed",
+          "pay": "paid"
+        },
+        "count": 4
+      },
+      {
+        "_id": {
+          "print": "Printed",
+          "pay": "completed"
+        },
+        "count": 3
+      },
+      {
+        "_id": {
+          "print": "waiting_for_shopkeeper",
+          "pay": "failed"
+        },
+        "count": 2
+      },
+      {
+        "_id": {
+          "print": "Failed",
+          "pay": "paid"
+        },
+        "count": 2
+      },
+      {
+        "_id": {
+          "print": "ready",
+          "pay": "pending"
+        },
+        "count": 1
+      },
+      {
+        "_id": {
+          "print": "Waiting",
+          "pay": "pending"
+        },
+        "count": 1
+      }
+    ],
+    "inlineBase64Count": 141,
+    "hasDriveUrlCount": 20,
+    "hasGridFsFlagCount": 102
+  },
+  "gridfs": {
+    "totalGridFsFiles": 97,
+    "totalGridFsChunks": 419,
+    "totalGridFsBytes": 94358321,
+    "orphanedGridFsFiles": 0,
+    "ordersMissingGridFs": 182
+  },
+  "cache": {
+    "path": "F:\\xerox buddy\\backend\\.pdf_cache",
+    "fileCount": 49,
+    "totalBytes": 97417259
+  }
+}

@@ -1,3 +1,4 @@
+import path from 'path'
 import crypto from 'crypto'
 import { connectToDatabase } from '../_lib/mongodb.js'
 import { calculatePrintedExpiryTimestamp, getEffectiveExpiryTimestamp } from '../_lib/retention.js'
@@ -50,12 +51,47 @@ export function normalizeAgentOrder(order = {}) {
 
   const selectedPageCount = Number(order.selectedPageCount) || (selectedPages.length > 0 ? selectedPages.length : Number(order.totalPages) || 1)
 
+  const rawExt = path.extname(order.fileName || '').toLowerCase()
+  const fileExtension = String(order.fileExtension || (['.docx', '.doc', '.pdf'].includes(rawExt) ? rawExt : '.pdf')).toLowerCase()
+  const mimeType = String(order.mimeType || (fileExtension === '.docx'
+    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    : (fileExtension === '.doc' ? 'application/msword' : 'application/pdf')))
+
+  const hasGridFsPdf = Boolean(order.hasGridFsPdf === true)
+  const hasDriveUrl = Boolean(order.driveUrl && typeof order.driveUrl === 'string' && order.driveUrl.trim().startsWith('http'))
+  const hasInlineBase64 = Boolean(order.pdfBase64 && typeof order.pdfBase64 === 'string' && order.pdfBase64.length > 50)
+  const isDeleted = Boolean(order.pdfDeletedAt)
+  const hasPdf = !isDeleted && Boolean(order.hasPdf === true || hasGridFsPdf || hasDriveUrl || hasInlineBase64 || order.hasDocument === true)
+  const hasDocument = hasPdf
+
+  const documentId = order.documentId || order.fileId || order.gridFsFileId || (hasPdf ? cleanId : null)
+  const fileId = order.fileId || order.documentId || order.gridFsFileId || (hasPdf ? cleanId : null)
+
+  const defaultPdfUrl = `https://xbuddy.onrender.com/api/orders?action=getOrderPdf&orderId=${cleanId}`
+  const pdfUrl = hasPdf ? String(order.pdfUrl || order.fileUrl || (hasDriveUrl ? order.driveUrl : defaultPdfUrl)) : null
+  const fileUrl = pdfUrl
+  // Backward compatibility for older agent installations that only verify document existence via driveUrl:
+  const effectiveDriveUrl = hasDriveUrl ? String(order.driveUrl).trim() : (hasPdf ? pdfUrl : '')
+
   return {
     orderId: cleanId,
     name: String(order.name || ''),
-    fileName: String(order.fileName || `${cleanId}.pdf`),
-    driveUrl: String(order.driveUrl || ''),
-    pdfUrl: String(order.pdfUrl || order.driveUrl || `https://xbuddy.onrender.com/api/orders?action=getOrderPdf&orderId=${cleanId}`),
+    fileName: String(order.fileName || `${cleanId}${fileExtension}`),
+    driveUrl: effectiveDriveUrl,
+    pdfUrl,
+    fileUrl,
+    hasPdf,
+    hasGridFsPdf,
+    hasDocument,
+    pdfStorage: String(order.pdfStorage || (hasGridFsPdf ? 'gridfs' : (hasDriveUrl ? 'drive' : (hasInlineBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
+    storageProvider: String(order.storageProvider || order.pdfStorage || (hasGridFsPdf ? 'gridfs' : (hasDriveUrl ? 'drive' : (hasInlineBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
+    fileId: fileId ? String(fileId) : null,
+    documentId: documentId ? String(documentId) : null,
+    gridFsFileId: order.gridFsFileId ? String(order.gridFsFileId) : null,
+    fileExtension,
+    mimeType,
+    pdfSize: Number(order.pdfSize || order.fileSize) || 0,
+    fileSize: Number(order.fileSize || order.pdfSize) || 0,
     copies,
     colorMode,
     printType,
