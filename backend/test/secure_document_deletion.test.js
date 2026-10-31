@@ -894,7 +894,9 @@ async function runSecureDeletionTestSuite() {
 
     // ── TEST 18: Print Station local file purge test (purgeLocalOrderFiles) ─
     console.log('[TEST 18] Testing Print Station local cache and pending directory file purge...')
-    const downloadsDir = path.resolve(process.cwd(), 'backend', 'print-agent', 'downloads')
+    const downloadsDir = fs.existsSync(path.resolve(process.cwd(), 'print-agent', 'downloads'))
+      ? path.resolve(process.cwd(), 'print-agent', 'downloads')
+      : path.resolve(process.cwd(), 'backend', 'print-agent', 'downloads')
     if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true })
     const dummyPdf = path.join(downloadsDir, `${orderIdRace}.pdf`)
     const dummyB64 = path.join(downloadsDir, `${orderIdRace}_pending.b64`)
@@ -1053,7 +1055,9 @@ async function runSecureDeletionTestSuite() {
     // ── TEST 23: Station Cache Purge and Successful Cloud Acknowledgement ─────
     console.log('[TEST 23] Testing local station cache purge and cloud acknowledgement...')
     // Setup simulated cached local file in station downloads directory
-    const stationDownloadsDir = path.resolve(process.cwd(), 'backend', 'print-agent', 'downloads')
+    const stationDownloadsDir = fs.existsSync(path.resolve(process.cwd(), 'print-agent', 'downloads'))
+      ? path.resolve(process.cwd(), 'print-agent', 'downloads')
+      : path.resolve(process.cwd(), 'backend', 'print-agent', 'downloads')
     if (!fs.existsSync(stationDownloadsDir)) fs.mkdirSync(stationDownloadsDir, { recursive: true })
     const localCachedPdf = path.join(stationDownloadsDir, `${orderIdMob}.pdf`)
     fs.writeFileSync(localCachedPdf, 'SIMULATED_LOCAL_CACHE')
@@ -1521,7 +1525,9 @@ async function runSecureDeletionTestSuite() {
     const token8d = resSave8d.bodyData.deletionToken
 
     // Create local cached copy on Station A to verify purge
-    const testDownloadsDir = path.resolve(process.cwd(), 'backend', 'print-agent', 'downloads')
+    const testDownloadsDir = fs.existsSync(path.resolve(process.cwd(), 'print-agent', 'downloads'))
+      ? path.resolve(process.cwd(), 'print-agent', 'downloads')
+      : path.resolve(process.cwd(), 'backend', 'print-agent', 'downloads')
     if (!fs.existsSync(testDownloadsDir)) fs.mkdirSync(testDownloadsDir, { recursive: true })
     const stationAFilePath = path.join(testDownloadsDir, `${orderIdOffline8d}.pdf`)
     fs.writeFileSync(stationAFilePath, 'simulated-station-a-pdf-bytes')
