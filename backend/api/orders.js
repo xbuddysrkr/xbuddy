@@ -29,6 +29,9 @@ import {
   consumePreviewToken,
   isBoothAuthorized,
   validateAgentAuth,
+  generateOrderDeletionSecret,
+  hashOrderDeletionSecret,
+  verifyOrderDeletionAuth,
 } from './_lib/boothAuth.js'
 
 const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
@@ -117,6 +120,32 @@ export function savePdfToDiskCache(orderId, pdfInput, originalFileName = '') {
     console.warn(`[FILE_CACHE_WARN] Failed to write disk cache for ${orderId}: ${err.message}`)
   }
   return false
+}
+
+export function deletePdfFromDiskCache(orderId) {
+  if (!orderId) return false
+  try {
+    const cleanId = String(orderId).trim().toUpperCase()
+    const safeId = cleanId.replace(/[^a-zA-Z0-9_-]/g, '')
+    const extensions = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png']
+    let deleted = false
+    for (const ext of extensions) {
+      const filePath = path.join(PDF_CACHE_DIR, `${safeId}${ext}`)
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath)
+          deleted = true
+          console.log(`[FILE_CACHE] Purged disk cache file: ${filePath}`)
+        } catch (uErr) {
+          console.warn(`[FILE_CACHE_WARN] Failed to unlink ${filePath}: ${uErr.message}`)
+        }
+      }
+    }
+    return deleted
+  } catch (err) {
+    console.warn(`[FILE_CACHE_WARN] Failed during disk cache deletion for ${orderId}: ${err.message}`)
+    return false
+  }
 }
 
 const GAS_API_URL = process.env.GAS_ORDERS_URL || process.env.GAS_URL || process.env.GAS_API_URL || 'https://script.google.com/macros/s/AKfycbxKJmtKejQsYy7zsYmUDVwKJ821szraMUT3BeZK0xEYpnmMWmhAzUvNrTbUMR_grRS0/exec'
@@ -842,6 +871,10 @@ export default async function handler(req, res) {
         orderDoc.pdfUrl = orderDoc.pdfUrl || (hasDriveUrl ? orderDoc.driveUrl : `https://xbuddy.onrender.com/api/orders?action=getOrderPdf&orderId=${cleanId}`)
         orderDoc.fileUrl = orderDoc.pdfUrl
 
+        const deletionSecret = generateOrderDeletionSecret()
+        const deletionSecretHash = hashOrderDeletionSecret(deletionSecret)
+        orderDoc.deletionSecretHash = deletionSecretHash
+
         try {
           orderDoc.mongoSaved = true
           orderDoc.sheetsSaved = false
@@ -865,6 +898,7 @@ export default async function handler(req, res) {
           return res.status(200).json({
             success: true,
             orderId: cleanId,
+            deletionToken: deletionSecret,
             hasPdf: orderDoc.hasPdf,
             hasGridFsPdf: orderDoc.hasGridFsPdf,
             hasDocument: orderDoc.hasDocument,
@@ -979,8 +1013,13 @@ export default async function handler(req, res) {
           orderDoc.sheetsSaved = existingInSheets
           orderDoc.syncStatus = existingInSheets ? 'synced' : 'pending'
 
+          const deletionSecret = generateOrderDeletionSecret()
+          const deletionSecretHash = hashOrderDeletionSecret(deletionSecret)
+          orderDoc.deletionSecretHash = deletionSecretHash
+
           await ordersCollection.insertOne(orderDoc)
           mongoSaved = true
+          orderDoc._deletionToken = deletionSecret
           console.log(`[MONGO_ORDER_WRITE_PRIMARY] Order ${cleanId} saved to MongoDB Atlas (dual-write mode)`)
         } catch (mErr) {
           mongoError = mErr.message
@@ -1031,6 +1070,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           success: true,
           orderId: cleanId,
+          deletionToken: orderDoc._deletionToken || null,
           mongoSaved: true,
           sheetsSaved: true,
           syncStatus: 'synced',
@@ -1046,6 +1086,7 @@ export default async function handler(req, res) {
         return res.status(502).json({
           success: false,
           orderId: cleanId,
+          deletionToken: orderDoc._deletionToken || null,
           error: `Google Sheet dual-write failed: ${sheetsError}`,
           mongoSaved: true,
           sheetsSaved: false,
@@ -1106,11 +1147,13 @@ export default async function handler(req, res) {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} retrieved successfully from MongoDB Atlas`)
           const nowMs = Date.now()
           const derivedExpiry = getEffectiveExpiryTimestamp(order)
+          const isDeletedByStudent = Boolean(order.documentDeleted)
           const isExpired = Boolean(
+            isDeletedByStudent ||
             order.pdfDeletedAt ||
             (derivedExpiry && new Date(derivedExpiry).getTime() <= nowMs)
           )
-          let hasPdf = !isExpired && Boolean(
+          let hasPdf = !isExpired && !isDeletedByStudent && Boolean(
             order.hasGridFsPdf === true ||
             order.hasPdf === true ||
             order.hasDocument === true ||
@@ -1118,10 +1161,10 @@ export default async function handler(req, res) {
             Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
           )
           // If not confirmed by document fields, check GridFS bucket directly (durable storage)
-          if (!hasPdf && !isExpired) {
+          if (!hasPdf && !isExpired && !isDeletedByStudent) {
             hasPdf = await hasPdfInGridFS(db, orderId)
           }
-          if (isExpired) {
+          if (isExpired || isDeletedByStudent) {
             hasPdf = false
           }
           const origExt = String(order.fileExtension || (order.fileName ? path.extname(order.fileName) : '') || '').toLowerCase()
@@ -1156,18 +1199,22 @@ export default async function handler(req, res) {
             printingCost: printCost,
             pdfExpiresAt: derivedExpiry,
             hasPdf,
-            hasGridFsPdf: order.hasGridFsPdf === true || (hasPdf && (order.pdfStorage === 'gridfs' || !order.pdfStorage)),
+            hasGridFsPdf: !isDeletedByStudent && (order.hasGridFsPdf === true || (hasPdf && (order.pdfStorage === 'gridfs' || !order.pdfStorage))),
             hasDocument: hasPdf,
-            documentId: order.documentId || order.fileId || (hasPdf ? orderId : null),
-            fileId: order.fileId || order.documentId || (hasPdf ? orderId : null),
-            gridFsFileId: order.gridFsFileId || null,
+            documentDeleted: isDeletedByStudent,
+            documentDeletedAt: order.documentDeletedAt || null,
+            documentDeletionReason: order.documentDeletionReason || null,
+            documentStorageStatus: order.documentStorageStatus || (isDeletedByStudent ? 'deleted' : (isExpired ? 'expired' : (hasPdf ? 'stored' : 'none'))),
+            documentId: isDeletedByStudent ? null : (order.documentId || order.fileId || (hasPdf ? orderId : null)),
+            fileId: isDeletedByStudent ? null : (order.fileId || order.documentId || (hasPdf ? orderId : null)),
+            gridFsFileId: isDeletedByStudent ? null : (order.gridFsFileId || null),
             fileExtension: docExt,
             mimeType: docMime,
-            pdfStorage: isExpired ? 'none' : (order.pdfStorage || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
-            storageProvider: isExpired ? 'none' : (order.storageProvider || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
-            pdfUrl: order.pdfUrl || downloadUrl,
-            fileUrl: order.fileUrl || downloadUrl,
-            driveUrl: effectiveDriveUrl,
+            pdfStorage: (isExpired || isDeletedByStudent) ? 'none' : (order.pdfStorage || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
+            storageProvider: (isExpired || isDeletedByStudent) ? 'none' : (order.storageProvider || (order.hasGridFsPdf ? 'gridfs' : (order.driveUrl ? 'drive' : (order.pdfBase64 ? 'inline' : (hasPdf ? 'gridfs' : 'none'))))),
+            pdfUrl: isDeletedByStudent ? null : (order.pdfUrl || downloadUrl),
+            fileUrl: isDeletedByStudent ? null : (order.fileUrl || downloadUrl),
+            driveUrl: isDeletedByStudent ? '' : effectiveDriveUrl,
             reprintEligible: reprintCheck.eligible,
             reprintReason: reprintCheck.reason,
           }
@@ -1183,6 +1230,7 @@ export default async function handler(req, res) {
             printStatus: cleanOrder.printStatus,
             paymentStatus: cleanOrder.paymentStatus,
             createdAt: cleanOrder.createdAt,
+            printedAt: cleanOrder.printedAt || null,
             totalPages: cleanOrder.totalPages,
             copies: cleanOrder.copies,
             amount: cleanOrder.amount,
@@ -1192,6 +1240,10 @@ export default async function handler(req, res) {
             pdfExpiresAt: cleanOrder.pdfExpiresAt,
             hasPdf: cleanOrder.hasPdf,
             hasDocument: cleanOrder.hasDocument,
+            documentDeleted: cleanOrder.documentDeleted,
+            documentDeletedAt: cleanOrder.documentDeletedAt,
+            documentDeletionReason: cleanOrder.documentDeletionReason,
+            documentStorageStatus: cleanOrder.documentStorageStatus,
             reprintEligible: cleanOrder.reprintEligible,
             reprintReason: cleanOrder.reprintReason,
             errorReason: cleanOrder.errorReason || null,
@@ -1294,7 +1346,7 @@ export default async function handler(req, res) {
         const { db } = await connectToDatabase()
         const order = await db.collection('orders').findOne(
           { orderId },
-          { projection: { driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfUploadedAt: 1, createdAt: 1, pdfDeletedAt: 1, printedAt: 1 } }
+          { projection: { driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfUploadedAt: 1, createdAt: 1, pdfDeletedAt: 1, printedAt: 1, documentDeleted: 1, documentDeletedAt: 1 } }
         )
         if (!order) {
           // If order does not exist in authoritative MongoDB, purge any stale disk cache file (using sanitized orderId)
@@ -1328,7 +1380,7 @@ export default async function handler(req, res) {
 
         // RETENTION POLICY GATE: Document permanently expired or deleted
         const effectiveExpiry = getEffectiveExpiryTimestamp(order)
-        if (order.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
+        if (order.documentDeleted || order.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
           for (const cPath of candidateCachePaths) {
             if (fs.existsSync(cPath)) {
               try { fs.unlinkSync(cPath) } catch {}
@@ -1336,8 +1388,11 @@ export default async function handler(req, res) {
           }
           return res.status(410).json({
             success: false,
-            error: 'Document retention window expired; document permanently deleted.',
-            expired: true,
+            error: order.documentDeleted
+              ? 'Document was permanently deleted by student.'
+              : 'Document retention window expired; document permanently deleted.',
+            expired: !order.documentDeleted,
+            deleted: Boolean(order.documentDeleted),
             hasPdf: false,
           })
         }
@@ -1559,6 +1614,177 @@ export default async function handler(req, res) {
       } catch (repairErr) {
         console.error(`[REPAIR_PDF_ERROR] Order ${orderId}:`, repairErr.message)
         return res.status(500).json({ success: false, error: `Failed to repair PDF: ${repairErr.message}` })
+      }
+    }
+
+    // ── 2.7 DELETE ORDER DOCUMENT (SECURE USER-CONTROLLED REAL STORAGE DELETION) ──
+    if (action === 'deleteOrderDocument' || action === 'deleteDocument') {
+      const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
+      if (!orderId) {
+        return res.status(400).json({ success: false, error: 'orderId is required' })
+      }
+
+      // Extract deletion token from body, query, custom header, or Bearer auth
+      const authHeader = req.headers?.authorization || ''
+      const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
+      const token = String(
+        req.body?.deletionToken ||
+        req.query?.deletionToken ||
+        req.headers?.['x-deletion-token'] ||
+        bearerToken ||
+        ''
+      ).trim()
+
+      try {
+        const { db } = await connectToDatabase()
+        const orders = db.collection('orders')
+
+        const existing = await orders.findOne({ orderId }, { projection: { pdfBase64: 0 } })
+        if (!existing) {
+          return res.status(404).json({ success: false, error: `Order ${orderId} not found` })
+        }
+
+        // Strict authorization check — must have order-scoped token or booth/admin credentials
+        const auth = verifyOrderDeletionAuth(orderId, token, existing, req)
+        if (!auth.authorized) {
+          console.warn(`[SECURITY_REJECT] Unauthorized deleteOrderDocument attempt for order ${orderId} (role=${auth.role || 'none'}, ip=${req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress})`)
+          return res.status(auth.status || 401).json({
+            success: false,
+            error: auth.error || 'Unauthorized: Valid order deletion authorization required.',
+          })
+        }
+
+        // Case D — Block deletion if actively printing
+        const normPrintStatus = String(existing.printStatus || '').toLowerCase().trim()
+        if (normPrintStatus === 'printing') {
+          return res.status(409).json({
+            success: false,
+            conflict: true,
+            error: 'Document cannot be deleted while order is actively printing. Please wait until printing completes.',
+          })
+        }
+
+        // Case E — Idempotent handling for already-deleted documents
+        if (existing.documentDeleted === true || (existing.pdfStorage === 'none' && !existing.hasPdf && existing.pdfDeletedAt)) {
+          return res.status(200).json({
+            success: true,
+            orderId,
+            idempotent: true,
+            alreadyDeleted: true,
+            documentDeleted: true,
+            documentDeletedAt: existing.documentDeletedAt || existing.pdfDeletedAt,
+            documentStorageStatus: 'deleted',
+            message: 'Document has already been deleted from XBuddy storage.',
+          })
+        }
+
+        // 1. Delete physical files and chunks from GridFS first
+        let gridFsDeleted = false
+        try {
+          const gridRes = await deletePdfFromGridFS(db, orderId, {
+            fileId: existing.gridFsFileId || existing.fileId || existing.documentId,
+          })
+          gridFsDeleted = true
+          console.log(`[GRIDFS_DELETE] Purged GridFS files for order ${orderId} (deletedCount=${gridRes?.deletedCount})`)
+        } catch (gridErr) {
+          console.error(`[STORAGE_DELETION_ERROR] GridFS deletion failed for ${orderId}:`, gridErr.message)
+          return res.status(500).json({
+            success: false,
+            error: `Storage deletion failed: ${gridErr.message}. Document was not deleted.`,
+          })
+        }
+
+        // 2. Purge local disk-cache files and temporary preview artifacts
+        deletePdfFromDiskCache(orderId)
+        try {
+          const previewPath = path.join(PDF_CACHE_DIR, 'previews', `preview_${orderId}.pdf`)
+          if (fs.existsSync(previewPath)) {
+            fs.unlinkSync(previewPath)
+          }
+        } catch {}
+
+        // 3. Atomically update MongoDB Atlas order metadata (locking against $ne: 'Printing')
+        const nowIso = new Date().toISOString()
+        const isAlreadyPrinted = normPrintStatus === 'printed' || Boolean(existing.printedAt)
+        const targetPrintStatus = isAlreadyPrinted ? existing.printStatus : 'document_deleted'
+
+        const updateFilter = {
+          orderId,
+          printStatus: { $ne: 'Printing' }, // Atomic guard against race condition with concurrent print job claim
+        }
+
+        const updateDoc = {
+          $set: {
+            hasPdf: false,
+            hasDocument: false,
+            hasGridFsPdf: false,
+            pdfStorage: 'none',
+            storageProvider: 'none',
+            pdfDeletedAt: nowIso,
+            documentDeleted: true,
+            documentDeletedAt: nowIso,
+            documentDeletionReason: 'student_requested',
+            documentStorageStatus: 'deleted',
+            pdfBase64: '',
+            pdfUrl: null,
+            fileUrl: null,
+            driveUrl: '',
+            documentId: null,
+            fileId: null,
+            gridFsFileId: null,
+            updatedAt: nowIso,
+            ...(!isAlreadyPrinted ? { printStatus: 'document_deleted' } : {}),
+          },
+          $push: {
+            auditLog: {
+              action: 'document_deleted_by_student',
+              actor: auth.role || 'student',
+              deletedAt: nowIso,
+              previousPrintStatus: existing.printStatus,
+              storageProvider: existing.pdfStorage || 'gridfs',
+            },
+          },
+        }
+
+        const updateResult = await orders.findOneAndUpdate(updateFilter, updateDoc, { returnDocument: 'after' })
+        const updatedOrder = updateResult?.value || updateResult
+
+        if (!updatedOrder) {
+          // Check if order changed to 'Printing' during this operation
+          const recheck = await orders.findOne({ orderId }, { projection: { printStatus: 1 } })
+          if (String(recheck?.printStatus || '').toLowerCase().trim() === 'printing') {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: 'Document cannot be deleted while order is actively printing.',
+            })
+          }
+          return res.status(500).json({ success: false, error: 'Database update failed during document deletion' })
+        }
+
+        console.log(`[SECURE_DELETE_SUCCESS] Document for order ${orderId} permanently deleted by student (printStatus=${updatedOrder.printStatus || targetPrintStatus})`)
+
+        return res.status(200).json({
+          success: true,
+          orderId,
+          documentDeleted: true,
+          documentDeletedAt: nowIso,
+          documentDeletionReason: 'student_requested',
+          documentStorageStatus: 'deleted',
+          hasPdf: false,
+          hasDocument: false,
+          printStatus: updatedOrder.printStatus || targetPrintStatus,
+          paymentStatus: existing.paymentStatus,
+          amount: existing.amount,
+          printingCost: existing.printingCost,
+          digitalProcessingFee: existing.digitalProcessingFee || existing.serviceFee || 0,
+          totalPages: existing.totalPages,
+          copies: existing.copies,
+          message: 'Document permanently deleted from XBuddy storage. Order and payment history preserved.',
+        })
+      } catch (delErr) {
+        console.error(`[SECURE_DELETE_FATAL] Order ${orderId}:`, delErr.message)
+        return res.status(500).json({ success: false, error: `Failed to delete document: ${delErr.message}` })
       }
     }
 

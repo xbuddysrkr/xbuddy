@@ -1062,7 +1062,12 @@ export async function submitOrder(orderData, { onStep, onUploadProgress } = {}) 
 
   // Order is successfully placed and secured in MongoDB Atlas.
   // The Print Agent retrieves the PDF on-demand from the cloud backend at release time.
-  return { success: true, orderId, message: orderResult?.message || null }
+  return {
+    success: true,
+    orderId,
+    deletionToken: orderResult?.deletionToken || null,
+    message: orderResult?.message || null,
+  }
 }
 
 /**
@@ -1529,6 +1534,54 @@ export async function createYouPiSession() {
 
 export async function pollYouPiPaymentStatus() {
   return { verified: false, paymentStatus: 'disabled' }
+}
+
+/**
+ * Permanently deletes an uploaded document from XBuddy storage.
+ * Requires orderId and deletionToken (or admin/station authorization).
+ * Preserves order history, copies, and financial records.
+ *
+ * @param {string} orderId - Canonical order identifier (e.g. XB8709)
+ * @param {string} [deletionToken] - Order-scoped secret deletion token
+ * @returns {Promise<Object>} Deletion result
+ */
+export async function deleteOrderDocument(orderId, deletionToken = '') {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId) {
+    throw new Error('Order ID is required to delete document')
+  }
+
+  const payload = {
+    action: 'deleteOrderDocument',
+    orderId: cleanId,
+    deletionToken: String(deletionToken || '').trim(),
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+  }
+  if (deletionToken) {
+    headers['x-deletion-token'] = String(deletionToken).trim()
+    headers['Authorization'] = `Bearer ${String(deletionToken).trim()}`
+  }
+
+  const res = await fetch(`/api/orders?action=deleteOrderDocument`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000),
+  })
+
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    const errorMsg = data?.error || `Failed to delete document: HTTP ${res.status}`
+    const errorObj = new Error(errorMsg)
+    errorObj.status = res.status
+    errorObj.data = data
+    throw errorObj
+  }
+
+  return data
 }
 
 

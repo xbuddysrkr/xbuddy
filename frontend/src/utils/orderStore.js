@@ -45,38 +45,45 @@ export function saveOrder(order) {
     return getMyOrders()
   }
 
+  const existingOrders = getMyOrders()
+  const prevEntry = existingOrders.find(o => o.orderId === order.orderId) || {}
+
   const newEntry = {
     orderId: order.orderId,
-    fileName: order.fileName || 'Document.pdf',
-    totalPages: Number(order.totalPages) || 1,
-    printableCount: Number(order.printableCount) || Number(order.totalPages) || 1,
-    copies: Number(order.copies) || 1,
-    colorMode: order.colorMode || (order.printType === 'Color' ? 'color' : 'bw'),
-    printType: (order.colorMode === 'color' || order.printType === 'Color') ? 'Color' : 'B&W',
-    printSide: order.printSide || (order.duplex ? 'Double' : 'Single'),
-    duplex: order.duplex === true || order.printSide === 'Double',
-    pageSize: order.pageSize || order.paperSize || 'A4',
-    paperSize: order.paperSize || order.pageSize || 'A4',
-    orientation: order.orientation || 'portrait',
-    pageRange: order.pageRange || 'all',
-    customPages: order.customPages || '',
-    printingCost: Number(order.printingCost) || 0,
-    digitalProcessingFee: Number(order.digitalProcessingFee || order.serviceFee) || 0,
-    serviceFee: Number(order.digitalProcessingFee || order.serviceFee) || 0,
-    amount: Number(order.amount) || 0,
-    phone: order.phone || '',
-    savedAt: order.savedAt || Date.now(),
-    status: order.printStatus || order.status || 'Order Received',
-    printStatus: order.printStatus || order.status || 'Order Received',
-    paymentStatus: order.paymentStatus || 'pending',
-    printedAt: order.printedAt || null,
-    pdfExpiresAt: order.pdfExpiresAt || null,
-    pdfDeletedAt: order.pdfDeletedAt || null,
-    hasPdf: order.hasPdf !== false,
+    deletionToken: order.deletionToken || prevEntry.deletionToken || null,
+    documentDeleted: Boolean(order.documentDeleted || prevEntry.documentDeleted),
+    documentDeletedAt: order.documentDeletedAt || prevEntry.documentDeletedAt || null,
+    documentDeletionReason: order.documentDeletionReason || prevEntry.documentDeletionReason || null,
+    fileName: order.fileName || prevEntry.fileName || 'Document.pdf',
+    totalPages: Number(order.totalPages || prevEntry.totalPages) || 1,
+    printableCount: Number(order.printableCount || prevEntry.printableCount) || Number(order.totalPages) || 1,
+    copies: Number(order.copies || prevEntry.copies) || 1,
+    colorMode: order.colorMode || prevEntry.colorMode || (order.printType === 'Color' ? 'color' : 'bw'),
+    printType: (order.colorMode === 'color' || order.printType === 'Color' || prevEntry.colorMode === 'color' || prevEntry.printType === 'Color') ? 'Color' : 'B&W',
+    printSide: order.printSide || prevEntry.printSide || (order.duplex ? 'Double' : 'Single'),
+    duplex: order.duplex === true || prevEntry.duplex === true || order.printSide === 'Double',
+    pageSize: order.pageSize || prevEntry.pageSize || order.paperSize || 'A4',
+    paperSize: order.paperSize || prevEntry.paperSize || order.pageSize || 'A4',
+    orientation: order.orientation || prevEntry.orientation || 'portrait',
+    pageRange: order.pageRange || prevEntry.pageRange || 'all',
+    customPages: order.customPages || prevEntry.customPages || '',
+    printingCost: Number(order.printingCost ?? prevEntry.printingCost) || 0,
+    digitalProcessingFee: Number(order.digitalProcessingFee || order.serviceFee || prevEntry.digitalProcessingFee || prevEntry.serviceFee) || 0,
+    serviceFee: Number(order.digitalProcessingFee || order.serviceFee || prevEntry.digitalProcessingFee || prevEntry.serviceFee) || 0,
+    amount: Number(order.amount ?? prevEntry.amount) || 0,
+    phone: order.phone || prevEntry.phone || '',
+    savedAt: order.savedAt || prevEntry.savedAt || Date.now(),
+    status: order.printStatus || order.status || prevEntry.status || 'Order Received',
+    printStatus: order.printStatus || order.status || prevEntry.printStatus || 'Order Received',
+    paymentStatus: order.paymentStatus || prevEntry.paymentStatus || 'pending',
+    printedAt: order.printedAt || prevEntry.printedAt || null,
+    pdfExpiresAt: order.pdfExpiresAt || prevEntry.pdfExpiresAt || null,
+    pdfDeletedAt: order.pdfDeletedAt || prevEntry.pdfDeletedAt || null,
+    hasPdf: order.hasPdf !== false && prevEntry.hasPdf !== false && !order.documentDeleted && !prevEntry.documentDeleted,
   }
 
   try {
-    const existing = getMyOrders()
+    const existing = existingOrders
     const filtered = existing.filter(o => o.orderId !== newEntry.orderId)
     const updated = [newEntry, ...filtered]
     

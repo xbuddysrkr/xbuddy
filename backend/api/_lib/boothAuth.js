@@ -283,7 +283,7 @@ export function isBoothAuthorized(req) {
   // 3. Booth session token (HMAC-SHA256 signed session token)
   const authHeader = req.headers?.authorization
   const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null
-  const token = req.headers?.['x-booth-token'] || bearerToken || req.body?.boothToken || req.query?.boothToken
+  const token = req.headers?.['x-booth-token'] || req.headers?.['x-booth-session'] || bearerToken || req.body?.boothToken || req.query?.boothToken
   if (token && verifyBoothSessionToken(token)) return true
 
   // 4. Test environment relaxation (strictly for test runner when enforcement is not required)
@@ -293,5 +293,124 @@ export function isBoothAuthorized(req) {
   }
 
   return false
+}
+
+// ── Order-Scoped Student Document Deletion Authorization ──────────────────────
+/**
+ * Generates a high-entropy 24-byte random secret for an order.
+ * Stored hashed in MongoDB and issued only to the client that placed the order.
+ */
+export function generateOrderDeletionSecret() {
+  return crypto.randomBytes(24).toString('hex')
+}
+
+/**
+ * Returns a SHA-256 hash of the order deletion secret for safe database storage.
+ */
+export function hashOrderDeletionSecret(secret) {
+  if (!secret || typeof secret !== 'string') return ''
+  return crypto.createHash('sha256').update(secret.trim()).digest('hex')
+}
+
+/**
+ * Generates an HMAC-signed deletion authorization token for an order.
+ */
+export function generateOrderDeletionToken(orderId, secret) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  const sec = String(secret || '').trim()
+  const serverSecret = getSessionSecret() || 'XBUDDY_ORDER_SECRET_KEY'
+  const payload = `delete_order_doc:${cleanId}:${sec}`
+  const hmac = crypto.createHmac('sha256', serverSecret).update(payload).digest('hex')
+  return `${sec}.${hmac}`
+}
+
+/**
+ * Strictly verifies that a deletion request is authorized by the order owner or staff.
+ * Fails closed with 401/403. Never authorizes deletion from guessable orderId alone.
+ */
+export function verifyOrderDeletionAuth(orderId, token, order, req = null) {
+  const cleanId = String(orderId || '').trim().toUpperCase()
+  if (!cleanId) {
+    return { authorized: false, status: 400, error: 'Order ID is required' }
+  }
+
+  // 1. Staff / Print Agent / Admin override
+  if (req && isBoothAuthorized(req)) {
+    return { authorized: true, role: 'admin' }
+  }
+
+  // Extract token from param, header, body, or query
+  const rawToken = token ||
+    req?.headers?.['x-order-deletion-token'] ||
+    req?.headers?.['x-deletion-token'] ||
+    req?.body?.deletionToken ||
+    req?.query?.deletionToken
+
+  if (!rawToken || typeof rawToken !== 'string') {
+    return {
+      authorized: false,
+      status: 401,
+      error: 'Unauthorized: Order ownership verification token required to delete document.',
+    }
+  }
+
+  const provided = rawToken.trim()
+  if (!provided) {
+    return {
+      authorized: false,
+      status: 401,
+      error: 'Unauthorized: Empty deletion token.',
+    }
+  }
+
+  if (!order) {
+    return { authorized: false, status: 404, error: 'Order not found' }
+  }
+
+  // 2. Direct secret check against stored hash
+  const storedHash = order.deletionSecretHash || order.orderSecretHash
+  if (storedHash) {
+    const directHash = hashOrderDeletionSecret(provided)
+    if (safeCompare(directHash, storedHash)) {
+      return { authorized: true, role: 'student' }
+    }
+
+    // Check if provided token is a signed composite token (secret.hmac)
+    if (provided.includes('.')) {
+      const [secPart] = provided.split('.')
+      if (secPart && safeCompare(hashOrderDeletionSecret(secPart), storedHash)) {
+        return { authorized: true, role: 'student' }
+      }
+    }
+  }
+
+  // 3. Fallback verification for signed token
+  const serverSecret = getSessionSecret() || 'XBUDDY_ORDER_SECRET_KEY'
+  if (provided.includes('.')) {
+    const [secPart, hmacPart] = provided.split('.')
+    if (secPart && hmacPart) {
+      const expectedPayload = `delete_order_doc:${cleanId}:${secPart}`
+      const expectedHmac = crypto.createHmac('sha256', serverSecret).update(expectedPayload).digest('hex')
+      if (safeCompare(hmacPart, expectedHmac)) {
+        if (!storedHash || safeCompare(hashOrderDeletionSecret(secPart), storedHash)) {
+          return { authorized: true, role: 'student' }
+        }
+      }
+    }
+  }
+
+  // 4. Legacy order fallback: HMAC token derived from cleanId + order.createdAt
+  const legacySecret = order.createdAt ? String(order.createdAt).trim() : cleanId
+  const expectedLegacyPayload = `delete_order_doc:${cleanId}:${legacySecret}`
+  const expectedLegacyHmac = crypto.createHmac('sha256', serverSecret).update(expectedLegacyPayload).digest('hex')
+  if (safeCompare(provided, expectedLegacyHmac) || provided.endsWith(`.${expectedLegacyHmac}`)) {
+    return { authorized: true, role: 'student' }
+  }
+
+  return {
+    authorized: false,
+    status: 403,
+    error: 'Forbidden: Invalid or expired document deletion token. You can only delete your own documents.',
+  }
 }
 

@@ -261,12 +261,15 @@ export default async function handler(req, res) {
 
       // 1.5. Reject claiming expired or deleted documents
       const effectiveExpiry = getEffectiveExpiryTimestamp(existing)
-      if (existing.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
-        console.warn(`[AGENT_CLAIM_EXPIRED] Order ${cleanId} claim rejected: retention window expired`)
+      if (existing.documentDeleted || existing.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
+        console.warn(`[AGENT_CLAIM_EXPIRED] Order ${cleanId} claim rejected: retention window expired or document deleted`)
         return res.status(410).json({
           success: false,
-          error: `Order ${cleanId} PDF retention window expired; document permanently deleted.`,
-          expired: true,
+          error: existing.documentDeleted
+            ? `Order ${cleanId} document was deleted by student. Print job cannot be claimed.`
+            : `Order ${cleanId} PDF retention window expired; document permanently deleted.`,
+          expired: !existing.documentDeleted,
+          documentDeleted: Boolean(existing.documentDeleted),
           orderId: cleanId,
         })
       }
@@ -339,6 +342,7 @@ export default async function handler(req, res) {
         orderId: cleanId,
         printStatus: { $in: PENDING_PRINT_STATUSES },
         pdfDeletedAt: { $exists: false },
+        documentDeleted: { $ne: true },
         ...(isReprintOrder
           ? {
               reprintAttempts: {

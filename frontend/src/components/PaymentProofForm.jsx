@@ -207,6 +207,7 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
           serviceFee:           orderMeta?.digitalProcessingFee || orderMeta?.serviceFee || 0,
           amount:               orderMeta?.amount,
           phone:                phone.trim(),
+          deletionToken:        res?.deletionToken || null,
           savedAt:              Date.now(),
         })
       }

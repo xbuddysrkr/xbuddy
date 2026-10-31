@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getMyOrders, saveOrder, updateOrder } from '../utils/orderStore'
-import { getOrderStatus, initiateReprint, reprintOrder } from '../utils/api'
+import { getOrderStatus, initiateReprint, reprintOrder, deleteOrderDocument } from '../utils/api'
 import { useLanguage } from '../i18n/LanguageContext'
 import PaymentModal from './PaymentModal'
 import {
@@ -23,6 +23,7 @@ import {
   ClipboardList,
   X,
   RotateCw,
+  Trash2,
 } from 'lucide-react'
 
 // Status mappings for comprehensive lifecycle
@@ -41,6 +42,8 @@ export const STATUS_MAP = {
   'collected':              { key: 'orders.statusCollected', label: 'Collected',            cls: 'bg-slate-100 text-slate-600 border-slate-200', icon: CheckCircle2 },
   'cancelled':              { key: 'orders.statusCancelled', label: 'Cancelled',            cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
   'failed':                 { key: 'orders.statusFailed', label: 'Order Failed',         cls: 'bg-rose-50 text-rose-700 border-rose-200', icon: XCircle },
+  'document_deleted':       { key: 'orders.deletedByUser', label: 'Document Deleted',     cls: 'bg-stone-100 text-stone-700 border-stone-300', icon: Trash2 },
+  'document deleted':       { key: 'orders.deletedByUser', label: 'Document Deleted',     cls: 'bg-stone-100 text-stone-700 border-stone-300', icon: Trash2 },
 }
 
 export function getStatusInfo(rawStatus, t) {
@@ -89,6 +92,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
   const [copied, setCopied] = useState(false)
   const [cloudSearching, setCloudSearching] = useState(false)
   const [cloudSearchError, setCloudSearchError] = useState('')
+  const [deleteTargetOrder, setDeleteTargetOrder] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteSuccessBanner, setDeleteSuccessBanner] = useState(null)
+  const [deleteError, setDeleteError] = useState(null)
   const pollRef = useRef(null)
 
   // Load orders from localStorage
@@ -139,6 +146,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
               pdfExpiresAt: ord.pdfExpiresAt,
               pdfDeletedAt: ord.pdfDeletedAt,
               hasPdf: ord.hasPdf,
+              documentDeleted: ord.documentDeleted,
+              documentDeletedAt: ord.documentDeletedAt,
+              documentDeletionReason: ord.documentDeletionReason,
+              documentStorageStatus: ord.documentStorageStatus,
             })
           }
           dataUpdates[orderId] = {
@@ -147,6 +158,10 @@ export default function MyOrdersPage({ onStartPrinting }) {
             pdfExpiresAt: ord.pdfExpiresAt,
             pdfDeletedAt: ord.pdfDeletedAt,
             hasPdf: ord.hasPdf,
+            documentDeleted: ord.documentDeleted,
+            documentDeletedAt: ord.documentDeletedAt,
+            documentDeletionReason: ord.documentDeletionReason,
+            documentStorageStatus: ord.documentStorageStatus,
             paymentStatus: ord.paymentStatus,
             reprintCount: Number(ord.reprintCount) || 0,
             reprintEligible: ord.reprintEligible,
@@ -283,6 +298,83 @@ export default function MyOrdersPage({ onStartPrinting }) {
     }
   }
 
+  function formatDeletionTime(isoString) {
+    if (!isoString) return ''
+    try {
+      const d = new Date(isoString)
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    } catch {
+      return isoString
+    }
+  }
+
+  async function handleDeleteDocument(order) {
+    if (!order || isDeleting) return
+    setIsDeleting(true)
+    setDeleteError(null)
+
+    const orderId = order.orderId
+    const deletionToken = order.deletionToken || ''
+
+    try {
+      const res = await deleteOrderDocument(orderId, deletionToken)
+      if (res && res.success) {
+        const nowIso = res.documentDeletedAt || new Date().toISOString()
+        const newPrintStatus = res.printStatus || (order.printStatus === 'Printed' ? 'Printed' : 'document_deleted')
+
+        updateOrder(orderId, {
+          hasPdf: false,
+          hasDocument: false,
+          documentDeleted: true,
+          documentDeletedAt: nowIso,
+          documentDeletionReason: res.documentDeletionReason || 'student_requested',
+          documentStorageStatus: 'deleted',
+          pdfDeletedAt: nowIso,
+          pdfStorage: 'none',
+          status: newPrintStatus,
+          printStatus: newPrintStatus,
+        })
+
+        setLiveOrderData(prev => ({
+          ...prev,
+          [orderId]: {
+            ...(prev[orderId] || {}),
+            hasPdf: false,
+            hasDocument: false,
+            documentDeleted: true,
+            documentDeletedAt: nowIso,
+            documentDeletionReason: res.documentDeletionReason || 'student_requested',
+            documentStorageStatus: 'deleted',
+            pdfDeletedAt: nowIso,
+            printStatus: newPrintStatus,
+          }
+        }))
+
+        setLiveStatuses(prev => ({
+          ...prev,
+          [orderId]: newPrintStatus
+        }))
+
+        loadOrders()
+        setDeleteTargetOrder(null)
+
+        setDeleteSuccessBanner({
+          orderId,
+          title: t('orders.deleteSuccessTitle', 'Document Successfully Deleted'),
+          message: t('orders.deleteSuccessDesc', 'Your document has been permanently deleted from XBuddy storage. Associated stored copies have been removed, while your order details and payment history remain available.'),
+        })
+      } else {
+        throw new Error(res?.error || t('orders.deleteFailed', 'Failed to delete document. Please try again.'))
+      }
+    } catch (err) {
+      console.error('[Delete Document Error]:', err)
+      const errorMsg = err?.data?.error || err?.message || t('orders.deleteFailed', 'Failed to delete document. Please try again.')
+      setDeleteError(errorMsg)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   // Check if any order is currently Ready for Collection
   const readyOrders = orders.filter(o => {
     const s = String(liveStatuses[o.orderId] || o.printStatus || o.status || '').toLowerCase().trim()
@@ -321,6 +413,44 @@ export default function MyOrdersPage({ onStartPrinting }) {
               className="self-end sm:self-auto px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors whitespace-nowrap shadow-xs cursor-pointer"
             >
               {t('orders.showIdBtn', 'Show ID →')}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Document Deleted Professional Green Success Indicator */}
+      <AnimatePresence>
+        {deleteSuccessBanner && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-300 shadow-sm flex items-start justify-between gap-3"
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0 mt-0.5 shadow-2xs">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-emerald-950 font-bold text-sm">
+                    {deleteSuccessBanner.title}
+                  </h4>
+                  <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold">
+                    {deleteSuccessBanner.orderId}
+                  </span>
+                </div>
+                <p className="text-emerald-800/90 text-xs mt-1 leading-relaxed break-words">
+                  {deleteSuccessBanner.message}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setDeleteSuccessBanner(null)}
+              className="p-1 rounded-lg text-emerald-600 hover:text-emerald-900 hover:bg-emerald-100/60 transition-colors cursor-pointer shrink-0"
+              aria-label="Dismiss banner"
+            >
+              <X className="w-4 h-4" />
             </button>
           </motion.div>
         )}
@@ -472,14 +602,28 @@ export default function MyOrdersPage({ onStartPrinting }) {
             const normStatus = String(rawStatus).toLowerCase().trim()
             const isPrinted = normStatus === 'printed' || normStatus === 'ready for collection' || normStatus === 'ready' || Boolean(printedAt)
 
+            const isDeletedByStudent = Boolean(liveData.documentDeleted ?? order.documentDeleted)
+            const deletionTime = liveData.documentDeletedAt || order.documentDeletedAt
+
             // Derive deadline as printedAt + 30 minutes if pdfExpiresAt absent
             const effectiveExpiresAt = liveData.pdfExpiresAt || (printedAt ? new Date(new Date(printedAt).getTime() + 30 * 60 * 1000).toISOString() : null)
-            const isPdfDeleted = Boolean(liveData.pdfDeletedAt || liveData.hasPdf === false)
+            const isPdfDeleted = Boolean(isDeletedByStudent || liveData.pdfDeletedAt || order.pdfDeletedAt || liveData.hasPdf === false || order.hasPdf === false)
 
             // Authoritative server-clock adjusted countdown
             const serverNow = Date.now() - serverOffset
             const remainingSecs = effectiveExpiresAt ? Math.max(0, Math.floor((new Date(effectiveExpiresAt).getTime() - serverNow) / 1000)) : 0
             const isExpired = Boolean(effectiveExpiresAt && remainingSecs <= 0)
+
+            const isPrinting = normStatus === 'printing'
+            const hasOriginalDoc = Boolean(
+              !isDeletedByStudent &&
+              !liveData.pdfDeletedAt &&
+              !order.pdfDeletedAt &&
+              order.hasPdf !== false &&
+              liveData.hasPdf !== false &&
+              !isExpired
+            )
+            const canDeleteDocument = hasOriginalDoc && !isPrinting
 
             // Show Reprint button and countdown independently of paymentStatus or shopkeeper verification
             const canReprint = Boolean(
@@ -487,7 +631,8 @@ export default function MyOrdersPage({ onStartPrinting }) {
               effectiveExpiresAt &&
               !isExpired &&
               !isPdfDeleted &&
-              normStatus !== 'printing' &&
+              !isDeletedByStudent &&
+              !isPrinting &&
               !liveData.reprintPending
             )
 
@@ -530,6 +675,19 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     {t('orders.placedAt', 'Placed: {time}', { time: formatSavedAt(order.savedAt) })}
                   </p>
 
+                  {/* Document Permanently Deleted by Student Status */}
+                  {isDeletedByStudent && (
+                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-stone-700 bg-stone-50 border border-stone-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+                      <span className="font-semibold">{t('orders.deletedByUser', 'Document Deleted by You')}</span>
+                      {deletionTime && (
+                        <span className="text-[10px] text-stone-500 font-normal">
+                          — {t('orders.deletedByUserCaption', 'Your document was permanently deleted from XBuddy storage at {time}.', { time: formatDeletionTime(deletionTime) })}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* 30-Minute Retention Countdown & Status Badges */}
                   {canReprint && (
                     <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
@@ -543,10 +701,22 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     </div>
                   )}
 
-                  {(isExpired || isPdfDeleted) && (isPrinted || printedAt) && (
+                  {/* Actively printing deletion lockout warning */}
+                  {isPrinting && hasOriginalDoc && (
+                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>{t('orders.deletionUnavailablePrinting', 'Document deletion is unavailable while printing is in progress.')}</span>
+                    </div>
+                  )}
+
+                  {/* Automatically Deleted after 30-min retention */}
+                  {!isDeletedByStudent && (isExpired || isPdfDeleted) && (isPrinted || printedAt) && (
                     <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
                       <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{t('orders.reprintExpired', 'Reprint window expired; document permanently deleted.')}</span>
+                      <span className="font-semibold">{t('orders.autoDeleted', 'Document Automatically Deleted')}</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        — {t('orders.autoDeletedCaption', 'This document was automatically removed after the 30-minute retention period.')}
+                      </span>
                     </div>
                   )}
 
@@ -593,6 +763,20 @@ export default function MyOrdersPage({ onStartPrinting }) {
                           <span>{t('orders.reprintSimple', 'Reprint')}</span>
                         </>
                       )}
+                    </button>
+                  )}
+                  {canDeleteDocument && (
+                    <button
+                      id={`delete-doc-btn-${order.orderId}`}
+                      onClick={() => {
+                        setDeleteTargetOrder(order)
+                        setDeleteError(null)
+                      }}
+                      className="px-3.5 py-2.5 sm:py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 hover:border-rose-300 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer flex-1 min-[420px]:flex-initial text-center shadow-2xs"
+                      title={t('orders.deleteDocument', 'Delete Document')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                      <span>{t('orders.deleteDocument', 'Delete Document')}</span>
                     </button>
                   )}
                   <button
@@ -825,6 +1009,72 @@ export default function MyOrdersPage({ onStartPrinting }) {
                     )
                   }
 
+                  if (isDeletedByStudent) {
+                    const delTime = selData.documentDeletedAt || selectedOrder.documentDeletedAt
+                    return (
+                      <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-700 flex items-start gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-stone-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold">{t('orders.deletedByUser', 'Document Deleted by You')}</p>
+                          {delTime && (
+                            <p className="text-[11px] text-stone-500 mt-0.5">
+                              {t('orders.deletedByUserCaption', 'Your document was permanently deleted from XBuddy storage at {time}.', { time: formatDeletionTime(delTime) })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  return null
+                })()}
+
+                {(() => {
+                  const selData = liveOrderData[selectedOrder.orderId] || {}
+                  const selRawStatus = selData.printStatus || liveStatuses[selectedOrder.orderId] || selectedOrder.printStatus || selectedOrder.status || 'Order Received'
+                  const selNormStatus = String(selRawStatus).toLowerCase().trim()
+                  const isPrinting = selNormStatus === 'printing'
+                  const isDeletedByStudent = Boolean(selData.documentDeleted ?? selectedOrder.documentDeleted)
+                  const effectiveExpiresAt = selData.pdfExpiresAt || (selectedOrder.printedAt ? new Date(new Date(selectedOrder.printedAt).getTime() + 30 * 60 * 1000).toISOString() : null)
+                  const serverNow = Date.now() - serverOffset
+                  const remainingSecs = effectiveExpiresAt ? Math.max(0, Math.floor((new Date(effectiveExpiresAt).getTime() - serverNow) / 1000)) : 0
+                  const isExpired = Boolean(effectiveExpiresAt && remainingSecs <= 0)
+                  const hasOriginalDoc = Boolean(
+                    !isDeletedByStudent &&
+                    !selData.pdfDeletedAt &&
+                    !selectedOrder.pdfDeletedAt &&
+                    selectedOrder.hasPdf !== false &&
+                    selData.hasPdf !== false &&
+                    !isExpired
+                  )
+
+                  if (hasOriginalDoc && !isPrinting) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ord = selectedOrder
+                          setSelectedOrder(null)
+                          setDeleteTargetOrder(ord)
+                          setDeleteError(null)
+                        }}
+                        className="w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                        <span>{t('orders.deleteDocument', 'Delete Document')}</span>
+                      </button>
+                    )
+                  }
+
+                  if (isPrinting && hasOriginalDoc) {
+                    return (
+                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>{t('orders.deletionUnavailablePrinting', 'Document deletion is unavailable while printing is in progress.')}</span>
+                      </div>
+                    )
+                  }
+
                   return null
                 })()}
 
@@ -838,6 +1088,105 @@ export default function MyOrdersPage({ onStartPrinting }) {
                 >
                   <Store className="w-4 h-4 shrink-0" />
                   <span>{t('orders.showAtShop', 'Show Order ID at Xerox Shop')}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Document Confirmation Modal */}
+      <AnimatePresence>
+        {deleteTargetOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isDeleting && setDeleteTargetOrder(null)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative z-10 bg-white border border-rose-100 rounded-3xl p-6 sm:p-7 w-full max-w-md shadow-2xl mx-2 sm:mx-auto"
+            >
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0 shadow-inner">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 leading-snug">
+                      {t('orders.deleteModalTitle', 'Delete Document Permanently?')}
+                    </h3>
+                    <p className="text-xs font-mono font-bold text-[#F78C25]">
+                      {deleteTargetOrder.orderId}
+                    </p>
+                  </div>
+                </div>
+                {!isDeleting && (
+                  <button
+                    onClick={() => setDeleteTargetOrder(null)}
+                    className="w-8 h-8 rounded-full bg-gray-50 hover:bg-gray-100 text-gray-400 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                    aria-label="Cancel deletion"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3.5 mb-6">
+                <div className="p-3 bg-gray-50 border border-gray-100 rounded-2xl text-xs space-y-1">
+                  <p className="text-gray-500 font-medium">Original file:</p>
+                  <p className="font-semibold text-gray-800 break-all">{deleteTargetOrder.fileName || `${deleteTargetOrder.orderId}.pdf`}</p>
+                </div>
+
+                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+                  {t('orders.deleteModalDesc', 'Are you sure you want to delete this uploaded document? This action will permanently remove your original document and associated stored copies from XBuddy. Your order details and payment history will remain available.')}
+                </p>
+
+                <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="font-semibold">{t('orders.deleteModalWarning', 'This action cannot be undone.')}</span>
+                </div>
+
+                {deleteError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-xs text-rose-700 font-medium">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{deleteError}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setDeleteTargetOrder(null)}
+                  className="px-4 py-2.5 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {t('orders.deleteCancel', 'Cancel')}
+                </button>
+                <button
+                  type="button"
+                  id="confirm-delete-permanently-btn"
+                  disabled={isDeleting}
+                  onClick={() => handleDeleteDocument(deleteTargetOrder)}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-rose-600/20 hover:shadow-lg flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{t('orders.deleting', 'Deleting...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>{t('orders.deletePermanently', 'Delete Permanently')}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>

@@ -11,7 +11,11 @@
 
 import { connectToDatabase } from '../_lib/mongodb.js'
 import { calculateOrderPrice } from '../_lib/retention.js'
-import { isBoothAuthorized } from '../_lib/boothAuth.js'
+import {
+  isBoothAuthorized,
+  generateOrderDeletionSecret,
+  hashOrderDeletionSecret,
+} from '../_lib/boothAuth.js'
 import {
   getShopkeeperUpiConfig,
   toPaise,
@@ -127,6 +131,10 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
           })
         }
 
+        const deletionSecret = generateOrderDeletionSecret()
+        const deletionSecretHash = hashOrderDeletionSecret(deletionSecret)
+        const activeSecret = existingOrder.deletionSecret || deletionSecret
+
         // Idempotently update checkout intent parameters
         await ordersCol.updateOne(
           { orderId: cleanOrderId },
@@ -143,10 +151,14 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
               payeeName: cfg.payeeName,
               checkoutExpiresAt: expiresAt,
               updatedAt: nowIso,
+              ...(existingOrder.deletionSecretHash ? {} : { deletionSecretHash }),
             },
           }
         )
       } else {
+        const deletionSecret = generateOrderDeletionSecret()
+        const deletionSecretHash = hashOrderDeletionSecret(deletionSecret)
+
         // Create new pending order record
         await ordersCol.insertOne({
           orderId: cleanOrderId,
@@ -162,6 +174,7 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
           printingCost: priceResult.printingCost,
           serviceFee: priceResult.serviceFee,
           digitalProcessingFee: priceResult.digitalProcessingFee,
+          deletionSecretHash,
           currency: 'INR',
           paymentReference: cleanOrderId,
           payeeVpa: cfg.upiId,
@@ -176,6 +189,8 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
         })
       }
 
+      const clientDeletionToken = existingOrder?.deletionSecret || deletionSecret
+
       console.log(`[DIRECT_UPI] Created checkout intent for Order ${cleanOrderId}: ₹${authoritativeRupees} (Fee: ₹${priceResult.digitalProcessingFee}) to ${cfg.upiId}`)
 
       return res.status(200).json({
@@ -186,6 +201,7 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
         printingCost: priceResult.printingCost,
         serviceFee: priceResult.serviceFee,
         digitalProcessingFee: priceResult.digitalProcessingFee,
+        deletionToken: clientDeletionToken,
         currency: 'INR',
         paymentReference: cleanOrderId,
         payeeVpa: cfg.upiId,

@@ -28,6 +28,7 @@ import InteractiveTourSpotlight from './InteractiveTourSpotlight'
 import UpiAppSelectionSheet from './UpiAppSelectionSheet'
 import { STORAGE_KEYS, isTourCompleted, markTourCompleted } from '../utils/tourStorage'
 import { saveSessionState, getSessionState } from '../utils/sessionStore'
+import { saveOrder as saveLocalOrder } from '../utils/orderStore'
 
 // Official Xerox Shopkeeper Receiving UPI Credentials
 const OFFICIAL_UPI_ID = '9100280705@ybl'
@@ -370,7 +371,40 @@ export default function PaymentModal({ total, orderMeta, onSuccess, onClose }) {
           expiresAt: expiryMs,
           showPayment: true,
           paymentStatus: data.alreadyPaid ? 'paid' : 'pending',
+          deletionToken: data.deletionToken || null,
         })
+
+        try {
+          saveLocalOrder({
+            orderId: data.orderId,
+            fileName: orderPayload.fileName || orderMeta?.fileName,
+            totalPages: orderPayload.totalPages || orderMeta?.totalPages,
+            printableCount: orderPayload.printableCount || orderMeta?.printableCount,
+            copies: orderPayload.copies || orderMeta?.copies,
+            colorMode: orderPayload.colorMode || orderMeta?.colorMode,
+            printType: orderPayload.printType || orderMeta?.printType,
+            printSide: orderPayload.duplex ? 'Double' : 'Single',
+            duplex: Boolean(orderPayload.duplex),
+            pageSize: orderPayload.paperSize || orderMeta?.pageSize,
+            paperSize: orderPayload.paperSize || orderMeta?.paperSize,
+            orientation: orderPayload.orientation || orderMeta?.orientation,
+            pageRange: orderPayload.pageRange || orderMeta?.pageRange,
+            customPages: orderPayload.customPages || orderMeta?.customPages,
+            selectedPages: orderPayload.selectedPages || orderMeta?.selectedPages || [],
+            selectedPageCount: orderPayload.selectedPages?.length || 0,
+            printingCost: orderPayload.printingCost || orderMeta?.printingCost || 0,
+            digitalProcessingFee: orderPayload.digitalProcessingFee || orderMeta?.digitalProcessingFee || 0,
+            serviceFee: orderPayload.digitalProcessingFee || orderMeta?.digitalProcessingFee || 0,
+            amount: orderPayload.amount || orderMeta?.amount || total,
+            phone: orderPayload.phoneNumber || orderMeta?.phoneNumber || '',
+            savedAt: Date.now(),
+            deletionToken: data.deletionToken || null,
+            status: 'Order Received',
+            printStatus: 'waiting_for_shopkeeper',
+            paymentStatus: data.alreadyPaid ? 'paid' : 'pending',
+            hasPdf: true,
+          })
+        } catch {}
 
         const remaining = Math.max(0, Math.floor((expiryMs - Date.now()) / 1000))
         setRemainingSeconds(remaining)

@@ -246,21 +246,34 @@ export async function hasPdfInGridFS(db, orderId) {
  * Deletes all GridFS files associated with an orderId.
  * Used for rollbacks when order document creation fails.
  */
-export async function deletePdfFromGridFS(db, orderId) {
+export async function deletePdfFromGridFS(db, orderId, options = {}) {
   if (!db || !orderId) return false
   const cleanId = String(orderId).trim().toUpperCase()
-  const filename = `${cleanId}.pdf`
   const bucket = getGridFSBucket(db)
   try {
-    const files = await bucket.find({
-      $or: [{ filename }, { 'metadata.orderId': cleanId }]
-    }).toArray()
+    const queryConditions = [
+      { filename: `${cleanId}.pdf` },
+      { filename: `${cleanId}.docx` },
+      { filename: `${cleanId}.doc` },
+      { filename: `${cleanId}.jpg` },
+      { filename: `${cleanId}.jpeg` },
+      { filename: `${cleanId}.png` },
+      { 'metadata.orderId': cleanId },
+    ]
+    if (options.fileId) {
+      queryConditions.push({ _id: options.fileId })
+    }
+
+    const files = await bucket.find({ $or: queryConditions }).toArray()
     let anyErrors = false
+    const deletedFileIds = []
+
     for (const file of files) {
       try {
         await bucket.delete(file._id)
+        deletedFileIds.push(file._id)
       } catch (delErr) {
-        if (delErr.message && delErr.message.includes('FileNotFound')) {
+        if (delErr.message && (delErr.message.includes('FileNotFound') || delErr.message.includes('not found'))) {
           continue
         }
         console.error(`[GridFS delete error] File ${file._id} for ${cleanId}:`, delErr.message)
@@ -270,7 +283,7 @@ export async function deletePdfFromGridFS(db, orderId) {
     if (anyErrors) {
       throw new Error(`Failed to delete one or more GridFS chunks/files for ${cleanId}`)
     }
-    return true
+    return { success: true, deletedCount: deletedFileIds.length, deletedFileIds }
   } catch (err) {
     console.error(`[GridFS delete failure] ${cleanId}:`, err.message)
     throw err
