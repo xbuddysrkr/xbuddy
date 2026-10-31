@@ -38,6 +38,7 @@ import {
   updateOrderStatus,
   validateAndRelease,
   verifyAndApprovePayment,
+  verifyAdsPassword,
 } from '../utils/api'
 
 const STATUS_BADGES = {
@@ -84,23 +85,27 @@ export default function AdminDashboard() {
     }
   }, [])
 
-  const handleAdminLogin = (event) => {
+  const handleAdminLogin = async (event) => {
     event.preventDefault()
-    if (adminPassword === ADMIN_PASSWORD) {
+    if (!adminPassword) return
+    const res = await verifyAdsPassword(adminPassword)
+    if (res?.success || (ADMIN_PASSWORD && adminPassword === ADMIN_PASSWORD)) {
       setIsAuthorized(true)
       setAuthError('')
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('xbuddyAdminAuthorized', 'true')
+        window.sessionStorage.setItem('xbuddy_admin_password', adminPassword)
       }
       return
     }
-    setAuthError('Incorrect password. Please try again.')
+    setAuthError(res?.error || 'Incorrect password. Please try again.')
   }
 
   const handleAdminLogout = () => {
     setIsAuthorized(false)
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('xbuddyAdminAuthorized')
+      window.sessionStorage.removeItem('xbuddy_admin_password')
     }
   }
 

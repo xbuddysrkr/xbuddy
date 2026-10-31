@@ -742,17 +742,18 @@ async function runPrivacyRetentionTests() {
     createdAt: new Date(nowMs - 25 * 60 * 60 * 1000).toISOString(),
   })
 
-  // Test getOrderPdf endpoint via ordersHandler
+  // Test getOrderPdf endpoint via ordersHandler (with agent authorization)
+  process.env.AGENT_SECRET_KEY = 'XB_AGENT_SECRET_KEY_TEST'
   const { req: reqDl, res: resDl } = createMockReqRes({
     method: 'GET',
     query: { action: 'getOrderPdf', orderId: idExpiredDownload },
+    headers: { 'x-agent-key': 'XB_AGENT_SECRET_KEY_TEST' },
   })
   await ordersHandler(reqDl, resDl)
   assert.strictEqual(resDl.statusCode, 410, `getOrderPdf must return 410 Gone for expired document, got ${resDl.statusCode}`)
   assert.strictEqual(resDl.bodyData?.expired, true)
 
   // Test agent claim endpoint via agentOrdersHandler
-  process.env.AGENT_SECRET_KEY = 'XB_AGENT_SECRET_KEY_TEST'
   const { req: reqClaim, res: resClaim } = createMockReqRes({
     method: 'POST',
     url: `/api/agent/orders/${idExpiredDownload}/claim`,

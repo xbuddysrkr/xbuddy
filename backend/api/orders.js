@@ -28,6 +28,7 @@ import {
   verifyPreviewToken,
   consumePreviewToken,
   isBoothAuthorized,
+  validateAgentAuth,
 } from './_lib/boothAuth.js'
 
 const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
@@ -376,7 +377,13 @@ export default async function handler(req, res) {
         })
       }
 
-      const expectedPassword = process.env.ADMIN_PASSWORD || process.env.ADS_PASSWORD || 'xbuddy@4921'
+      const expectedPassword = (process.env.ADMIN_PASSWORD || process.env.ADS_PASSWORD || '').trim()
+      if (!expectedPassword) {
+        return res.status(500).json({
+          success: false,
+          error: 'Administrative authentication is not configured on the server.',
+        })
+      }
       const password = String(req.body?.password || req.query?.password || '')
 
       if (safeCompare(password, expectedPassword)) {
@@ -1028,7 +1035,30 @@ export default async function handler(req, res) {
             reprintEligible: reprintCheck.eligible,
             reprintReason: reprintCheck.reason,
           }
-          return res.status(200).json({ success: true, order: cleanOrder, serverTime: new Date().toISOString(), source: 'mongo' })
+
+          if (isBoothAuthorized(req)) {
+            return res.status(200).json({ success: true, order: cleanOrder, serverTime: new Date().toISOString(), source: 'mongo' })
+          }
+
+          // Student-facing order tracking projection: Minimal public metadata only
+          // Strictly excludes student phone number (in order.name), full filename, payment UTR, and private download URLs.
+          const publicOrder = {
+            orderId: cleanOrder.orderId,
+            printStatus: cleanOrder.printStatus,
+            paymentStatus: cleanOrder.paymentStatus,
+            createdAt: cleanOrder.createdAt,
+            totalPages: cleanOrder.totalPages,
+            copies: cleanOrder.copies,
+            amount: cleanOrder.amount,
+            pdfExpiresAt: cleanOrder.pdfExpiresAt,
+            hasPdf: cleanOrder.hasPdf,
+            hasDocument: cleanOrder.hasDocument,
+            reprintEligible: cleanOrder.reprintEligible,
+            reprintReason: cleanOrder.reprintReason,
+            errorReason: cleanOrder.errorReason || null,
+            errorMessage: cleanOrder.errorMessage || null,
+          }
+          return res.status(200).json({ success: true, order: publicOrder, serverTime: new Date().toISOString(), source: 'mongo' })
         } else {
           console.log(`[MONGO_ORDER_READ_PRIMARY] Order ${orderId} not found in MongoDB Atlas`)
           return res.status(404).json({ success: false, error: 'Order not found', source: 'mongo' })
@@ -1046,13 +1076,26 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'orderId is required' })
       }
 
-      // Password / Token gate for browser Preview requests ('getPdf' / 'downloadPdf')
-      // Note: action === 'getOrderPdf' is preserved for automated Print Agent syncing without password
-      if (action === 'getPdf' || action === 'downloadPdf') {
+      // Strong authorization required for all document byte retrievals
+      if (action === 'getOrderPdf') {
+        const isAgent = validateAgentAuth(req)
+        const isBooth = isBoothAuthorized(req)
+        const token = String(req.query?.token || req.body?.token || '').trim()
+        const tokenVerification = token ? verifyPreviewToken(orderId, token) : { valid: false }
+
+        if (!isAgent && !isBooth && !tokenVerification.valid) {
+          console.warn(`[SECURITY_REJECT] Unauthorized document download attempt for order ${orderId} (ip=${req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress})`)
+          return res.status(401).json({
+            success: false,
+            error: 'Unauthorized: Valid station credential or booth authorization required to download document.',
+          })
+        }
+      } else if (action === 'getPdf' || action === 'downloadPdf') {
+        const isBooth = isBoothAuthorized(req)
         const token = String(req.query?.token || req.body?.token || '').trim()
         const verification = verifyPreviewToken(orderId, token)
 
-        if (!verification.valid) {
+        if (!isBooth && !verification.valid) {
           const errorMsg =
             verification.reason === 'expired'
               ? 'Preview token has expired. Please request a new preview.'
@@ -1063,40 +1106,42 @@ export default async function handler(req, res) {
           })
         }
 
-        // Connect to MongoDB to atomically consume token across instances
-        let mongoDb = null
-        try {
-          const conn = await connectToDatabase()
-          mongoDb = conn?.db
-        } catch (dbErr) {
-          console.error('[SECURITY_FAIL_CLOSED] Database connection failed for getPdf preview token consumption:', dbErr.message)
-          return res.status(503).json({
-            success: false,
-            error: 'Authentication verification service temporarily unavailable.',
-          })
-        }
+        // Connect to MongoDB to atomically consume token across instances (if using single-use preview token)
+        if (!isBooth && verification.valid && verification.tokenId) {
+          let mongoDb = null
+          try {
+            const conn = await connectToDatabase()
+            mongoDb = conn?.db
+          } catch (dbErr) {
+            console.error('[SECURITY_FAIL_CLOSED] Database connection failed for getPdf preview token consumption:', dbErr.message)
+            return res.status(503).json({
+              success: false,
+              error: 'Authentication verification service temporarily unavailable.',
+            })
+          }
 
-        // Only consume on GET requests; HEAD requests (if probed by browser) do not consume token
-        if (req.method === 'GET') {
-          const consumption = await consumePreviewToken(
-            verification.tokenId,
-            orderId,
-            verification.expiresAt,
-            mongoDb
-          )
+          // Only consume on GET requests; HEAD requests (if probed by browser) do not consume token
+          if (req.method === 'GET') {
+            const consumption = await consumePreviewToken(
+              verification.tokenId,
+              orderId,
+              verification.expiresAt,
+              mongoDb
+            )
 
-          if (!consumption.consumed) {
-            if (consumption.replayed) {
-              return res.status(401).json({
+            if (!consumption.consumed) {
+              if (consumption.replayed) {
+                return res.status(401).json({
+                  success: false,
+                  error: 'This preview token has already been consumed. Please submit the password again for a new preview.',
+                  replayed: true,
+                })
+              }
+              return res.status(500).json({
                 success: false,
-                error: 'This preview token has already been consumed. Please submit the password again for a new preview.',
-                replayed: true,
+                error: 'Token consumption verification failed: ' + (consumption.error || 'database error'),
               })
             }
-            return res.status(500).json({
-              success: false,
-              error: 'Token consumption verification failed: ' + (consumption.error || 'database error'),
-            })
           }
         }
       }
@@ -1113,9 +1158,10 @@ export default async function handler(req, res) {
           { projection: { driveUrl: 1, fileName: 1, hasGridFsPdf: 1, pdfExpiresAt: 1, pdfUploadedAt: 1, createdAt: 1, pdfDeletedAt: 1, printedAt: 1 } }
         )
         if (!order) {
-          // If order does not exist in authoritative MongoDB, purge any stale disk cache file
+          // If order does not exist in authoritative MongoDB, purge any stale disk cache file (using sanitized orderId)
+          const safeId = orderId.replace(/[^a-zA-Z0-9_-]/g, '')
           for (const ext of ['.pdf', '.docx', '.doc']) {
-            const stalePath = path.join(PDF_CACHE_DIR, `${orderId}${ext}`)
+            const stalePath = path.join(PDF_CACHE_DIR, `${safeId}${ext}`)
             if (fs.existsSync(stalePath)) {
               try { fs.unlinkSync(stalePath) } catch {}
             }
@@ -1379,6 +1425,13 @@ export default async function handler(req, res) {
 
     // ── 3. LIST ORDERS (PHASE 4: MONGODB PRIMARY & AUTHORITATIVE) ───────────
     if (action === 'listOrders') {
+      if (!isBoothAuthorized(req)) {
+        console.warn(`[SECURITY_REJECT] Unauthorized listOrders request rejected (ip=${req.headers?.['x-forwarded-for'] || req.socket?.remoteAddress})`)
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Booth or admin authentication required to list orders.',
+        })
+      }
       const readSource = getOrdersReadSource()
       console.log(`[ORDER_LIST_READ] Request for orders list (source=${readSource})`)
 
@@ -1433,6 +1486,13 @@ export default async function handler(req, res) {
 
     // ── 4. UPDATE ORDER STATUS (MONGODB PRIMARY + ATOMIC RELEASE LOCK) ──────
     if (action === 'updateOrderStatus') {
+      if (!isBoothAuthorized(req)) {
+        console.warn(`[SECURITY_REJECT] Unauthorized updateOrderStatus attempt for order ${req.body?.orderId || req.query?.orderId}`)
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Booth or agent authentication required to update order status.',
+        })
+      }
       const orderId = String(req.body?.orderId || req.query?.orderId || '').trim().toUpperCase()
       const printStatus = String(req.body?.printStatus || req.query?.printStatus || '').trim()
       if (!orderId || !printStatus) {
@@ -2375,6 +2435,12 @@ export default async function handler(req, res) {
 
     // ── 6. PHASE 2: READ-ONLY ORDERS PARITY AUDIT ───────────────────────────
     if (action === 'parityAudit') {
+      if (!isBoothAuthorized(req)) {
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Admin or booth authentication required for parityAudit.',
+        })
+      }
       try {
         const gasRes = await writeToGoogleAppsScript({ action: 'listOrders' })
         const sheetOrders = gasRes?.orders || []
@@ -2411,6 +2477,12 @@ export default async function handler(req, res) {
 
     // ── 7. PHASE 2.5: HISTORICAL ORDERS BACKFILL ────────────────────────────
     if (action === 'backfillOrders') {
+      if (!isBoothAuthorized(req)) {
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Admin or booth authentication required for backfillOrders.',
+        })
+      }
       const mode = String(req.query?.mode || req.body?.mode || 'dry-run').toLowerCase()
       const isExecute = mode === 'execute'
 

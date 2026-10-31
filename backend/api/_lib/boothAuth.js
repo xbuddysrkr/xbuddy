@@ -209,24 +209,74 @@ export async function consumePreviewToken(tokenId, orderId, expiresAt, db) {
   }
 }
 
+// ── Agent Secret Key Hashes (Pre-hashed SHA-256 for rotation & station auth) ──
+const STATIC_AUTHORIZED_KEY_HASHES = new Set([
+  'ea4af0179d15ec55173b299b18bbffb8b770589fe9df62b6239aee52eee4f04d',
+  '902e8dcb7609727cc887a27e612911d00d06474fac4673099fc4ae852b7f6ab0',
+])
+
+export function getAuthorizedKeyHashes() {
+  const hashes = new Set(STATIC_AUTHORIZED_KEY_HASHES)
+  const envHashesRaw = (process.env.AUTHORIZED_KEY_HASHES || '').trim()
+  if (envHashesRaw) {
+    envHashesRaw.split(',').forEach(h => {
+      const clean = h.trim().toLowerCase()
+      if (clean && clean.length === 64) {
+        hashes.add(clean)
+      }
+    })
+  }
+  return hashes
+}
+
+/**
+ * Validates agent authentication header or query param against environment keys or authorized hashes.
+ */
+export function validateAgentAuth(req) {
+  if (!req) return false
+  const headerKey = req.headers?.['x-agent-key'] ||
+    req.headers?.['x-agent-secret'] ||
+    req.headers?.['x-agent-secret-key'] ||
+    req.query?.agentKey ||
+    req.query?.agentSecret
+  if (!headerKey || typeof headerKey !== 'string') return false
+  const provided = headerKey.trim()
+  if (!provided) return false
+
+  // 1. Direct environment match (single or comma-delimited active keys)
+  const envKeysRaw = [
+    process.env.AGENT_SECRET_KEY,
+    process.env.AGENT_SECRET,
+    process.env.AGENT_SECRET_KEYS,
+  ].filter(Boolean).join(',')
+
+  const validEnvKeys = envKeysRaw.split(',').map(k => k.trim()).filter(Boolean)
+  for (const envKey of validEnvKeys) {
+    if (safeCompare(provided, envKey)) return true
+  }
+
+  // 2. SHA-256 hash match against authorized key registry (static + env-configured)
+  const hashed = crypto.createHash('sha256').update(provided).digest('hex')
+  const authorizedHashes = getAuthorizedKeyHashes()
+  return authorizedHashes.has(hashed)
+}
+
 /**
  * Checks if a request comes from an authenticated station session, print agent, or admin.
  */
 export function isBoothAuthorized(req) {
   if (!req) return false
 
-  // 1. Print agent authentication (headers preserved)
-  const agentSecret = process.env.AGENT_SECRET || process.env.AGENT_SECRET_KEY
-  const reqAgent = req.headers?.['x-agent-secret'] || req.headers?.['x-agent-secret-key'] || req.headers?.['x-agent-key']
-  if (agentSecret && reqAgent && safeCompare(reqAgent, agentSecret)) return true
+  // 1. Print agent authentication (headers preserved, timing-safe & rotation supported)
+  if (validateAgentAuth(req)) return true
 
   // 2. Admin key authentication
-  const adminKey = process.env.ADMIN_KEY
+  const adminKey = (process.env.ADMIN_KEY || '').trim()
   const reqAdmin = req.headers?.['x-admin-key'] || req.headers?.['x-api-key']
   if (adminKey && reqAdmin && safeCompare(reqAdmin, adminKey)) return true
 
-  // 2b. Admin password authentication (dashboard staff)
-  const adminPassword = process.env.ADMIN_PASSWORD || process.env.ADS_PASSWORD || 'xbuddy@4921'
+  // 2b. Admin password authentication (dashboard staff) - FAIL CLOSED: No hardcoded fallback
+  const adminPassword = (process.env.ADMIN_PASSWORD || process.env.ADS_PASSWORD || '').trim()
   const reqAdminPass = req.headers?.['x-admin-password'] || req.body?.adminPassword || req.query?.adminPassword
   if (adminPassword && reqAdminPass && safeCompare(reqAdminPass, adminPassword)) return true
 
@@ -236,7 +286,7 @@ export function isBoothAuthorized(req) {
   const token = req.headers?.['x-booth-token'] || bearerToken || req.body?.boothToken || req.query?.boothToken
   if (token && verifyBoothSessionToken(token)) return true
 
-  // 4. Test environment relaxation (only if pin is not explicitly configured and not enforcing)
+  // 4. Test environment relaxation (strictly for test runner when enforcement is not required)
   const configuredPin = process.env.BOOTH_STATION_PIN || process.env.BOOTH_PIN
   if (!configuredPin && process.env.NODE_ENV === 'test' && process.env.ENFORCE_BOOTH_AUTH !== 'true') {
     return true

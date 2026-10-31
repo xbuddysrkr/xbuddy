@@ -2,11 +2,9 @@ import path from 'path'
 import crypto from 'crypto'
 import { connectToDatabase } from '../_lib/mongodb.js'
 import { calculatePrintedExpiryTimestamp, getEffectiveExpiryTimestamp } from '../_lib/retention.js'
+import { validateAgentAuth } from '../_lib/boothAuth.js'
 
-const AUTHORIZED_KEY_HASHES = new Set([
-  'ea4af0179d15ec55173b299b18bbffb8b770589fe9df62b6239aee52eee4f04d',
-  '902e8dcb7609727cc887a27e612911d00d06474fac4673099fc4ae852b7f6ab0',
-])
+export { validateAgentAuth }
 
 const PENDING_PRINT_STATUSES = ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed']
 
@@ -121,22 +119,7 @@ export function normalizeAgentOrder(order = {}) {
   }
 }
 
-/**
- * Validates agent authentication header.
- * Rejects missing or invalid secrets with HTTP 401.
- */
-export function validateAgentAuth(req) {
-  const headerKey = req.headers?.['x-agent-key'] || req.headers?.['x-agent-secret']
-  if (!headerKey || typeof headerKey !== 'string') {
-    return false
-  }
-  const provided = headerKey.trim()
-  const envKey = (process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || '').trim()
-  if (envKey && provided === envKey) return true
 
-  const hashed = crypto.createHash('sha256').update(provided).digest('hex')
-  return AUTHORIZED_KEY_HASHES.has(hashed)
-}
 
 /**
  * Extracts route path and parameters from incoming request.

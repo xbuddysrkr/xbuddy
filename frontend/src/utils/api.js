@@ -271,15 +271,35 @@ export async function getOrderStatus(orderId) {
   }
 }
 
+export function getBoothAuthHeaders() {
+  const headers = {}
+  if (typeof sessionStorage !== 'undefined') {
+    const token = sessionStorage.getItem('xbuddy_booth_token')
+    if (token) {
+      headers['X-Booth-Token'] = token
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    const adminPass = sessionStorage.getItem('xbuddy_admin_password')
+    if (adminPass) {
+      headers['X-Admin-Password'] = adminPass
+    }
+  }
+  return headers
+}
+
 export async function fetchAdminOrders() {
   const orderMap = new Map()
 
   // 1. PRIMARY & AUTHORITATIVE READ: Serverless Orders API (MongoDB Atlas)
   let ordersList = null
   const endpoints = getCandidateOrdersEndpoints()
+  const authHeaders = getBoothAuthHeaders()
+  const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
+
   for (const endpoint of endpoints) {
     try {
-      const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
+      const url = token ? `${endpoint}?action=listOrders&boothToken=${encodeURIComponent(token)}` : `${endpoint}?action=listOrders`
+      const res = await fetch(url, { headers: authHeaders, signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const text = await res.text()
         if (isHtmlResponse(text, res.headers.get('content-type'))) continue
@@ -490,10 +510,12 @@ export async function updateOrderStatus(orderId, printStatus) {
         const data = await res.json()
         if (data?.success) {
           // Also sync to serverless dual-write endpoint in background
+          const authHeaders = getBoothAuthHeaders()
+          const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
           fetch(ORDERS_ENDPOINT, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus, boothToken: token }),
           }).catch(() => {})
           return data
         }
@@ -503,12 +525,15 @@ export async function updateOrderStatus(orderId, printStatus) {
 
   // 2. Update via authoritative serverless endpoint (atomic print release lock in MongoDB)
   const candidateEndpoints = getCandidateOrdersEndpoints()
+  const authHeaders = getBoothAuthHeaders()
+  const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
+
   for (const endpoint of candidateEndpoints) {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus }),
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ action: 'updateOrderStatus', orderId, printStatus, boothToken: token }),
         signal: AbortSignal.timeout(10000),
       })
       if (res.ok) {
@@ -1202,12 +1227,15 @@ export async function verifyAdsPassword(password) {
 export async function fetchOrderPdfBlob(orderId) {
   const cleanId = String(orderId || '').trim().toUpperCase()
   const endpoints = getCandidateOrdersEndpoints()
+  const authHeaders = getBoothAuthHeaders()
+  const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
   let lastErr = 'Failed to load PDF'
 
   for (const endpoint of endpoints) {
     try {
-      const url = `${endpoint}?action=getPdf&orderId=${encodeURIComponent(cleanId)}`
-      const res = await fetch(url, { signal: AbortSignal.timeout(45000) })
+      const tokenParam = token ? `&boothToken=${encodeURIComponent(token)}` : ''
+      const url = `${endpoint}?action=getPdf&orderId=${encodeURIComponent(cleanId)}${tokenParam}`
+      const res = await fetch(url, { headers: authHeaders, signal: AbortSignal.timeout(45000) })
       if (res.ok) {
         const ct = res.headers.get('content-type') || ''
         if (ct.includes('text/html')) {
@@ -1235,9 +1263,13 @@ export async function fetchOrderPdfBlob(orderId) {
  */
 export async function fetchPendingOrders() {
   const endpoints = getCandidateOrdersEndpoints()
+  const authHeaders = getBoothAuthHeaders()
+  const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('xbuddy_booth_token') : null
+
   for (const endpoint of endpoints) {
     try {
-      const res = await fetch(`${endpoint}?action=listOrders`, { signal: AbortSignal.timeout(15000) })
+      const url = token ? `${endpoint}?action=listOrders&boothToken=${encodeURIComponent(token)}` : `${endpoint}?action=listOrders`
+      const res = await fetch(url, { headers: authHeaders, signal: AbortSignal.timeout(15000) })
       if (res.ok) {
         const text = await res.text()
         if (isHtmlResponse(text, res.headers.get('content-type'))) continue

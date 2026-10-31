@@ -22,11 +22,12 @@ for (const envPath of envCandidates) {
 
 // Mock Request & Response helper for testing serverless ordersHandler
 function createMockReqRes({ method = 'POST', query = {}, body = {}, headers = {} }) {
+  const defaultAgentKey = process.env.AGENT_SECRET_KEY || process.env.AGENT_SECRET || 'XB_AGENT_PROD_SECRET_KEY_SUPER_SECURE_2026'
   const req = {
     method,
     query,
     body,
-    headers,
+    headers: { 'x-agent-key': defaultAgentKey, ...headers },
   }
   class MockResponse extends Writable {
     constructor() {

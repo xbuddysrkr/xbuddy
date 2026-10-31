@@ -46,7 +46,7 @@ function saveUrlToCache(url) {
   try { fs.writeFileSync(TUNNEL_CACHE, url, 'utf8') } catch {}
 }
 
-// Push tunnel URL to local public/tunnel-url.txt and sync to GitHub
+// Push tunnel URL to local public/tunnel-url.txt (automated Git push permanently disabled for privacy)
 function pushToGitHub(url) {
   try {
     const webDir = process.env.GITHUB_REPO_DIR || path.resolve(__dirname, '..', '..')
@@ -55,30 +55,13 @@ function pushToGitHub(url) {
         path.join(webDir, 'frontend', 'public', 'tunnel-url.txt'),
         path.join(webDir, 'public', 'tunnel-url.txt'),
       ]
-      let gitRelativeFile = null
       for (const p of candidates) {
         if (fs.existsSync(path.dirname(p))) {
           fs.writeFileSync(p, url.trim() + '\n', 'utf8')
-          if (!gitRelativeFile) gitRelativeFile = path.relative(webDir, p).replace(/\\/g, '/')
         }
       }
-
-      if (gitRelativeFile) {
-        exec(`git add "${gitRelativeFile}" && git commit -m "tunnel: ${url}" && git push origin main`, {
-          cwd: webDir,
-          timeout: 25000
-        }, (err, stdout, stderr) => {
-          if (!err) {
-            logger.success('Tunnel URL pushed to GitHub: ' + url)
-          } else {
-            // Silent or brief notice if git push is not ready
-          }
-        })
-      }
     }
-  } catch (err) {
-    // Ignore non-fatal git push errors
-  }
+  } catch (err) {}
 }
 
 // Push tunnel URL to Google Apps Script with retry loop
@@ -116,8 +99,11 @@ async function verifyPublicTunnel(url) {
 let lastTunnelStartAttempt = 0
 const TUNNEL_START_COOLDOWN = 60000 // Only attempt start once every 60s if not running
 
-// Ensure cloudflared.exe process is running
+// Ensure cloudflared.exe process is running (only when explicitly enabled via ENABLE_LEGACY_TUNNEL)
 function ensureCloudflaredRunning() {
+  if (process.env.ENABLE_LEGACY_TUNNEL !== 'true') {
+    return // Outbound HTTPS direct connection is authoritative; inbound tunnel disabled by security policy
+  }
   if (!fs.existsSync(CLOUDFLARED)) return
   const now = Date.now()
   if (now - lastTunnelStartAttempt < TUNNEL_START_COOLDOWN) return

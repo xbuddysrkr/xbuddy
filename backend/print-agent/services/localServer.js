@@ -15,10 +15,11 @@ const { getLastHeartbeat, startHeartbeat, sendHeartbeatNow } = require('./heartb
 const app         = express()
 const config      = getConfig()
 const PORT        = config.port || 3001
-const PENDING_DIR = path.join(__dirname, '..', 'downloads')
+const DOWNLOADS_DIR = path.join(__dirname, '..', 'downloads')
+const PENDING_DIR   = DOWNLOADS_DIR
 
-if (!fs.existsSync(PENDING_DIR)) {
-  try { fs.mkdirSync(PENDING_DIR, { recursive: true }) } catch {}
+if (!fs.existsSync(DOWNLOADS_DIR)) {
+  try { fs.mkdirSync(DOWNLOADS_DIR, { recursive: true }) } catch {}
 }
 
 const ALLOWED_ORIGINS = [
@@ -98,12 +99,19 @@ function loadSettings(orderId) {
 
 async function downloadFile(url, destPath) {
   const axios = require('axios')
+  const currentConfig = getConfig()
+  const agentKey = (currentConfig.agentSecretKey || process.env.AGENT_SECRET_KEY || '').trim()
+  const reqHeaders = { 'User-Agent': 'Mozilla/5.0' }
+  if (agentKey) {
+    reqHeaders['x-agent-key'] = agentKey
+    reqHeaders['x-agent-secret'] = agentKey
+  }
   const response = await axios.get(url, {
     responseType: 'stream',
     timeout: 120000,
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
-    headers: { 'User-Agent': 'Mozilla/5.0' },
+    headers: reqHeaders,
     maxRedirects: 5,
   })
 
@@ -347,7 +355,47 @@ app.get('/status', async (req, res) => {
 })
 
 // GET /admin/printers - Enumerate printers
-app.get('/admin/printers', async (req, res) => {
+/**
+ * Middleware enforcing local loopback access and station PIN or Agent Key authorization.
+ */
+function requireStationAuth(req, res, next) {
+  // 1. Loopback validation: local administrative endpoints are strictly local
+  const remoteIp = req.socket?.remoteAddress || req.connection?.remoteAddress || ''
+  const isLoopback = remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1'
+  if (!isLoopback) {
+    logger.warn(`[SECURITY_REJECT] Non-loopback request to administrative endpoint: ${remoteIp}`)
+    return res.status(403).json({ success: false, error: 'Forbidden: Administrative endpoints only accessible via local loopback.' })
+  }
+
+  // 2. Browser requests from verified booth origin
+  const origin = req.headers.origin
+  if (origin && isAllowedOrigin(origin)) {
+    return next()
+  }
+
+  // 3. Local direct requests with Station PIN or Agent Key
+  const configuredPin = process.env.BOOTH_STATION_PIN || process.env.BOOTH_PIN
+  const reqPin = req.headers?.['x-station-pin'] || req.headers?.['x-booth-pin'] || req.body?.pin || req.query?.pin
+  const reqKey = req.headers?.['x-agent-key'] || req.headers?.['x-agent-secret'] || req.headers?.['authorization']
+  const currentConfig = getConfig()
+  const expectedKey = (currentConfig.agentSecretKey || process.env.AGENT_SECRET_KEY || '').trim()
+
+  if (configuredPin && reqPin && String(reqPin).trim() === String(configuredPin).trim()) {
+    return next()
+  }
+  if (expectedKey && reqKey && (String(reqKey).trim() === expectedKey || String(reqKey).trim() === `Bearer ${expectedKey}`)) {
+    return next()
+  }
+
+  // 4. Test environment relaxation (strictly for automated test suite when PIN is unconfigured)
+  if (process.env.NODE_ENV === 'test' && !configuredPin) {
+    return next()
+  }
+
+  return res.status(401).json({ success: false, error: 'Unauthorized: Valid station PIN or agent key required.' })
+}
+
+app.get('/admin/printers', requireStationAuth, async (req, res) => {
   try {
     const printers = await getAllWindowsPrinters()
     const currentConfig = getConfig()
@@ -364,7 +412,7 @@ app.get('/admin/printers', async (req, res) => {
 })
 
 // POST /admin/config - Update station config (Station ID, selected printer)
-app.post('/admin/config', async (req, res) => {
+app.post('/admin/config', requireStationAuth, async (req, res) => {
   try {
     const { stationId, selectedPrinter, cloudApiUrl } = req.body
     const updates = {}
@@ -393,7 +441,7 @@ app.post('/admin/config', async (req, res) => {
 })
 
 // POST /admin/test-print - Test physical printing with a minimal verification document
-app.post('/admin/test-print', async (req, res) => {
+app.post('/admin/test-print', requireStationAuth, async (req, res) => {
   try {
     const active = await getActivePrinter(true)
     if (!active.available) {
@@ -824,7 +872,7 @@ app.get('/', async (req, res) => {
 })
 
 // POST /update-order-status
-app.post('/update-order-status', async (req, res) => {
+app.post('/update-order-status', requireStationAuth, async (req, res) => {
   const { orderId, printStatus, status } = req.body
   const newStatus = printStatus || status || 'Ready'
   if (!orderId) return res.json({ success: false, error: 'Missing orderId' })
@@ -836,7 +884,7 @@ app.post('/update-order-status', async (req, res) => {
   }
 })
 
-app.get('/admin/orders', async (req, res) => {
+app.get('/admin/orders', requireStationAuth, async (req, res) => {
   try {
     const rows = await getAllOrders()
     res.json({ success: true, orders: rows.map(o => ({
@@ -848,7 +896,7 @@ app.get('/admin/orders', async (req, res) => {
   } catch (err) { res.json({ success: false, error: err.message }) }
 })
 
-app.get('/admin/stats', async (req, res) => {
+app.get('/admin/stats', requireStationAuth, async (req, res) => {
   try {
     const rows = await getAllOrders()
     res.json({
@@ -1206,11 +1254,59 @@ app.post('/release-print', async (req, res) => {
   }
 })
 
+/**
+ * Scans downloads/ and pending/ directories and purges temporary files older than maxAgeMs.
+ * Bounded by active print protection to prevent unlinking documents mid-print.
+ */
+function cleanupLocalTempFiles(maxAgeMs = 30 * 60 * 1000) {
+  const now = Date.now()
+  let deletedCount = 0
+  const targets = [
+    { dir: DOWNLOADS_DIR, patterns: ['_payment.png', '_settings.json', '.pdf', '.docx', '.doc'] },
+    { dir: PENDING_DIR, patterns: ['_pending.b64', '.pdf', '.docx', '.doc'] },
+  ]
+
+  for (const { dir, patterns } of targets) {
+    if (!fs.existsSync(dir)) continue
+    try {
+      const files = fs.readdirSync(dir)
+      for (const file of files) {
+        const matchesPattern = patterns.some(pat => file.toLowerCase().endsWith(pat))
+        if (!matchesPattern) continue
+
+        const filePath = path.join(dir, file)
+        try {
+          const stats = fs.statSync(filePath)
+          const ageMs = now - stats.mtimeMs
+          const baseName = file.replace(/(_payment\.png|_settings\.json|_pending\.b64|\.[^.]+)$/, '')
+          const isActive = global._activePrints && global._activePrints[baseName] && (now - global._activePrints[baseName] < 300000)
+
+          if (ageMs > maxAgeMs && !isActive) {
+            fs.unlinkSync(filePath)
+            deletedCount++
+          }
+        } catch {}
+      }
+    } catch (err) {
+      logger.warn(`[RETENTION_CLEANUP] Error scanning ${dir}: ${err.message}`)
+    }
+  }
+
+  if (deletedCount > 0) {
+    logger.info(`[RETENTION_CLEANUP] Safely purged ${deletedCount} local temp file(s) older than ${Math.round(maxAgeMs / 60000)} minutes.`)
+  }
+}
+
 function startLocalServer() {
   const currentConfig = getConfig()
   const port = currentConfig.port || PORT
-  app.listen(port, () => {
-    logger.success(`XBuddy Print Station local server running on http://127.0.0.1:${port}`)
+  // Run immediate cleanup sweep on startup
+  cleanupLocalTempFiles()
+  // Run periodic retention cleanup every 15 minutes
+  setInterval(() => cleanupLocalTempFiles(), 15 * 60 * 1000)
+
+  app.listen(port, '127.0.0.1', () => {
+    logger.success(`XBuddy Print Station local server running securely on http://127.0.0.1:${port} (loopback only)`)
     startHeartbeat(currentConfig.heartbeatIntervalMs || 30000)
   })
 }
@@ -1224,4 +1320,4 @@ function decodePendingPdf(orderId, outputPath) {
   return true
 }
 
-module.exports = { startLocalServer, decodePendingPdf, app }
+module.exports = { startLocalServer, decodePendingPdf, cleanupLocalTempFiles, requireStationAuth, app }
