@@ -649,6 +649,13 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
     logger.warn(`[RETENTION_ORPHAN_SWEEP_NOTICE] ${orphanSweepErr.message}`)
   }
 
+  // 5. Sweep acknowledged deletion events older than 7 days (pending events are NEVER purged)
+  try {
+    await cleanupAcknowledgedDeletionEvents(db)
+  } catch (eventSweepErr) {
+    logger.warn(`[DELETION_EVENT_SWEEP_NOTICE] ${eventSweepErr.message}`)
+  }
+
   if (expiredOrders.length > 0) {
     logger.log(`[RETENTION_CLEANUP_COMPLETE] Cleaned ${cleanedOrderIds.length}/${expiredOrders.length} orders. Errors: ${errors.length}`)
   }
@@ -660,5 +667,88 @@ export async function cleanupExpiredPdfs(db, { logger = console, orderIds = null
     deletedCount: cleanedOrderIds.length,
     cleanedOrderIds,
     errors,
+  }
+}
+
+/**
+ * Prunes globally completed deletion events older than maxAgeMs (default: 7 days).
+ * Pending and partially acknowledged events (where any required station has not acknowledged) are NEVER purged.
+ * Safely inspects existing indexes before creating a normal TTL index on completedAtDate.
+ * Relies on native MongoDB TTL semantics: documents where completedAtDate is null or missing are never expired.
+ */
+export async function cleanupAcknowledgedDeletionEvents(db, maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+  if (!db) return { success: false, cleanedCount: 0 }
+  const cutoffIso = new Date(Date.now() - maxAgeMs).toISOString()
+  const cutoffDate = new Date(Date.now() - maxAgeMs)
+
+  try {
+    const eventsCol = db.collection('deletion_events')
+    if (eventsCol && typeof eventsCol.deleteMany === 'function') {
+      // 1. Safely inspect existing indexes before creating or modifying one.
+      // Never drop or recreate production indexes without explicit authorization.
+      try {
+        let hasCompletedTtl = false
+        if (typeof eventsCol.indexes === 'function') {
+          const existingIndexes = await eventsCol.indexes()
+          hasCompletedTtl = Array.isArray(existingIndexes) && existingIndexes.some(idx =>
+            idx.key && idx.key.completedAtDate === 1 && typeof idx.expireAfterSeconds === 'number'
+          )
+        }
+        if (!hasCompletedTtl && typeof eventsCol.createIndex === 'function') {
+          // Standard TTL index on completedAtDate without partialFilterExpression
+          // Native MongoDB TTL thread strictly ignores documents where completedAtDate is null or missing
+          await eventsCol.createIndex(
+            { completedAtDate: 1 },
+            {
+              expireAfterSeconds: Math.floor(maxAgeMs / 1000),
+              background: true,
+            }
+          )
+        }
+      } catch (idxErr) {
+        // Safe fail-soft: Never crash cleanup if index inspect/create cannot proceed
+      }
+
+      // 2. Regular cleanup sweep: independently and strictly filters for globally completed events
+      // Requires:
+      // - status: 'completed' (or legacy 'acknowledged' with independently established global completion)
+      // - allStationsAcknowledged: true (strictly true; missing/null/false NEVER qualifies)
+      // - completedAtDate is genuine BSON Date older than 7-day cutoff (or string fallback)
+      // Pending, partially_acknowledged, and ambiguous legacy events are NEVER purged!
+      const result = await eventsCol.deleteMany({
+        $or: [
+          // Authoritative new-format completed events
+          {
+            status: 'completed',
+            allStationsAcknowledged: true,
+            $or: [
+              { completedAtDate: { $type: 'date', $lt: cutoffDate } },
+              { completedAt: { $type: 'string', $lt: cutoffIso } },
+            ],
+          },
+          // Legacy acknowledged events ONLY with independently established global completion
+          {
+            status: 'acknowledged',
+            allStationsAcknowledged: true,
+            $or: [
+              { completedAtDate: { $type: 'date', $lt: cutoffDate } },
+              { completedAt: { $type: 'string', $lt: cutoffIso } },
+              { acknowledgedAtDate: { $type: 'date', $lt: cutoffDate } },
+              { acknowledgedAt: { $type: 'string', $lt: cutoffIso } },
+            ],
+          },
+        ],
+      })
+
+      const cleanedCount = result?.deletedCount || 0
+      if (cleanedCount > 0) {
+        console.log(`[DELETION_EVENT_RETENTION] Purged ${cleanedCount} completed deletion events older than 7 days`)
+      }
+      return { success: true, cleanedCount, cutoffIso }
+    }
+    return { success: true, cleanedCount: 0 }
+  } catch (err) {
+    console.warn(`[DELETION_EVENT_RETENTION_WARN] ${err.message}`)
+    return { success: false, cleanedCount: 0, error: err.message }
   }
 }

@@ -2,9 +2,9 @@ import path from 'path'
 import crypto from 'crypto'
 import { connectToDatabase } from '../_lib/mongodb.js'
 import { calculatePrintedExpiryTimestamp, getEffectiveExpiryTimestamp } from '../_lib/retention.js'
-import { validateAgentAuth } from '../_lib/boothAuth.js'
+import { validateAgentAuth, verifyStationIdentity } from '../_lib/boothAuth.js'
 
-export { validateAgentAuth }
+export { validateAgentAuth, verifyStationIdentity }
 
 const PENDING_PRINT_STATUSES = ['waiting_for_shopkeeper', 'Waiting', 'queued', 'pending', 'Ready', 'ready', 'Failed', 'failed']
 
@@ -203,10 +203,16 @@ export default async function handler(req, res) {
         { upsert: true }
       )
 
+      let pendingDeletions = 0
+      try {
+        pendingDeletions = await db.collection('deletion_events').countDocuments({ status: 'pending' })
+      } catch {}
+
       return res.status(200).json({
         success: true,
         stationId: cleanStationId,
         status: updateDoc.status,
+        pendingDeletionEventsCount: pendingDeletions,
         serverTime: nowIso,
       })
     }
@@ -221,7 +227,11 @@ export default async function handler(req, res) {
       }
 
       const pendingOrders = await ordersCollection
-        .find({ printStatus: { $in: PENDING_PRINT_STATUSES } }, { projection: { pdfBase64: 0 } })
+        .find({
+          printStatus: { $in: PENDING_PRINT_STATUSES },
+          documentDeleted: { $ne: true },
+          documentDeletionPending: { $ne: true },
+        }, { projection: { pdfBase64: 0 } })
         .sort({ createdAt: 1 })
         .toArray()
 
@@ -259,17 +269,20 @@ export default async function handler(req, res) {
         })
       }
 
-      // 1.5. Reject claiming expired or deleted documents
+      // 1.5. Reject claiming expired, deleted, or deletion-pending documents
       const effectiveExpiry = getEffectiveExpiryTimestamp(existing)
-      if (existing.documentDeleted || existing.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
+      if (existing.documentDeleted || existing.documentDeletionPending || existing.pdfDeletedAt || (effectiveExpiry && new Date(effectiveExpiry).getTime() <= Date.now())) {
         console.warn(`[AGENT_CLAIM_EXPIRED] Order ${cleanId} claim rejected: retention window expired or document deleted`)
         return res.status(410).json({
           success: false,
           error: existing.documentDeleted
             ? `Order ${cleanId} document was deleted by student. Print job cannot be claimed.`
-            : `Order ${cleanId} PDF retention window expired; document permanently deleted.`,
-          expired: !existing.documentDeleted,
+            : (existing.documentDeletionPending
+              ? `Order ${cleanId} document deletion is currently in progress. Print job cannot be claimed.`
+              : `Order ${cleanId} PDF retention window expired; document permanently deleted.`),
+          expired: !existing.documentDeleted && !existing.documentDeletionPending,
           documentDeleted: Boolean(existing.documentDeleted),
+          documentDeletionPending: Boolean(existing.documentDeletionPending),
           orderId: cleanId,
         })
       }
@@ -343,6 +356,7 @@ export default async function handler(req, res) {
         printStatus: { $in: PENDING_PRINT_STATUSES },
         pdfDeletedAt: { $exists: false },
         documentDeleted: { $ne: true },
+        documentDeletionPending: { $ne: true },
         ...(isReprintOrder
           ? {
               reprintAttempts: {
@@ -501,9 +515,167 @@ export default async function handler(req, res) {
       })
     }
 
+    // ── ROUTE 4.5: GET /api/agent/orders/deletion-events (PENDING DELETION EVENTS) ──
+    if (
+      (parts.length === 1 && (parts[0].toLowerCase() === 'deletion-events' || parts[0].toLowerCase() === 'deletionevents')) ||
+      req.query?.action === 'deletionEvents' || req.query?.action === 'getDeletionEvents'
+    ) {
+      if (method !== 'GET') {
+        return res.status(405).json({ success: false, error: 'Method not allowed (expected GET)' })
+      }
+
+      // Station Identity Verification: binds station identity to authenticated credential
+      const claimedStation = String(req.query?.stationId || req.headers?.['x-station-id'] || '').trim().toUpperCase()
+      const stationAuth = await verifyStationIdentity(req, claimedStation || null, db)
+      if (!stationAuth.authorized) {
+        return res.status(stationAuth.status || 403).json({
+          success: false,
+          error: stationAuth.error || 'Station identity verification failed',
+        })
+      }
+      const requestingStation = stationAuth.stationId
+
+      const eventsCol = db.collection('deletion_events')
+
+      // Station-scoped filtering: return events not yet acknowledged by this station
+      // Matches both 'pending' and 'partially_acknowledged' events where acknowledgedStations does not include requestingStation
+      const queryFilter = requestingStation
+        ? { acknowledgedStations: { $nin: [requestingStation] } }
+        : { status: { $in: ['pending', 'partially_acknowledged'] } }
+
+      const pendingEvents = await eventsCol
+        .find(queryFilter)
+        .sort({ createdAt: 1 })
+        .limit(50)
+        .toArray()
+
+      return res.status(200).json({
+        success: true,
+        count: pendingEvents.length,
+        stationId: requestingStation || null,
+        events: pendingEvents.map(e => ({
+          eventId: e.eventId,
+          orderId: e.orderId,
+          deletedAt: e.deletedAt,
+          status: e.status,
+        })),
+        timestamp: nowIso,
+      })
+    }
+
+    // ── ROUTE 4.6: POST /api/agent/orders/deletion-events/ack (ACK DELETION EVENT) ──
+    if (
+      (parts.length === 2 && (parts[0].toLowerCase() === 'deletion-events' || parts[0].toLowerCase() === 'deletionevents') && parts[1].toLowerCase() === 'ack') ||
+      req.query?.action === 'ackDeletionEvent' || req.body?.action === 'ackDeletionEvent'
+    ) {
+      if (method !== 'POST') {
+        return res.status(405).json({ success: false, error: 'Method not allowed (expected POST)' })
+      }
+
+      const body = req.body || {}
+      const cleanEventId = String(body.eventId || req.query?.eventId || '').trim()
+      const cleanOrderId = String(body.orderId || req.query?.orderId || '').trim().toUpperCase()
+
+      // Station Identity Verification: binds station identity to authenticated credential
+      const claimedStation = String(body.stationId || req.headers?.['x-station-id'] || req.query?.stationId || '').trim().toUpperCase()
+      const stationAuth = await verifyStationIdentity(req, claimedStation || null, db)
+      if (!stationAuth.authorized) {
+        return res.status(stationAuth.status || 403).json({
+          success: false,
+          error: stationAuth.error || 'Station identity verification failed',
+        })
+      }
+      const cleanStationId = stationAuth.stationId
+
+      if (!cleanEventId && !cleanOrderId) {
+        return res.status(400).json({ success: false, error: 'eventId or orderId is required' })
+      }
+
+      const eventsCol = db.collection('deletion_events')
+      const ackFilter = cleanEventId ? { eventId: cleanEventId } : { orderId: cleanOrderId }
+
+      const matchedEvents = await eventsCol.find(ackFilter).toArray()
+      if (!matchedEvents || matchedEvents.length === 0) {
+        return res.status(404).json({ success: false, error: 'Deletion event not found' })
+      }
+
+      let totalModified = 0
+      let isGloballyComplete = false
+
+      for (const ev of matchedEvents) {
+        const currentAcks = Array.isArray(ev.acknowledgedStations) ? ev.acknowledgedStations : []
+        const updatedAcks = Array.from(new Set([...currentAcks, cleanStationId]))
+
+        // Required stations: if defined on the event, use them; otherwise fallback to [cleanStationId]
+        const reqStations = Array.isArray(ev.requiredStations) && ev.requiredStations.length > 0
+          ? ev.requiredStations
+          : [cleanStationId]
+
+        const allAcked = reqStations.every(st => updatedAcks.includes(st))
+        if (allAcked) isGloballyComplete = true
+
+        const updateFields = {
+          acknowledgedStations: updatedAcks,
+          status: allAcked ? 'completed' : 'partially_acknowledged',
+          allStationsAcknowledged: allAcked,
+          lastAcknowledgedStation: cleanStationId,
+          lastAcknowledgedAt: nowIso,
+          updatedAt: nowIso,
+        }
+
+        // Global Completion & TTL Clock:
+        // completedAtDate is populated ONLY when all required stations have acknowledged!
+        if (allAcked) {
+          updateFields.completedAt = nowIso
+          updateFields.completedAtDate = new Date()
+          updateFields.acknowledgedAt = nowIso
+          updateFields.acknowledgedAtDate = new Date()
+        } else {
+          updateFields.completedAt = null
+          updateFields.completedAtDate = null
+          updateFields.acknowledgedAt = nowIso
+          updateFields.acknowledgedAtDate = null
+        }
+
+        const upd = await eventsCol.updateOne(
+          { _id: ev._id },
+          { $set: updateFields }
+        )
+        totalModified += (upd.modifiedCount || 0)
+      }
+
+      const finalOrderId = cleanOrderId || matchedEvents[0]?.orderId
+      if (finalOrderId) {
+        await ordersCollection.updateOne(
+          { orderId: finalOrderId },
+          {
+            $set: {
+              stationCleanupPending: !isGloballyComplete,
+              stationCleanedAt: nowIso,
+              lastCleanedByStation: cleanStationId,
+              updatedAt: nowIso,
+            },
+            $addToSet: { cleanedByStations: cleanStationId },
+          }
+        )
+      }
+
+      return res.status(200).json({
+        success: true,
+        acknowledged: true,
+        eventId: cleanEventId || matchedEvents[0]?.eventId,
+        orderId: finalOrderId,
+        stationId: cleanStationId,
+        status: isGloballyComplete ? 'completed' : 'partially_acknowledged',
+        allStationsAcknowledged: isGloballyComplete,
+        modifiedCount: totalModified,
+        timestamp: nowIso,
+      })
+    }
+
     // ── ROUTE 4: GET /api/agent/orders/:orderId (GET SINGLE ORDER) ───────────
     if (
-      (parts.length === 1 && parts[0].toLowerCase() !== 'pending') ||
+      (parts.length === 1 && parts[0].toLowerCase() !== 'pending' && parts[0].toLowerCase() !== 'deletion-events' && parts[0].toLowerCase() !== 'deletionevents') ||
       (req.query?.action === 'getOrder' && (req.query?.orderId || req.body?.orderId))
     ) {
       if (method !== 'GET') {

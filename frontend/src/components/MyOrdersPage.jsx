@@ -345,6 +345,8 @@ export default function MyOrdersPage({ onStartPrinting }) {
             documentDeletedAt: nowIso,
             documentDeletionReason: res.documentDeletionReason || 'student_requested',
             documentStorageStatus: 'deleted',
+            stationCleanupPending: res.stationCleanupPending !== undefined ? Boolean(res.stationCleanupPending) : true,
+            stationCleanedAt: res.stationCleanedAt || null,
             pdfDeletedAt: nowIso,
             printStatus: newPrintStatus,
           }
@@ -358,10 +360,15 @@ export default function MyOrdersPage({ onStartPrinting }) {
         loadOrders()
         setDeleteTargetOrder(null)
 
+        const isStationPending = res.stationCleanupPending !== undefined ? Boolean(res.stationCleanupPending) : true
         setDeleteSuccessBanner({
           orderId,
-          title: t('orders.deleteSuccessTitle', 'Document Successfully Deleted'),
-          message: t('orders.deleteSuccessDesc', 'Your document has been permanently deleted from XBuddy storage. Associated stored copies have been removed, while your order details and payment history remain available.'),
+          title: isStationPending
+            ? t('orders.deleteStationPendingTitle', 'Document Deleted from Cloud')
+            : t('orders.deleteSuccessTitle', 'Document Successfully Deleted'),
+          message: isStationPending
+            ? t('orders.deleteStationPendingDesc', 'Document deleted from XBuddy cloud storage. Print Station cleanup pending.')
+            : t('orders.deleteCompleteDesc', 'Document Successfully Deleted. Stored copies have been removed.'),
         })
       } else {
         throw new Error(res?.error || t('orders.deleteFailed', 'Failed to delete document. Please try again.'))
@@ -677,15 +684,26 @@ export default function MyOrdersPage({ onStartPrinting }) {
 
                   {/* Document Permanently Deleted by Student Status */}
                   {isDeletedByStudent && (
-                    <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-stone-700 bg-stone-50 border border-stone-200 px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-                      <span className="font-semibold">{t('orders.deletedByUser', 'Document Deleted by You')}</span>
-                      {deletionTime && (
-                        <span className="text-[10px] text-stone-500 font-normal">
-                          — {t('orders.deletedByUserCaption', 'Your document was permanently deleted from XBuddy storage at {time}.', { time: formatDeletionTime(deletionTime) })}
-                        </span>
-                      )}
-                    </div>
+                    (() => {
+                      const isPendingStation = Boolean(liveData.stationCleanupPending ?? order.stationCleanupPending)
+                      return (
+                        <div className={`inline-flex items-center gap-1.5 text-[11px] sm:text-xs px-2.5 py-1 rounded-xl mt-1 max-w-full flex-wrap ${isPendingStation ? 'text-amber-800 bg-amber-50/80 border border-amber-200' : 'text-stone-700 bg-stone-50 border border-stone-200'}`}>
+                          <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isPendingStation ? 'text-amber-600' : 'text-stone-500'}`} />
+                          {isPendingStation ? (
+                            <span className="font-semibold">{t('orders.deleteStationPendingDesc', 'Document deleted from XBuddy cloud storage. Print Station cleanup pending.')}</span>
+                          ) : (
+                            <>
+                              <span className="font-semibold">{t('orders.deleteCompleteDesc', 'Document Successfully Deleted. Stored copies have been removed.')}</span>
+                              {deletionTime && (
+                                <span className="text-[10px] text-stone-500 font-normal">
+                                  — {t('orders.deletedByUserCaption', 'Your document was permanently deleted from XBuddy storage at {time}.', { time: formatDeletionTime(deletionTime) })}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })()
                   )}
 
                   {/* 30-Minute Retention Countdown & Status Badges */}
@@ -1011,13 +1029,18 @@ export default function MyOrdersPage({ onStartPrinting }) {
 
                   if (isDeletedByStudent) {
                     const delTime = selData.documentDeletedAt || selectedOrder.documentDeletedAt
+                    const isStationPending = Boolean(selData.stationCleanupPending ?? selectedOrder.stationCleanupPending)
                     return (
-                      <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-700 flex items-start gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-stone-500 shrink-0 mt-0.5" />
+                      <div className={`p-3 rounded-xl text-xs flex items-start gap-2 ${isStationPending ? 'bg-amber-50/70 border border-amber-200 text-amber-900' : 'bg-stone-50 border border-stone-200 text-stone-700'}`}>
+                        <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${isStationPending ? 'text-amber-600' : 'text-stone-500'}`} />
                         <div>
-                          <p className="font-semibold">{t('orders.deletedByUser', 'Document Deleted by You')}</p>
+                          {isStationPending ? (
+                            <p className="font-semibold">{t('orders.deleteStationPendingDesc', 'Document deleted from XBuddy cloud storage. Print Station cleanup pending.')}</p>
+                          ) : (
+                            <p className="font-semibold">{t('orders.deleteCompleteDesc', 'Document Successfully Deleted. Stored copies have been removed.')}</p>
+                          )}
                           {delTime && (
-                            <p className="text-[11px] text-stone-500 mt-0.5">
+                            <p className={`text-[11px] mt-0.5 ${isStationPending ? 'text-amber-700' : 'text-stone-500'}`}>
                               {t('orders.deletedByUserCaption', 'Your document was permanently deleted from XBuddy storage at {time}.', { time: formatDeletionTime(delTime) })}
                             </p>
                           )}

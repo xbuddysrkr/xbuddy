@@ -1013,6 +1013,21 @@ app.post('/release-print', async (req, res) => {
     })
   }
 
+  // 2.3 Strict Document Deletion Guard: Reject releasing deleted or deletion-pending documents
+  if (order.documentDeleted || order.documentDeletionPending) {
+    purgeLocalOrderFiles(id)
+    logger.warn(`[AGENT] Release rejected for ${id}: document was deleted or deletion pending`)
+    return res.status(410).json({
+      success: false,
+      error: order.documentDeleted
+        ? 'Cannot release order: document was permanently deleted by student.'
+        : 'Cannot release order: document deletion is currently in progress.',
+      documentDeleted: Boolean(order.documentDeleted),
+      documentDeletionPending: Boolean(order.documentDeletionPending),
+      orderId: id,
+    })
+  }
+
   // 2.5 Verify document presence before claiming: prevent claiming an order that has no document
   const hasKnownPdf = Boolean(
     order.hasPdf === true ||
@@ -1297,6 +1312,49 @@ function cleanupLocalTempFiles(maxAgeMs = 30 * 60 * 1000) {
   }
 }
 
+/**
+ * Purges all cached, pending, and temporary print artifacts for a specific orderId
+ * across DOWNLOADS_DIR and PENDING_DIR on the local Print Station.
+ */
+function purgeLocalOrderFiles(orderId) {
+  if (!orderId) return 0
+  const cleanId = String(orderId).trim().toUpperCase()
+  const patterns = [
+    `${cleanId}.pdf`, `${cleanId}.docx`, `${cleanId}.doc`,
+    `${cleanId}.jpg`, `${cleanId}.jpeg`, `${cleanId}.png`,
+    `${cleanId}_pending.b64`, `${cleanId}_settings.json`, `${cleanId}_payment.png`,
+    `${cleanId}.meta.json`, `${cleanId}_meta.json`,
+    `preview_${cleanId}.pdf`
+  ]
+  let count = 0
+  for (const dir of [DOWNLOADS_DIR, PENDING_DIR]) {
+    if (!fs.existsSync(dir)) continue
+    for (const pat of patterns) {
+      const target = path.join(dir, pat)
+      if (fs.existsSync(target)) {
+        try {
+          fs.unlinkSync(target)
+          count++
+        } catch {}
+      }
+    }
+  }
+  if (count > 0) {
+    logger.info(`[LOCAL_CACHE_PURGE] Removed ${count} local print station file(s) for order ${cleanId}`)
+  }
+  return count
+}
+
+// POST /purge-order-cache - Station admin / backend hook to purge cached files for an order
+app.post('/purge-order-cache', requireStationAuth, (req, res) => {
+  const orderId = req.body?.orderId || req.query?.orderId
+  if (!orderId) {
+    return res.status(400).json({ success: false, error: 'orderId is required' })
+  }
+  const purged = purgeLocalOrderFiles(orderId)
+  return res.status(200).json({ success: true, orderId, purgedCount: purged })
+})
+
 function startLocalServer() {
   const currentConfig = getConfig()
   const port = currentConfig.port || PORT
@@ -1320,4 +1378,4 @@ function decodePendingPdf(orderId, outputPath) {
   return true
 }
 
-module.exports = { startLocalServer, decodePendingPdf, cleanupLocalTempFiles, requireStationAuth, app }
+module.exports = { startLocalServer, decodePendingPdf, cleanupLocalTempFiles, purgeLocalOrderFiles, requireStationAuth, app }

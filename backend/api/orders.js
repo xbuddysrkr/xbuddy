@@ -32,6 +32,7 @@ import {
   generateOrderDeletionSecret,
   hashOrderDeletionSecret,
   verifyOrderDeletionAuth,
+  getStationKeyMappings,
 } from './_lib/boothAuth.js'
 
 const PDF_CACHE_DIR = process.env.PDF_CACHE_DIR || path.resolve(process.cwd(), '.pdf_cache')
@@ -1244,6 +1245,8 @@ export default async function handler(req, res) {
             documentDeletedAt: cleanOrder.documentDeletedAt,
             documentDeletionReason: cleanOrder.documentDeletionReason,
             documentStorageStatus: cleanOrder.documentStorageStatus,
+            stationCleanupPending: Boolean(cleanOrder.stationCleanupPending),
+            stationCleanedAt: cleanOrder.stationCleanedAt || null,
             reprintEligible: cleanOrder.reprintEligible,
             reprintReason: cleanOrder.reprintReason,
             errorReason: cleanOrder.errorReason || null,
@@ -1666,6 +1669,7 @@ export default async function handler(req, res) {
 
         // Case E — Idempotent handling for already-deleted documents
         if (existing.documentDeleted === true || (existing.pdfStorage === 'none' && !existing.hasPdf && existing.pdfDeletedAt)) {
+          const isStationPending = Boolean(existing.stationCleanupPending)
           return res.status(200).json({
             success: true,
             orderId,
@@ -1674,11 +1678,199 @@ export default async function handler(req, res) {
             documentDeleted: true,
             documentDeletedAt: existing.documentDeletedAt || existing.pdfDeletedAt,
             documentStorageStatus: 'deleted',
-            message: 'Document has already been deleted from XBuddy storage.',
+            stationCleanupPending: isStationPending,
+            stationCleanedAt: existing.stationCleanedAt || null,
+            message: isStationPending
+              ? 'Document deleted from XBuddy cloud storage. Print Station cleanup pending.'
+              : 'Document Successfully Deleted. Stored copies have been removed.',
           })
         }
 
-        // 1. Delete physical files and chunks from GridFS first
+        // 1. ATOMIC DELETION RESERVATION
+        // Mark documentDeletionPending before touching storage objects.
+        // Prevents print-job claiming, booth release, and concurrent deletion requests.
+        // Recovery mechanism: allow re-reserving if a previous reservation timed out (> 60s).
+        const nowIso = new Date().toISOString()
+        const stalePendingCutoff = new Date(Date.now() - 60000).toISOString()
+        const isAlreadyPrinted = normPrintStatus === 'printed' || Boolean(existing.printedAt)
+        const targetPrintStatus = isAlreadyPrinted ? existing.printStatus : 'document_deleted'
+
+        const reserveFilter = {
+          orderId,
+          printStatus: { $nin: ['Printing', 'printing'] },
+          documentDeleted: { $ne: true },
+          $or: [
+            { documentDeletionPending: { $ne: true } },
+            { documentDeletionPendingAt: { $lt: stalePendingCutoff } },
+          ],
+        }
+
+        const reservedResult = await orders.findOneAndUpdate(
+          reserveFilter,
+          {
+            $set: {
+              documentDeletionPending: true,
+              documentDeletionPendingAt: nowIso,
+              updatedAt: nowIso,
+            },
+          },
+          { returnDocument: 'after' }
+        )
+        const reservedOrder = reservedResult?.value || reservedResult
+
+        if (!reservedOrder) {
+          const recheck = await orders.findOne({ orderId }, { projection: { printStatus: 1, documentDeleted: 1, documentDeletionPending: 1 } })
+          const recheckStatus = String(recheck?.printStatus || '').toLowerCase().trim()
+          if (recheckStatus === 'printing') {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: 'Document cannot be deleted while order is actively printing. Please wait until printing completes.',
+            })
+          }
+          if (recheck?.documentDeleted) {
+            return res.status(200).json({
+              success: true,
+              orderId,
+              idempotent: true,
+              alreadyDeleted: true,
+              documentDeleted: true,
+              documentDeletedAt: recheck.documentDeletedAt,
+              documentStorageStatus: 'deleted',
+              message: 'Document has already been deleted from XBuddy storage.',
+            })
+          }
+          if (recheck?.documentDeletionPending) {
+            return res.status(409).json({
+              success: false,
+              conflict: true,
+              error: 'Document deletion is already pending or being processed for this order.',
+            })
+          }
+          return res.status(409).json({
+            success: false,
+            conflict: true,
+            error: 'Order is currently locked or in a conflicting state.',
+          })
+        }
+
+        console.log(`[DELETION_RESERVATION] Reserved order ${orderId} for document deletion`)
+
+        // 1.5 Snapshot required stations from registry (FAIL CLOSED)
+        // Must discover stations BEFORE purging storage. If station discovery fails or no eligible
+        // production stations exist, fail closed, roll back reservation, and never touch physical files.
+        let requiredStations = []
+        try {
+          const stationsCol = db.collection('stations')
+          const registered = await stationsCol.find({}, {
+            projection: { stationId: 1, status: 1, archived: 1, decommissioned: 1 }
+          }).toArray()
+
+          const SUPPORTED_STATION_STATUSES = new Set([
+            'online',
+            'printer_unavailable',
+            'offline',
+            'idle',
+            'ready',
+            'busy',
+          ])
+
+          const seenStationIds = new Set()
+          const eligibleStations = []
+
+          if (Array.isArray(registered)) {
+            for (const record of registered) {
+              if (!record || typeof record !== 'object') {
+                throw new Error('Malformed station record: record is not an object')
+              }
+
+              // Exclude archived and decommissioned stations
+              const isArchived = Boolean(record.archived) || String(record.status || '').trim().toLowerCase() === 'archived'
+              const isDecommissioned = Boolean(record.decommissioned) || String(record.status || '').trim().toLowerCase() === 'decommissioned'
+              if (isArchived || isDecommissioned) {
+                continue
+              }
+
+              // Reject missing, empty, or invalid station IDs
+              if (!record.stationId || typeof record.stationId !== 'string') {
+                throw new Error(`Malformed station record: missing or non-string stationId (${JSON.stringify(record.stationId)})`)
+              }
+
+              const rawId = record.stationId.trim()
+              if (rawId.length < 2 || rawId.length > 64 || !/^[A-Z0-9_-]+$/i.test(rawId)) {
+                throw new Error(`Malformed station record: invalid stationId format "${rawId}"`)
+              }
+
+              // Normalize ID and detect conflicting duplicates
+              const normalizedId = rawId.toUpperCase()
+              if (seenStationIds.has(normalizedId)) {
+                throw new Error(`Conflicting duplicate station ID detected in registry: "${normalizedId}"`)
+              }
+              seenStationIds.add(normalizedId)
+
+              // Explicitly accept supported production statuses; return 503 for unknown or malformed status
+              const rawStatus = typeof record.status === 'string' ? record.status.trim().toLowerCase() : ''
+              if (!rawStatus || !SUPPORTED_STATION_STATUSES.has(rawStatus)) {
+                throw new Error(`Unknown or malformed production station status "${record.status}" for station "${normalizedId}"`)
+              }
+
+              // Filter out test stations for real customer orders
+              if (orderId !== 'XB-TEST-01' && normalizedId.startsWith('TEST-')) {
+                continue
+              }
+
+              // Retain legitimate online, printer_unavailable, offline, idle, ready, and busy stations
+              eligibleStations.push(normalizedId)
+            }
+          }
+
+          requiredStations = eligibleStations
+
+          if (requiredStations.length === 0) {
+            // Validate SINGLE_STATION_MODE fallback against an explicitly configured, authenticated station identity
+            if (process.env.SINGLE_STATION_MODE === 'true') {
+              const fallbackCandidate = String(process.env.DEFAULT_STATION_ID || '').trim().toUpperCase()
+              if (!fallbackCandidate || fallbackCandidate.length < 2 || fallbackCandidate.length > 64 || !/^[A-Z0-9_-]+$/.test(fallbackCandidate)) {
+                throw new Error(`SINGLE_STATION_MODE enabled but DEFAULT_STATION_ID is missing or invalid: "${process.env.DEFAULT_STATION_ID}"`)
+              }
+
+              const stationKeys = getStationKeyMappings()
+              const hasExplicitAuth = (
+                stationKeys.has(fallbackCandidate) ||
+                Boolean(process.env[`AGENT_KEY_${fallbackCandidate.replace(/-/g, '_')}`]) ||
+                Boolean(process.env[`STATION_KEY_${fallbackCandidate.replace(/-/g, '_')}`]) ||
+                Boolean(process.env.DEFAULT_STATION_KEY && process.env.DEFAULT_STATION_KEY.trim())
+              )
+
+              if (!hasExplicitAuth) {
+                throw new Error(`SINGLE_STATION_MODE fallback station "${fallbackCandidate}" does not have an explicitly configured, authenticated identity`)
+              }
+
+              requiredStations = [fallbackCandidate]
+            } else {
+              throw new Error('No eligible print stations are registered to process cache purge')
+            }
+          }
+        } catch (stationQueryErr) {
+          console.error(`[STATION_REGISTRY_ERROR] Station discovery failed for order ${orderId}:`, stationQueryErr.message)
+          // Roll back temporary deletion reservation so document and order remain fully intact
+          await orders.updateOne(
+            { orderId, documentDeleted: { $ne: true } },
+            {
+              $set: {
+                documentDeletionPending: false,
+                documentDeletionError: stationQueryErr.message,
+                updatedAt: new Date().toISOString(),
+              },
+            }
+          ).catch(() => {})
+          return res.status(503).json({
+            success: false,
+            error: `Service Unavailable: Station registry discovery failed (${stationQueryErr.message}). Deletion cannot safely proceed.`,
+          })
+        }
+
+        // 2. Delete physical files and chunks from GridFS (only reached if stations verified)
         let gridFsDeleted = false
         try {
           const gridRes = await deletePdfFromGridFS(db, orderId, {
@@ -1688,13 +1880,24 @@ export default async function handler(req, res) {
           console.log(`[GRIDFS_DELETE] Purged GridFS files for order ${orderId} (deletedCount=${gridRes?.deletedCount})`)
         } catch (gridErr) {
           console.error(`[STORAGE_DELETION_ERROR] GridFS deletion failed for ${orderId}:`, gridErr.message)
+          // Safe recovery rollback: release reservation so deletion can be retried
+          await orders.updateOne(
+            { orderId, documentDeleted: { $ne: true } },
+            {
+              $set: {
+                documentDeletionPending: false,
+                documentDeletionError: gridErr.message,
+                updatedAt: new Date().toISOString(),
+              },
+            }
+          ).catch(() => {})
           return res.status(500).json({
             success: false,
-            error: `Storage deletion failed: ${gridErr.message}. Document was not deleted.`,
+            error: `Storage deletion failed: ${gridErr.message}. Document was not deleted; reservation released for retry.`,
           })
         }
 
-        // 2. Purge local disk-cache files and temporary preview artifacts
+        // 3. Purge local disk-cache files and temporary preview artifacts
         deletePdfFromDiskCache(orderId)
         try {
           const previewPath = path.join(PDF_CACHE_DIR, 'previews', `preview_${orderId}.pdf`)
@@ -1703,18 +1906,41 @@ export default async function handler(req, res) {
           }
         } catch {}
 
-        // 3. Atomically update MongoDB Atlas order metadata (locking against $ne: 'Printing')
-        const nowIso = new Date().toISOString()
-        const isAlreadyPrinted = normPrintStatus === 'printed' || Boolean(existing.printedAt)
-        const targetPrintStatus = isAlreadyPrinted ? existing.printStatus : 'document_deleted'
-
-        const updateFilter = {
+        // 3.5 Record durable cloud-coordinated deletion event for Print Station cleanup
+        const eventId = `dev_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+        const deletionEvent = {
+          eventId,
           orderId,
-          printStatus: { $ne: 'Printing' }, // Atomic guard against race condition with concurrent print job claim
+          deletedAt: nowIso,
+          status: 'pending',
+          requiredStations,
+          acknowledgedStations: [],
+          allStationsAcknowledged: false,
+          stationId: null,
+          lastAcknowledgedStation: null,
+          lastAcknowledgedAt: null,
+          acknowledgedAt: null,
+          acknowledgedAtDate: null,
+          completedAt: null,
+          completedAtDate: null,
+          createdAt: nowIso,
+          createdAtDate: new Date(),
+        }
+        try {
+          await db.collection('deletion_events').insertOne(deletionEvent)
+        } catch (evErr) {
+          console.warn(`[DELETION_EVENT_WARN] Could not insert deletion event for ${orderId}:`, evErr.message)
         }
 
-        const updateDoc = {
+        // 4. Atomically finalize MongoDB Atlas order metadata (locking against reserved state)
+        const finalizeFilter = {
+          orderId,
+          documentDeletionPending: true,
+        }
+
+        const finalizeDoc = {
           $set: {
+            documentDeletionPending: false,
             hasPdf: false,
             hasDocument: false,
             hasGridFsPdf: false,
@@ -1725,6 +1951,9 @@ export default async function handler(req, res) {
             documentDeletedAt: nowIso,
             documentDeletionReason: 'student_requested',
             documentStorageStatus: 'deleted',
+            stationCleanupPending: true,
+            stationCleanedAt: null,
+            deletionEventId: eventId,
             pdfBase64: '',
             pdfUrl: null,
             fileUrl: null,
@@ -1746,23 +1975,14 @@ export default async function handler(req, res) {
           },
         }
 
-        const updateResult = await orders.findOneAndUpdate(updateFilter, updateDoc, { returnDocument: 'after' })
+        const updateResult = await orders.findOneAndUpdate(finalizeFilter, finalizeDoc, { returnDocument: 'after' })
         const updatedOrder = updateResult?.value || updateResult
 
         if (!updatedOrder) {
-          // Check if order changed to 'Printing' during this operation
-          const recheck = await orders.findOne({ orderId }, { projection: { printStatus: 1 } })
-          if (String(recheck?.printStatus || '').toLowerCase().trim() === 'printing') {
-            return res.status(409).json({
-              success: false,
-              conflict: true,
-              error: 'Document cannot be deleted while order is actively printing.',
-            })
-          }
-          return res.status(500).json({ success: false, error: 'Database update failed during document deletion' })
+          return res.status(500).json({ success: false, error: 'Database finalization failed during document deletion' })
         }
 
-        console.log(`[SECURE_DELETE_SUCCESS] Document for order ${orderId} permanently deleted by student (printStatus=${updatedOrder.printStatus || targetPrintStatus})`)
+        console.log(`[SECURE_DELETE_SUCCESS] Document for order ${orderId} permanently deleted by student (printStatus=${updatedOrder.printStatus || targetPrintStatus}, stationCleanupPending=true)`)
 
         return res.status(200).json({
           success: true,
@@ -1771,6 +1991,9 @@ export default async function handler(req, res) {
           documentDeletedAt: nowIso,
           documentDeletionReason: 'student_requested',
           documentStorageStatus: 'deleted',
+          stationCleanupPending: true,
+          stationCleanedAt: null,
+          deletionEventId: eventId,
           hasPdf: false,
           hasDocument: false,
           printStatus: updatedOrder.printStatus || targetPrintStatus,
@@ -1780,7 +2003,7 @@ export default async function handler(req, res) {
           digitalProcessingFee: existing.digitalProcessingFee || existing.serviceFee || 0,
           totalPages: existing.totalPages,
           copies: existing.copies,
-          message: 'Document permanently deleted from XBuddy storage. Order and payment history preserved.',
+          message: 'Document deleted from XBuddy cloud storage. Print Station cleanup pending.',
         })
       } catch (delErr) {
         console.error(`[SECURE_DELETE_FATAL] Order ${orderId}:`, delErr.message)
@@ -1915,19 +2138,27 @@ export default async function handler(req, res) {
             })
           }
 
-          // Expiry check: cannot release an expired document
-          if (existing.pdfDeletedAt || (existing.pdfExpiresAt && new Date(existing.pdfExpiresAt).getTime() <= Date.now())) {
+          // Expiry and Deletion check: cannot release an expired, deleted, or deletion-pending document
+          if (existing.documentDeleted || existing.documentDeletionPending || existing.pdfDeletedAt || (existing.pdfExpiresAt && new Date(existing.pdfExpiresAt).getTime() <= Date.now())) {
             return res.status(410).json({
               success: false,
-              error: `Order ${orderId} PDF retention window expired; document permanently deleted.`,
-              expired: true,
+              error: existing.documentDeleted
+                ? `Order ${orderId} document was deleted by student. Cannot release for printing.`
+                : (existing.documentDeletionPending
+                  ? `Order ${orderId} document deletion is in progress. Cannot release for printing.`
+                  : `Order ${orderId} PDF retention window expired; document permanently deleted.`),
+              expired: !existing.documentDeleted && !existing.documentDeletionPending,
+              documentDeleted: Boolean(existing.documentDeleted),
+              documentDeletionPending: Boolean(existing.documentDeletionPending),
             })
           }
 
           const raceSafeFilter = {
             orderId,
-            printStatus: { $nin: ['Printing', 'Printed'] },
+            printStatus: { $nin: ['Printing', 'Printed', 'document_deleted'] },
             pdfDeletedAt: { $exists: false },
+            documentDeleted: { $ne: true },
+            documentDeletionPending: { $ne: true },
             paymentStatus: requirePay
               ? { $in: ['paid', 'completed'] }
               : { $nin: ['failed', 'rejected', 'cancelled'] },

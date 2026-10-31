@@ -58,4 +58,6 @@ backend/downloads/
 release/
 backend/release/
 
-
+# Print Agent Runtime Spool & Pending Cache (strictly runtime spool, zero student data tracked)
+print-agent/pending/
+backend/print-agent/pending/

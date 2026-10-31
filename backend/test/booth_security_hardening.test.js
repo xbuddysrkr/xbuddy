@@ -276,6 +276,7 @@ async function runSecurityTests() {
 
     // 4.4 Automated hardware Print Agent endpoint (getOrderPdf) remains intact without preview password
     const { req: reqAgentPdf, res: resAgentPdf } = createMockReqRes({
+      headers: { 'x-agent-secret': 'hardware_station_agent_secret_key' },
       query: { action: 'getOrderPdf', orderId: 'XB-REAL-PDF' },
     })
     await ordersHandler(reqAgentPdf, resAgentPdf)

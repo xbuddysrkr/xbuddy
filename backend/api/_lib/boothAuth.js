@@ -414,3 +414,162 @@ export function verifyOrderDeletionAuth(orderId, token, order, req = null) {
   }
 }
 
+// ── Station Identity Verification & Impersonation Prevention ─────────────────
+/**
+ * Resolves configured station key mappings from environment.
+ * Supports JSON string in STATION_KEYS or comma-separated pairs (e.g. "SRKR-XEROX-01:key1,SRKR-XEROX-02:key2")
+ * as well as AGENT_KEY_<STATION_ID> and STATION_KEY_<STATION_ID>.
+ */
+export function getStationKeyMappings() {
+  const map = new Map()
+
+  // 1. Parse process.env.STATION_KEYS
+  const rawStationKeys = (process.env.STATION_KEYS || '').trim()
+  if (rawStationKeys) {
+    if (rawStationKeys.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(rawStationKeys)
+        for (const [st, k] of Object.entries(parsed)) {
+          if (st && k) map.set(String(st).trim().toUpperCase(), String(k).trim())
+        }
+      } catch {}
+    } else {
+      rawStationKeys.split(',').forEach(pair => {
+        const [st, k] = pair.split(':')
+        if (st && k) map.set(st.trim().toUpperCase(), k.trim())
+      })
+    }
+  }
+
+  // 2. Scan per-station env vars AGENT_KEY_<ID> and STATION_KEY_<ID>
+  for (const envKey of Object.keys(process.env)) {
+    let stationId = null
+    if (envKey.startsWith('AGENT_KEY_')) {
+      stationId = envKey.slice('AGENT_KEY_'.length).replace(/_/g, '-')
+    } else if (envKey.startsWith('STATION_KEY_')) {
+      stationId = envKey.slice('STATION_KEY_'.length).replace(/_/g, '-')
+    }
+    if (stationId && process.env[envKey]) {
+      const cleanStation = stationId.trim().toUpperCase()
+      if (!map.has(cleanStation)) {
+        map.set(cleanStation, String(process.env[envKey]).trim())
+      }
+    }
+  }
+
+  return map
+}
+
+/**
+ * Strictly verifies that the authenticated agent credential is bound to the claimed station ID.
+ * Prevents station impersonation (e.g. Station A presenting its key to query or ack on behalf of Station B).
+ *
+ * @param {object} req - HTTP request object
+ * @param {string|null} claimedStationId - Station ID claimed in query, headers, or body
+ * @param {object|null} db - Optional MongoDB database instance for station registry lookup
+ * @returns {Promise<{ authorized: boolean, status: number, stationId: string, error?: string }>}
+ */
+export async function verifyStationIdentity(req, claimedStationId = null, db = null) {
+  if (!req) {
+    return { authorized: false, status: 401, error: 'Unauthorized: Request missing' }
+  }
+
+  const headerKey = req.headers?.['x-agent-key'] ||
+    req.headers?.['x-agent-secret'] ||
+    req.headers?.['x-agent-secret-key'] ||
+    req.query?.agentKey ||
+    req.query?.agentSecret ||
+    req.body?.agentKey ||
+    req.body?.agentSecret
+
+  if (!headerKey || typeof headerKey !== 'string') {
+    return { authorized: false, status: 401, error: 'Unauthorized: Missing agent credentials' }
+  }
+
+  const provided = headerKey.trim()
+  if (!provided) {
+    return { authorized: false, status: 401, error: 'Unauthorized: Empty agent credentials' }
+  }
+
+  // 1. First ensure the key is globally authorized
+  if (!validateAgentAuth(req)) {
+    return { authorized: false, status: 401, error: 'Unauthorized: Invalid agent credentials' }
+  }
+
+  const cleanClaimed = claimedStationId ? String(claimedStationId).trim().toUpperCase() : null
+  const stationMap = getStationKeyMappings()
+
+  // 2. Check if the provided key is mapped to a specific station in environment mappings
+  let boundStationFromEnv = null
+  for (const [stId, mappedKey] of stationMap.entries()) {
+    if (safeCompare(provided, mappedKey)) {
+      boundStationFromEnv = stId
+      break
+    }
+  }
+
+  if (boundStationFromEnv) {
+    if (cleanClaimed && cleanClaimed !== boundStationFromEnv) {
+      console.warn(`[STATION_AUTH_REJECT] Station impersonation detected: Credential belongs to "${boundStationFromEnv}" but claimed "${cleanClaimed}"`)
+      return {
+        authorized: false,
+        status: 403,
+        error: `Forbidden: Station credential belongs to "${boundStationFromEnv}" and cannot be used for station "${cleanClaimed}".`,
+      }
+    }
+    return { authorized: true, status: 200, stationId: boundStationFromEnv }
+  }
+
+  // 3. Check MongoDB stations collection if db is provided
+  if (db && typeof db.collection === 'function') {
+    try {
+      const stationsCol = db.collection('stations')
+      const hashed = crypto.createHash('sha256').update(provided).digest('hex')
+
+      // Check if any station in DB is registered with this key hash
+      const boundStationDoc = await stationsCol.findOne({
+        $or: [
+          { agentKeyHash: hashed },
+          { apiKeyHash: hashed },
+          { keyHash: hashed },
+        ],
+      })
+
+      if (boundStationDoc && boundStationDoc.stationId) {
+        const boundStation = String(boundStationDoc.stationId).trim().toUpperCase()
+        if (cleanClaimed && cleanClaimed !== boundStation) {
+          console.warn(`[STATION_AUTH_REJECT] DB station impersonation detected: Credential registered for "${boundStation}" but claimed "${cleanClaimed}"`)
+          return {
+            authorized: false,
+            status: 403,
+            error: `Forbidden: Station credential belongs to "${boundStation}" and cannot be used for station "${cleanClaimed}".`,
+          }
+        }
+        return { authorized: true, status: 200, stationId: boundStation }
+      }
+
+      // If client claimed a specific station, check if that station has a registered key hash
+      if (cleanClaimed) {
+        const claimedDoc = await stationsCol.findOne({ stationId: cleanClaimed })
+        if (claimedDoc && (claimedDoc.agentKeyHash || claimedDoc.apiKeyHash || claimedDoc.keyHash)) {
+          const registeredHash = claimedDoc.agentKeyHash || claimedDoc.apiKeyHash || claimedDoc.keyHash
+          if (!safeCompare(hashed, registeredHash)) {
+            console.warn(`[STATION_AUTH_REJECT] Station key mismatch for "${cleanClaimed}"`)
+            return {
+              authorized: false,
+              status: 403,
+              error: `Forbidden: Provided credential does not match the registered credential for station "${cleanClaimed}".`,
+            }
+          }
+        }
+      }
+    } catch (dbErr) {
+      console.warn(`[STATION_AUTH_DB_WARN] Could not query stations collection: ${dbErr.message}`)
+    }
+  }
+
+  // 4. Fallback: If no station-specific key is configured, use claimed station or default
+  const resolvedStation = cleanClaimed || 'SRKR-XEROX-01'
+  return { authorized: true, status: 200, stationId: resolvedStation }
+}
+

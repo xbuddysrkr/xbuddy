@@ -7,6 +7,7 @@ try {
 const { loadConfig, getConfig }            = require('./services/config')
 const { getActivePrinter }                 = require('./services/printer')
 const { startLocalServer }                 = require('./services/localServer')
+const { startDeletionCoordinator }         = require('./services/deletionCoordinator')
 const { watchForTunnelUrl }                = require('./services/tunnel')
 const logger                               = require('./utils/logger')
 
@@ -21,6 +22,9 @@ async function start() {
 
   // Start local server and cloud heartbeat telemetry
   startLocalServer()
+
+  // Start cloud-coordinated deletion event coordinator
+  startDeletionCoordinator(cfg.deletionPollIntervalMs || 15000)
 
   // Optional legacy Cloudflare tunnel observer (strictly disabled by default)
   if (process.env.ENABLE_LEGACY_TUNNEL === 'true') {

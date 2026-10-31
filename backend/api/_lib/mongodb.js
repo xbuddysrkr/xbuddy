@@ -29,13 +29,15 @@ export async function connectToDatabase() {
   }
 
   try {
-    const client = new MongoClient(uri, {
+    const client = cachedClient || new MongoClient(uri, {
       maxPoolSize: 10,
       serverSelectionTimeoutMS: 5000,
       connectTimeoutMS: 10000,
     })
 
-    await client.connect()
+    if (!cachedClient) {
+      await client.connect()
+    }
     const db = client.db(dbName)
 
     cachedClient = client

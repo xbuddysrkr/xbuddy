@@ -1581,6 +1581,19 @@ export async function deleteOrderDocument(orderId, deletionToken = '') {
     throw errorObj
   }
 
+  // Opportunistically notify Windows Print Station cache if accessible on local loopback
+  if (typeof window !== 'undefined') {
+    const localEndpoints = ['http://127.0.0.1:3001', 'http://localhost:3001']
+    for (const base of localEndpoints) {
+      fetch(`${base}/purge-order-cache`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: cleanId }),
+        signal: AbortSignal.timeout(1500),
+      }).catch(() => {})
+    }
+  }
+
   return data
 }
 
