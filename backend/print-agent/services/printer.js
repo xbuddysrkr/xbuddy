@@ -6,7 +6,7 @@ const logger = require('../utils/logger')
 const { convertPdfToGrayscale, getMutoolPath } = require('./converter')
 const { getConfig, saveConfig } = require('./config')
 const { validateDocumentFidelity, getPdfGeometry } = require('./fidelityValidator')
-const { convertDocxToPdfViaWord, inspectFileMagic } = require('./wordConverter')
+const { convertDocxToPdfViaWord, convertImageToPdf, inspectFileMagic } = require('./wordConverter')
 
 function resolveMutoolBin() {
   const p = getMutoolPath()
@@ -208,6 +208,7 @@ async function printPdf(filePath, options = {}) {
   let convertedTempPath = null
   let slicedTempPath = null
   let wordConvertedPath = null
+  let imageConvertedPath = null
 
   try {
     // 1. Verify file exists
@@ -222,7 +223,7 @@ async function printPdf(filePath, options = {}) {
     }
     const printerName = active.name
 
-    // 3. Document format detection & Native Office conversion
+    // 3. Document format detection & Native Office / Image conversion
     const magicFormat = inspectFileMagic(filePath)
     const ext = path.extname(filePath).toLowerCase()
     const hintExt = path.extname(fileName || '').toLowerCase()
@@ -240,6 +241,17 @@ async function printPdf(filePath, options = {}) {
       hintExt === '.doc'
     ) && magicFormat !== 'PDF'
 
+    const isImageDoc = (
+      magicFormat === 'JPEG' ||
+      magicFormat === 'PNG' ||
+      ext === '.jpg' ||
+      ext === '.jpeg' ||
+      ext === '.png' ||
+      hintExt === '.jpg' ||
+      hintExt === '.jpeg' ||
+      hintExt === '.png'
+    ) && magicFormat !== 'PDF'
+
     if (isOfficeDoc) {
       detectedFormat = magicFormat !== 'UNKNOWN' ? magicFormat : (ext.replace('.', '') || hintExt.replace('.', '')).toUpperCase()
       const baseName = path.basename(filePath, path.extname(filePath))
@@ -249,6 +261,15 @@ async function printPdf(filePath, options = {}) {
       printTargetFile = wordConvertedPath
       conversionOccurred = true
       logger.success(`[OFFICE_CONVERSION] Converted ${detectedFormat} with 100% layout fidelity -> ${path.basename(wordConvertedPath)}`)
+    } else if (isImageDoc) {
+      detectedFormat = magicFormat !== 'UNKNOWN' ? magicFormat : (ext.replace('.', '') || hintExt.replace('.', '')).toUpperCase()
+      const baseName = path.basename(filePath, path.extname(filePath))
+      imageConvertedPath = path.join(path.dirname(filePath), `converted_${Date.now()}_${baseName}.pdf`)
+      logger.info(`[IMAGE_CONVERSION] Detected ${detectedFormat} image for Order ${orderId || 'Direct'}. Converting to print artifact...`)
+      await convertImageToPdf(filePath, imageConvertedPath)
+      printTargetFile = imageConvertedPath
+      conversionOccurred = true
+      logger.success(`[IMAGE_CONVERSION] Converted ${detectedFormat} to printable PDF -> ${path.basename(imageConvertedPath)}`)
     }
 
     // 4. Resolve color mode strictly
@@ -417,6 +438,9 @@ async function printPdf(filePath, options = {}) {
       }
       if (wordConvertedPath && fs.existsSync(wordConvertedPath)) {
         try { fs.unlinkSync(wordConvertedPath) } catch {}
+      }
+      if (imageConvertedPath && fs.existsSync(imageConvertedPath)) {
+        try { fs.unlinkSync(imageConvertedPath) } catch {}
       }
     }, 120000)
   }

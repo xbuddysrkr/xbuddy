@@ -79,10 +79,11 @@ export default function PaymentProofForm({ orderMeta, onSuccess, onClose }) {
               const b64 = await fileToBase64(orderMeta.pdfFile)
               const isValid = b64 && b64.length >= 50 && (
                 b64.startsWith('JVBERi0') || b64.slice(0, 10).includes('JVBE') ||
-                b64.startsWith('UEsDB') || b64.startsWith('0M8R4')
+                b64.startsWith('UEsDB') || b64.startsWith('0M8R4') ||
+                b64.startsWith('/9j/') || b64.startsWith('iVBORw0KGgo')
               )
               if (!isValid) {
-                throw new Error('Selected file is not a valid document (must be PDF, DOCX, or DOC)')
+                throw new Error('Selected file is not an accepted format (must be PDF, Word .doc/.docx, or Image .jpg/.png)')
               }
               cache.pdfBase64 = b64
             }

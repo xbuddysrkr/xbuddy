@@ -24,6 +24,12 @@ function inspectFileMagic(filePath) {
       if (headerBuf[0] === 0xD0 && headerBuf[1] === 0xCF && headerBuf[2] === 0x11 && headerBuf[3] === 0xE0) {
         return 'DOC'
       }
+      if (headerBuf[0] === 0xFF && headerBuf[1] === 0xD8 && headerBuf[2] === 0xFF) {
+        return 'JPEG'
+      }
+      if (headerBuf[0] === 0x89 && headerBuf[1] === 0x50 && headerBuf[2] === 0x4E && headerBuf[3] === 0x47) {
+        return 'PNG'
+      }
     }
   } catch {}
   return 'UNKNOWN'
@@ -293,8 +299,81 @@ async function convertDocxToPdfViaWord(inputPath, outputPath) {
   }
 }
 
+/**
+ * Converts authentic image file (JPEG or PNG) into a high-fidelity temporary PDF print artifact.
+ * Preserves true aspect ratio and centers image neatly on standard A4 page.
+ */
+async function convertImageToPdf(inputPath, outputPath) {
+  const absInput = path.resolve(inputPath)
+  const absOutput = path.resolve(outputPath)
+
+  // Try mutool first if available
+  const mutoolPath = path.resolve(__dirname, '..', 'bin', 'mutool.exe')
+  if (fs.existsSync(mutoolPath)) {
+    try {
+      await new Promise((resolve, reject) => {
+        execFile(mutoolPath, ['convert', '-o', absOutput, absInput], { windowsHide: true, timeout: 30000 }, (err) => {
+          if (err || !fs.existsSync(absOutput) || fs.statSync(absOutput).size === 0) {
+            return reject(err || new Error('mutool image conversion failed'))
+          }
+          resolve()
+        })
+      })
+      return absOutput
+    } catch (mErr) {
+      // Fall through to pdf-lib
+    }
+  }
+
+  // Fallback: pure pdf-lib
+  try {
+    let pdfLib = null
+    try {
+      pdfLib = require('pdf-lib')
+    } catch {
+      try {
+        pdfLib = require(path.resolve(__dirname, '..', '..', '..', 'frontend', 'node_modules', 'pdf-lib'))
+      } catch {}
+    }
+
+    if (pdfLib && pdfLib.PDFDocument) {
+      const doc = await pdfLib.PDFDocument.create()
+      const bytes = fs.readFileSync(absInput)
+      const isPng = absInput.toLowerCase().endsWith('.png') || (bytes[0] === 0x89 && bytes[1] === 0x50)
+      const image = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes)
+
+      // Standard A4: 595.28 x 841.89 points
+      const pageW = 595.28
+      const pageH = 841.89
+      const page = doc.addPage([pageW, pageH])
+
+      const imgW = image.width
+      const imgH = image.height
+      const imgRatio = imgW / imgH
+      const pageRatio = pageW / pageH
+
+      let drawW = pageW - 40 // 20pt margin
+      let drawH = drawW / imgRatio
+      if (drawH > pageH - 40) {
+        drawH = pageH - 40
+        drawW = drawH * imgRatio
+      }
+      const x = (pageW - drawW) / 2
+      const y = (pageH - drawH) / 2
+
+      page.drawImage(image, { x, y, width: drawW, height: drawH })
+      fs.writeFileSync(absOutput, await doc.save())
+      return absOutput
+    }
+    throw new Error('No PDF image conversion engine available.')
+  } catch (err) {
+    throw new Error(`Failed to convert image to print artifact: ${err.message}`)
+  }
+}
+
 module.exports = {
   convertDocxToPdfViaWord,
+  convertImageToPdf,
   findLibreOffice,
   inspectFileMagic,
   validateConvertedPdf,

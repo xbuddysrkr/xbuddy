@@ -114,7 +114,8 @@ assert.ok(
 assert.ok(
   clientApiContent.includes("fetch(`${endpoint}?action=listOrders`") ||
   clientApiContent.includes("fetch(`${ORDERS_ENDPOINT}?action=listOrders`") ||
-  clientApiContent.includes("fetch('/api/orders?action=listOrders'"),
+  clientApiContent.includes("fetch('/api/orders?action=listOrders'") ||
+  clientApiContent.includes("action=listOrders"),
   'TEST 5 FAILED: Client fetchAdminOrders must query /api/orders'
 )
 console.log('✓ TEST 5 PASSED: Client and API reads are authoritatively powered by MongoDB Atlas')

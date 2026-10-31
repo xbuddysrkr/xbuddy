@@ -5,7 +5,6 @@
  */
 
 import * as pdfjsLib from 'pdfjs-dist'
-import { jsPDF } from 'jspdf'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -15,42 +14,27 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const SUPPORTED_TYPES = {
-  'application/pdf':                                                    { label: 'PDF',  ext: '.pdf',  icon: 'FileText', category: 'document' },
-  'application/msword':                                                 { label: 'DOC',  ext: '.doc',  icon: 'FileEdit', category: 'document' },
+  'application/pdf':                                                         { label: 'PDF',  ext: '.pdf',  icon: 'FileText', category: 'document' },
+  'application/msword':                                                      { label: 'DOC',  ext: '.doc',  icon: 'FileEdit', category: 'document' },
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { label: 'DOCX', ext: '.docx', icon: 'FileEdit', category: 'document' },
-  'application/vnd.ms-powerpoint':                                      { label: 'PPT',  ext: '.ppt',  icon: 'Presentation', category: 'document' },
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { label: 'PPTX', ext: '.pptx', icon: 'Presentation', category: 'document' },
-  'application/vnd.ms-excel':                                           { label: 'XLS',  ext: '.xls',  icon: 'FileSpreadsheet', category: 'document' },
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':  { label: 'XLSX', ext: '.xlsx', icon: 'FileSpreadsheet', category: 'document' },
-  'application/rtf':                                                    { label: 'RTF',  ext: '.rtf',  icon: 'FileText', category: 'document' },
-  'text/rtf':                                                           { label: 'RTF',  ext: '.rtf',  icon: 'FileText', category: 'document' },
-  'text/plain':                                                         { label: 'TXT',  ext: '.txt',  icon: 'FileCode', category: 'text'     },
-  'image/jpeg':                                                         { label: 'JPG',  ext: '.jpg',  icon: 'Image', category: 'image'    },
-  'image/png':                                                          { label: 'PNG',  ext: '.png',  icon: 'Image', category: 'image'    },
-  'image/bmp':                                                          { label: 'BMP',  ext: '.bmp',  icon: 'Image', category: 'image'    },
-  'image/tiff':                                                         { label: 'TIFF', ext: '.tiff', icon: 'Image', category: 'image'    },
-  'image/webp':                                                         { label: 'WEBP', ext: '.webp', icon: 'Image', category: 'image'    },
-  'image/svg+xml':                                                      { label: 'SVG',  ext: '.svg',  icon: 'Palette', category: 'image'    },
-  'text/html':                                                          { label: 'HTML', ext: '.html', icon: 'Globe', category: 'html'     },
+  'image/jpeg':                                                              { label: 'JPG',  ext: '.jpg',  icon: 'Image',    category: 'image'    },
+  'image/png':                                                               { label: 'PNG',  ext: '.png',  icon: 'Image',    category: 'image'    },
 }
 
-// Also match by extension for browsers that return wrong MIME
+// Strictly match by extension for browsers that return generic/missing MIME
 const EXT_MAP = {
-  pdf: 'application/pdf', doc: 'application/msword',
+  pdf: 'application/pdf',
+  doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  ppt: 'application/vnd.ms-powerpoint',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  xls: 'application/vnd.ms-excel',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  rtf: 'text/rtf', txt: 'text/plain',
-  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-  bmp: 'image/bmp', tiff: 'image/tiff', tif: 'image/tiff',
-  webp: 'image/webp', svg: 'image/svg+xml', html: 'text/html', htm: 'text/html',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
 }
 
 export const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100 MB
 
 export function resolveFileType(file) {
+  if (!file || !file.name) return null
   const ext = file.name.split('.').pop().toLowerCase()
   const mime = SUPPORTED_TYPES[file.type] ? file.type : (EXT_MAP[ext] || null)
   return mime ? { mime, ...SUPPORTED_TYPES[mime] } : null
@@ -232,118 +216,55 @@ async function processPdf(file) {
   return { pdfBlob: file, totalPages: Math.max(1, totalPages), thumbnail }
 }
 
-// ─── Image Processor ─────────────────────────────────────────────────────────
+// ─── Image Processor (JPEG / PNG) ─────────────────────────────────────────────
 
-async function processImage(file, imageFit = 'fit') {
+async function processImage(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
     img.onload = () => {
       try {
-        const A4_W = 210, A4_H = 297 // mm
-        const doc = new jsPDF({ orientation: img.width > img.height ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' })
-        const pageW = doc.internal.pageSize.getWidth()
-        const pageH = doc.internal.pageSize.getHeight()
-
-        let x = 0, y = 0, w = pageW, h = pageH
-        const imgRatio = img.width / img.height
-        const pageRatio = pageW / pageH
-
-        if (imageFit === 'fit') {
-          if (imgRatio > pageRatio) { w = pageW; h = pageW / imgRatio }
-          else { h = pageH; w = pageH * imgRatio }
-          x = (pageW - w) / 2
-          y = (pageH - h) / 2
-        } else if (imageFit === 'fill') {
-          if (imgRatio > pageRatio) { h = pageH; w = pageH * imgRatio; x = (pageW - w) / 2 }
-          else { w = pageW; h = pageW / imgRatio; y = (pageH - h) / 2 }
-        }
-
         const canvas = document.createElement('canvas')
-        canvas.width = img.width; canvas.height = img.height
-        canvas.getContext('2d').drawImage(img, 0, 0)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
-        const fmt = file.type === 'image/png' ? 'PNG' : 'JPEG'
-        doc.addImage(dataUrl, fmt, x, y, w, h)
-
-        const pdfBlob = doc.output('blob')
+        const maxDim = 320
+        let tw = img.width
+        let th = img.height
+        if (tw > maxDim || th > maxDim) {
+          if (tw > th) {
+            th = Math.round((th * maxDim) / tw)
+            tw = maxDim
+          } else {
+            tw = Math.round((tw * maxDim) / th)
+            th = maxDim
+          }
+        }
+        canvas.width = Math.max(1, tw)
+        canvas.height = Math.max(1, th)
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, tw, th)
+        const thumbnail = canvas.toDataURL('image/jpeg', 0.82)
         URL.revokeObjectURL(url)
-        resolve({ pdfBlob, totalPages: 1, thumbnail: dataUrl })
-      } catch (e) { reject(e) }
+
+        // Preserve authentic uploaded image bytes, original filename, extension, and MIME type
+        resolve({
+          pdfBlob: file,
+          originalFile: file,
+          totalPages: 1,
+          thumbnail,
+          requiresAgent: true,
+          isImage: true,
+          width: img.width,
+          height: img.height,
+        })
+      } catch (e) {
+        URL.revokeObjectURL(url)
+        reject(e)
+      }
     }
-    img.onerror = reject
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Failed to load image file.'))
+    }
     img.src = url
-  })
-}
-
-// ─── SVG Processor ───────────────────────────────────────────────────────────
-
-async function processSvg(file) {
-  const text = await file.text()
-  const blob = new Blob([text], { type: 'image/svg+xml' })
-  const svgFile = new File([blob], file.name, { type: 'image/svg+xml' })
-  return processImage(svgFile, 'fit')
-}
-
-// ─── Text Processor ───────────────────────────────────────────────────────────
-
-async function processText(file) {
-  const text = await file.text()
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const pageW = doc.internal.pageSize.getWidth()
-  const pageH = doc.internal.pageSize.getHeight()
-  const margin = 15
-  const lineH = 6
-  const maxW = pageW - margin * 2
-  const maxLines = Math.floor((pageH - margin * 2) / lineH)
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.setTextColor(30, 30, 30)
-
-  const rawLines = text.split('\n')
-  const allLines = []
-  for (const raw of rawLines) {
-    const wrapped = doc.splitTextToSize(raw || ' ', maxW)
-    allLines.push(...wrapped)
-  }
-
-  let page = 1
-  for (let i = 0; i < allLines.length; i++) {
-    const lineIndex = i % maxLines
-    if (i > 0 && lineIndex === 0) { doc.addPage(); page++ }
-    doc.text(allLines[i], margin, margin + lineIndex * lineH)
-  }
-
-  const pdfBlob = doc.output('blob')
-  return { pdfBlob, totalPages: page, thumbnail: null }
-}
-
-// ─── HTML Processor ───────────────────────────────────────────────────────────
-
-async function processHtml(file) {
-  const html = await file.text()
-  return new Promise((resolve, reject) => {
-    const iframe = document.createElement('iframe')
-    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;height:1123px;border:none;'
-    document.body.appendChild(iframe)
-    iframe.onload = async () => {
-      try {
-        const { default: html2canvas } = await import('html2canvas')
-        const canvas = await html2canvas(iframe.contentDocument.body, { scale: 1.5, useCORS: true, logging: false })
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
-        const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-        const pageW = doc.internal.pageSize.getWidth()
-        const pageH = doc.internal.pageSize.getHeight()
-        const ratio = canvas.width / canvas.height
-        let w = pageW, h = pageW / ratio
-        if (h > pageH) { h = pageH; w = pageH * ratio }
-        doc.addImage(dataUrl, 'JPEG', (pageW - w) / 2, (pageH - h) / 2, w, h)
-        document.body.removeChild(iframe)
-        resolve({ pdfBlob: doc.output('blob'), totalPages: 1, thumbnail: dataUrl })
-      } catch (e) { document.body.removeChild(iframe); reject(e) }
-    }
-    iframe.srcdoc = html
   })
 }
 
@@ -475,45 +396,6 @@ export async function countOfficeDocumentPages(buffer, fileName = '') {
       return countDocPagesFromBinary(buffer)
     }
 
-    // ── PPTX / PPT ──
-    if (ext === 'pptx' || ext === 'ppt') {
-      const appXml = await readZipEntryText(buffer, /docProps\/app\.xml$/i)
-      if (appXml) {
-        const slideMatch = appXml.match(/<Slides>(\d+)<\/Slides>/i)
-        if (slideMatch && parseInt(slideMatch[1], 10) > 0) {
-          return parseInt(slideMatch[1], 10)
-        }
-      }
-
-      const bytes = new Uint8Array(buffer)
-      const text = new TextDecoder('latin1').decode(bytes)
-      const slideMatches = text.match(/ppt\/slides\/slide(\d+)\.xml/gi)
-      if (slideMatches && slideMatches.length > 0) {
-        const uniqueSlides = new Set(slideMatches.map(s => s.toLowerCase()))
-        if (uniqueSlides.size > 0) return uniqueSlides.size
-      }
-    }
-
-    // ── XLSX / XLS ──
-    if (ext === 'xlsx' || ext === 'xls') {
-      const bytes = new Uint8Array(buffer)
-      const text = new TextDecoder('latin1').decode(bytes)
-      const sheetMatches = text.match(/xl\/worksheets\/sheet(\d+)\.xml/gi)
-      if (sheetMatches && sheetMatches.length > 0) {
-        const uniqueSheets = new Set(sheetMatches.map(s => s.toLowerCase()))
-        if (uniqueSheets.size > 0) return uniqueSheets.size
-      }
-    }
-
-    // ── RTF ──
-    if (ext === 'rtf') {
-      const text = new TextDecoder('latin1').decode(new Uint8Array(buffer))
-      const pageBreaks = (text.match(/\\page\b/g) || []).length
-      const cleanText = text.replace(/\\[a-z0-9\-]+ ?/gi, ' ').replace(/[{}]/g, ' ')
-      const words = cleanText.trim().split(/\s+/).filter(Boolean).length
-      const estByWords = Math.ceil(words / 380)
-      return Math.max(1, pageBreaks + 1, estByWords)
-    }
   } catch (e) {
     console.warn('countOfficeDocumentPages error:', e)
   }
@@ -535,67 +417,35 @@ async function processOffice(file, typeInfo) {
   const estimatedPages = await countOfficeDocumentPages(buffer, file.name)
   const finalPages = Math.max(1, estimatedPages)
 
-  // Generate a lightweight card preview exclusively for UI thumbnail generation.
-  // The authentic file bytes are preserved byte-for-byte in pdfBlob and originalFile.
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const pageW = doc.internal.pageSize.getWidth()
-  doc.setFillColor(255, 248, 242)
-  doc.rect(0, 0, pageW, 297, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.setTextColor(247, 140, 37)
-  doc.text('X Buddy Print Station', pageW / 2, 45, { align: 'center' })
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(12)
-  doc.setTextColor(60, 60, 60)
-  doc.text(`File: ${file.name}`, pageW / 2, 65, { align: 'center' })
-  doc.text(`Format: ${typeInfo.label} Document`, pageW / 2, 75, { align: 'center' })
-  doc.text(`Total Document Pages: ${finalPages}`, pageW / 2, 85, { align: 'center' })
-
-  doc.setFontSize(10)
-  doc.setTextColor(140, 140, 140)
-  doc.text(`Native Office print queue · Size: ${formatBytes(file.size)}`, pageW / 2, 110, { align: 'center' })
-
-  const previewPdfBlob = doc.output('blob')
-  let thumbnail = null
-  try {
-    const ab = await previewPdfBlob.arrayBuffer()
-    thumbnail = await pdfThumbnail(ab)
-  } catch {}
-
+  // Authentic Office document preserved byte-for-byte in pdfBlob and originalFile.
+  // Never replace or overwrite with a synthetic PDF.
   return {
-    pdfBlob: file, // Authentic Office document preserved byte-for-byte
-    previewPdfBlob,
-    totalPages: finalPages,
-    thumbnail,
-    requiresAgent: true,
+    pdfBlob: file,
     originalFile: file,
+    totalPages: finalPages,
+    thumbnail: null,
+    requiresAgent: true,
   }
 }
 
 // ─── Main Entry Point ─────────────────────────────────────────────────────────
 
-export async function processFile(file, options = {}) {
+export async function processFile(file) {
+  if (!file) throw new Error('No file provided.')
   if (file.size > MAX_FILE_SIZE) throw new Error(`File too large. Maximum size is 100 MB.`)
 
   const typeInfo = resolveFileType(file)
-  if (!typeInfo) throw new Error(`Unsupported file format. Please upload a supported document or image.`)
-
-  const { imageFit = 'fit' } = options
+  if (!typeInfo) {
+    throw new Error('Unsupported file format. Only PDF (.pdf), Microsoft Word (.doc, .docx), and Images (.jpg, .png) are accepted.')
+  }
 
   switch (typeInfo.category) {
     case 'document':
       if (typeInfo.mime === 'application/pdf') return processPdf(file)
       return processOffice(file, typeInfo)
     case 'image':
-      if (typeInfo.mime === 'image/svg+xml') return processSvg(file)
-      return processImage(file, imageFit)
-    case 'text':
-      return processText(file)
-    case 'html':
-      return processHtml(file)
+      return processImage(file)
     default:
-      throw new Error('Unsupported file type.')
+      throw new Error('Unsupported file format. Only PDF (.pdf), Microsoft Word (.doc, .docx), and Images (.jpg, .png) are accepted.')
   }
 }

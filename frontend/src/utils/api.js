@@ -893,16 +893,18 @@ export async function submitOrder(orderData, { onStep, onUploadProgress } = {}) 
   const hasFile = Boolean(orderData.pdfFile)
 
   if (!hasDrive && !hasB64 && !hasFile) {
-    throw { step: 'upload_file', reason: 'Order must include a valid document file (PDF, DOCX, DOC) or Drive URL' }
+    throw { step: 'upload_file', reason: 'Order must include an accepted document file (PDF, DOCX, DOC, JPG, PNG) or Drive URL' }
   }
 
   if (hasB64) {
-    // Magic header check: %PDF- in Base64 starts with JVBERi0, DOCX starts with UEsDB, DOC starts with 0M8R4
+    // Magic header check: %PDF- starts with JVBERi0, DOCX starts with UEsDB, DOC starts with 0M8R4, JPEG starts with /9j/, PNG starts with iVBORw0KGgo
     const isPdf = rawB64.startsWith('JVBERi0') || rawB64.slice(0, 10).includes('JVBE')
     const isDocx = rawB64.startsWith('UEsDB')
     const isDoc = rawB64.startsWith('0M8R4')
-    if (!isPdf && !isDocx && !isDoc) {
-      throw { step: 'upload_file', reason: 'Selected file is not a valid document (must be PDF, DOCX, or DOC)' }
+    const isJpg = rawB64.startsWith('/9j/')
+    const isPng = rawB64.startsWith('iVBORw0KGgo')
+    if (!isPdf && !isDocx && !isDoc && !isJpg && !isPng) {
+      throw { step: 'upload_file', reason: 'Selected file is not an accepted format (must be PDF, DOCX, DOC, JPG, or PNG)' }
     }
   }
 

@@ -37,14 +37,22 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
   } else if (origName.toLowerCase().endsWith('.doc')) {
     ext = '.doc'
     contentType = 'application/msword'
+  } else if (origName.toLowerCase().endsWith('.jpg') || origName.toLowerCase().endsWith('.jpeg')) {
+    ext = origName.toLowerCase().endsWith('.jpeg') ? '.jpeg' : '.jpg'
+    contentType = 'image/jpeg'
+  } else if (origName.toLowerCase().endsWith('.png')) {
+    ext = '.png'
+    contentType = 'image/png'
   }
 
   if (isBuffer) {
     if (pdfSource.length === 0) throw new Error('Document Buffer is empty')
     // Validate magic header
-    const isPdf = pdfSource.length >= 5 && pdfSource.subarray(0, 5).toString('ascii') === '%PDF-'
+    const isPdf = (pdfSource.length >= 4 && pdfSource.subarray(0, 4).toString('ascii') === '%PDF')
     const isDocx = pdfSource.length >= 4 && pdfSource[0] === 0x50 && pdfSource[1] === 0x4B && pdfSource[2] === 0x03 && pdfSource[3] === 0x04
     const isDoc = pdfSource.length >= 4 && pdfSource[0] === 0xD0 && pdfSource[1] === 0xCF && pdfSource[2] === 0x11 && pdfSource[3] === 0xE0
+    const isJpg = pdfSource.length >= 3 && pdfSource[0] === 0xFF && pdfSource[1] === 0xD8 && pdfSource[2] === 0xFF
+    const isPng = pdfSource.length >= 4 && pdfSource[0] === 0x89 && pdfSource[1] === 0x50 && pdfSource[2] === 0x4E && pdfSource[3] === 0x47
 
     if (isDocx) {
       ext = '.docx'
@@ -52,12 +60,18 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
     } else if (isDoc) {
       ext = '.doc'
       contentType = 'application/msword'
+    } else if (isJpg) {
+      ext = ext === '.jpeg' ? '.jpeg' : '.jpg'
+      contentType = 'image/jpeg'
+    } else if (isPng) {
+      ext = '.png'
+      contentType = 'image/png'
     } else if (isPdf) {
       ext = '.pdf'
       contentType = 'application/pdf'
     } else {
       const magic = pdfSource.subarray(0, 5).toString('ascii')
-      throw new Error(`Invalid document header: expected PDF, DOCX, or DOC magic bytes, got "${magic}"`)
+      throw new Error(`Invalid document header: expected PDF, DOCX, DOC, JPG, or PNG magic bytes, got "${magic}"`)
     }
   }
 
@@ -72,6 +86,9 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
         { filename: `${cleanId}.pdf` },
         { filename: `${cleanId}.docx` },
         { filename: `${cleanId}.doc` },
+        { filename: `${cleanId}.jpg` },
+        { filename: `${cleanId}.jpeg` },
+        { filename: `${cleanId}.png` },
         { 'metadata.orderId': cleanId },
       ]
     }).toArray()
@@ -134,8 +151,10 @@ export async function savePdfToGridFS(db, orderId, pdfSource, metadata = {}) {
           const isPdf = chunk.subarray(0, 4).toString('ascii') === '%PDF'
           const isDocx = chunk[0] === 0x50 && chunk[1] === 0x4B && chunk[2] === 0x03 && chunk[3] === 0x04
           const isDoc = chunk[0] === 0xD0 && chunk[1] === 0xCF && chunk[2] === 0x11 && chunk[3] === 0xE0
-          if (!isPdf && !isDocx && !isDoc) {
-            uploadStream.destroy(new Error(`Invalid document header: expected PDF, DOCX, or DOC magic bytes`))
+          const isJpg = chunk.length >= 3 && chunk[0] === 0xFF && chunk[1] === 0xD8 && chunk[2] === 0xFF
+          const isPng = chunk[0] === 0x89 && chunk[1] === 0x50 && chunk[2] === 0x4E && chunk[3] === 0x47
+          if (!isPdf && !isDocx && !isDoc && !isJpg && !isPng) {
+            uploadStream.destroy(new Error(`Invalid document header: expected PDF, DOCX, DOC, JPG, or PNG magic bytes`))
             return
           }
           validatedHeader = true
@@ -160,6 +179,9 @@ export async function getPdfStreamFromGridFS(db, orderId) {
       $or: [
         { filename: `${cleanId}.docx` },
         { filename: `${cleanId}.doc` },
+        { filename: `${cleanId}.jpg` },
+        { filename: `${cleanId}.jpeg` },
+        { filename: `${cleanId}.png` },
         { filename: `${cleanId}.pdf` },
         { 'metadata.orderId': cleanId },
       ]
@@ -208,6 +230,9 @@ export async function hasPdfInGridFS(db, orderId) {
         { filename: `${cleanId}.pdf` },
         { filename: `${cleanId}.docx` },
         { filename: `${cleanId}.doc` },
+        { filename: `${cleanId}.jpg` },
+        { filename: `${cleanId}.jpeg` },
+        { filename: `${cleanId}.png` },
         { 'metadata.orderId': cleanId },
       ]
     }).limit(1).toArray()

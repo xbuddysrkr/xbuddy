@@ -100,10 +100,12 @@ export function savePdfToDiskCache(orderId, pdfInput, originalFileName = '') {
       let ext = '.pdf'
       if (originalFileName) {
         const matchExt = path.extname(originalFileName).toLowerCase()
-        if (['.docx', '.doc', '.pdf'].includes(matchExt)) ext = matchExt
+        if (['.docx', '.doc', '.pdf', '.jpg', '.jpeg', '.png'].includes(matchExt)) ext = matchExt
       } else if (pdfBuffer.length >= 4) {
         if (pdfBuffer[0] === 0x50 && pdfBuffer[1] === 0x4B) ext = '.docx'
         else if (pdfBuffer[0] === 0xD0 && pdfBuffer[1] === 0xCF) ext = '.doc'
+        else if (pdfBuffer[0] === 0xFF && pdfBuffer[1] === 0xD8 && pdfBuffer[2] === 0xFF) ext = '.jpg'
+        else if (pdfBuffer[0] === 0x89 && pdfBuffer[1] === 0x50 && pdfBuffer[2] === 0x4E && pdfBuffer[3] === 0x47) ext = '.png'
       }
 
       const filePath = path.join(PDF_CACHE_DIR, `${cleanId}${ext}`)
@@ -221,13 +223,15 @@ export function validateOrderPayload(data) {
   const hasBuffer = Boolean(data.pdfBuffer && Buffer.isBuffer(data.pdfBuffer) && data.pdfBuffer.length >= 4)
 
   if (!hasDriveUrl && !hasBase64 && !hasBuffer) {
-    errors.push('Order must include a valid document file (PDF, DOCX, DOC) or Google Drive URL')
+    errors.push('Order must include an accepted document file (PDF, DOCX, DOC, JPG, PNG) or Google Drive URL')
   } else if (hasBuffer) {
     const isPdf = data.pdfBuffer.subarray(0, 4).toString('ascii') === '%PDF'
     const isDocx = data.pdfBuffer[0] === 0x50 && data.pdfBuffer[1] === 0x4B && data.pdfBuffer[2] === 0x03 && data.pdfBuffer[3] === 0x04
     const isDoc = data.pdfBuffer[0] === 0xD0 && data.pdfBuffer[1] === 0xCF && data.pdfBuffer[2] === 0x11 && data.pdfBuffer[3] === 0xE0
-    if (!isPdf && !isDocx && !isDoc) {
-      errors.push('Uploaded file is not a valid document (must be PDF with %PDF- header, DOCX, or DOC)')
+    const isJpg = data.pdfBuffer.length >= 3 && data.pdfBuffer[0] === 0xFF && data.pdfBuffer[1] === 0xD8 && data.pdfBuffer[2] === 0xFF
+    const isPng = data.pdfBuffer.length >= 4 && data.pdfBuffer[0] === 0x89 && data.pdfBuffer[1] === 0x50 && data.pdfBuffer[2] === 0x4E && data.pdfBuffer[3] === 0x47
+    if (!isPdf && !isDocx && !isDoc && !isJpg && !isPng) {
+      errors.push('Uploaded file is not an accepted format (must be PDF with %PDF- header, Word .doc/.docx, or Image .jpg/.png)')
     }
   } else if (hasBase64) {
     try {
@@ -235,8 +239,10 @@ export function validateOrderPayload(data) {
       const isPdf = sample.length >= 4 && sample.subarray(0, 4).toString('ascii') === '%PDF'
       const isDocx = sample.length >= 4 && sample[0] === 0x50 && sample[1] === 0x4B && sample[2] === 0x03 && sample[3] === 0x04
       const isDoc = sample.length >= 4 && sample[0] === 0xD0 && sample[1] === 0xCF && sample[2] === 0x11 && sample[3] === 0xE0
-      if (!isPdf && !isDocx && !isDoc) {
-        errors.push('Uploaded file is not a valid document (must be PDF with %PDF- header, DOCX, or DOC)')
+      const isJpg = sample.length >= 3 && sample[0] === 0xFF && sample[1] === 0xD8 && sample[2] === 0xFF
+      const isPng = sample.length >= 4 && sample[0] === 0x89 && sample[1] === 0x50 && sample[2] === 0x4E && sample[3] === 0x47
+      if (!isPdf && !isDocx && !isDoc && !isJpg && !isPng) {
+        errors.push('Uploaded file is not an accepted format (must be PDF with %PDF- header, Word .doc/.docx, or Image .jpg/.png)')
       }
     } catch {
       errors.push('Invalid Base64 encoding for document')
@@ -399,6 +405,122 @@ export default async function handler(req, res) {
         success: false,
         error: 'Incorrect password. Access denied.',
       })
+    }
+
+    // ── 0.2 EPHEMERAL DOCUMENT PREVIEW (HIGH-FIDELITY PREVIEW ONLY, NO ORDER / NO PRINTING) ────
+    if (action === 'previewDocument') {
+      const clientIp = req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '127.0.0.1'
+      const rateCheck = checkPreviewRateLimit(clientIp)
+      if (!rateCheck.allowed) {
+        return res.status(429).json({
+          success: false,
+          error: `Too many preview requests. Please wait ${rateCheck.remainingSecs || 300} seconds.`,
+        })
+      }
+
+      let fileBuffer = null
+      let originalFileName = req.query?.fileName || 'document'
+
+      const contentTypeHeader = req.headers?.['content-type'] || ''
+      if (contentTypeHeader.includes('multipart/form-data')) {
+        const parsed = await parseMultipartOrder(req)
+        fileBuffer = parsed.pdfBuffer
+        if (parsed.fields?.fileName) originalFileName = parsed.fields.fileName
+      } else if (req.body?.fileBase64 || req.body?.pdfBase64) {
+        const rawB64 = req.body?.fileBase64 || req.body?.pdfBase64
+        fileBuffer = Buffer.from(rawB64, 'base64')
+        if (req.body?.fileName) originalFileName = req.body.fileName
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        return res.status(400).json({ success: false, error: 'No document data provided for preview.' })
+      }
+
+      // Validate magic bytes strictly
+      const isPdf = fileBuffer.length >= 4 && fileBuffer.subarray(0, 4).toString('ascii') === '%PDF'
+      const isDocx = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B && fileBuffer[2] === 0x03 && fileBuffer[3] === 0x04
+      const isDoc = fileBuffer.length >= 4 && fileBuffer[0] === 0xD0 && fileBuffer[1] === 0xCF && fileBuffer[2] === 0x11 && fileBuffer[3] === 0xE0
+      const isJpg = fileBuffer.length >= 3 && fileBuffer[0] === 0xFF && fileBuffer[1] === 0xD8 && fileBuffer[2] === 0xFF
+      const isPng = fileBuffer.length >= 4 && fileBuffer[0] === 0x89 && fileBuffer[1] === 0x50 && fileBuffer[2] === 0x4E && fileBuffer[3] === 0x47
+
+      if (!isPdf && !isDocx && !isDoc && !isJpg && !isPng) {
+        return res.status(400).json({
+          success: false,
+          error: 'Unsupported document format. Only PDF, Word (.doc, .docx), and Image (.jpg, .png) files are supported for preview.',
+        })
+      }
+
+      // If already PDF, return PDF directly
+      if (isPdf) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Length', fileBuffer.length)
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        return res.status(200).send(fileBuffer)
+      }
+
+      // If JPG or PNG, return image
+      if (isJpg) {
+        res.setHeader('Content-Type', 'image/jpeg')
+        res.setHeader('Content-Length', fileBuffer.length)
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        return res.status(200).send(fileBuffer)
+      }
+
+      if (isPng) {
+        res.setHeader('Content-Type', 'image/png')
+        res.setHeader('Content-Length', fileBuffer.length)
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        return res.status(200).send(fileBuffer)
+      }
+
+      // DOC / DOCX: high-fidelity temporary conversion
+      let tmpIn = null
+      let tmpOut = null
+      try {
+        const previewsDir = path.join(PDF_CACHE_DIR, 'previews')
+        if (!fs.existsSync(previewsDir)) {
+          fs.mkdirSync(previewsDir, { recursive: true })
+        }
+        const randId = crypto.randomBytes(8).toString('hex')
+        const inExt = isDoc ? '.doc' : '.docx'
+        tmpIn = path.join(previewsDir, `preview_${randId}${inExt}`)
+        tmpOut = path.join(previewsDir, `preview_${randId}.pdf`)
+        fs.writeFileSync(tmpIn, fileBuffer)
+
+        let converter = null
+        try {
+          converter = await import('../print-agent/services/wordConverter.js')
+        } catch {}
+
+        if (converter && typeof converter.convertDocxToPdfViaWord === 'function') {
+          await converter.convertDocxToPdfViaWord(tmpIn, tmpOut)
+          if (fs.existsSync(tmpOut) && fs.statSync(tmpOut).size > 500) {
+            const convertedPdf = fs.readFileSync(tmpOut)
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader('Content-Length', convertedPdf.length)
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+            return res.status(200).send(convertedPdf)
+          }
+        }
+
+        return res.status(501).json({
+          success: false,
+          error: 'Native Office preview conversion is supported when connected to the XBuddy Print Station or Word conversion engine.',
+        })
+      } catch (convErr) {
+        console.warn('[PREVIEW_CONVERT_ERROR]:', convErr.message)
+        return res.status(500).json({
+          success: false,
+          error: `High-fidelity preview conversion failed: ${convErr.message}`,
+        })
+      } finally {
+        if (tmpIn && fs.existsSync(tmpIn)) {
+          try { fs.unlinkSync(tmpIn) } catch {}
+        }
+        if (tmpOut && fs.existsSync(tmpOut)) {
+          try { fs.unlinkSync(tmpOut) } catch {}
+        }
+      }
     }
 
     // ── 1. SAVE ORDER (DUAL-WRITE + IDEMPOTENCY + RECOVERY) ──────────────────

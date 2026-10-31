@@ -580,6 +580,12 @@ export default function App() {
   }
 
   async function handleFileReady(info) {
+    if (!info) {
+      setFileInfo(null)
+      clearEntireSession()
+      goToStep(STEP.UPLOAD, { preserveScroll: true })
+      return
+    }
     setFileInfo(info)
     if (info?.file) {
       saveActivePdf(info.file, {
