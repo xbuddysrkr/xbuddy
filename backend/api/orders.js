@@ -1138,8 +1138,22 @@ export default async function handler(req, res) {
           const effectiveDriveUrl = (order.driveUrl && order.driveUrl.trim()) ? order.driveUrl.trim() : (downloadUrl || '')
 
           const reprintCheck = isOrderReprintEligible(order, new Date().toISOString(), { allowPending: true })
+          let fee = Number(order.digitalProcessingFee ?? order.serviceFee ?? 0)
+          if (!fee || isNaN(fee) || fee <= 0) {
+            if (order.amount && order.printingCost && Number(order.amount) > Number(order.printingCost)) {
+              fee = Number(order.amount) - Number(order.printingCost)
+            } else {
+              const priceCalc = calculateOrderPrice(order)
+              fee = priceCalc.digitalProcessingFee || priceCalc.serviceFee || 0
+            }
+          }
+          const printCost = Number(order.printingCost) || Math.max(0, Number(order.amount || 0) - fee)
+
           const cleanOrder = {
             ...order,
+            digitalProcessingFee: fee,
+            serviceFee: fee,
+            printingCost: printCost,
             pdfExpiresAt: derivedExpiry,
             hasPdf,
             hasGridFsPdf: order.hasGridFsPdf === true || (hasPdf && (order.pdfStorage === 'gridfs' || !order.pdfStorage)),
@@ -1172,6 +1186,9 @@ export default async function handler(req, res) {
             totalPages: cleanOrder.totalPages,
             copies: cleanOrder.copies,
             amount: cleanOrder.amount,
+            printingCost: cleanOrder.printingCost,
+            digitalProcessingFee: cleanOrder.digitalProcessingFee,
+            serviceFee: cleanOrder.serviceFee,
             pdfExpiresAt: cleanOrder.pdfExpiresAt,
             hasPdf: cleanOrder.hasPdf,
             hasDocument: cleanOrder.hasDocument,
@@ -1588,8 +1605,22 @@ export default async function handler(req, res) {
               Boolean(order.pdfBase64 && order.pdfBase64.length > 50)
             )
             const reprintCheck = isOrderReprintEligible(order)
+            let fee = Number(order.digitalProcessingFee ?? order.serviceFee ?? 0)
+            if (!fee || isNaN(fee) || fee <= 0) {
+              if (order.amount && order.printingCost && Number(order.amount) > Number(order.printingCost)) {
+                fee = Number(order.amount) - Number(order.printingCost)
+              } else {
+                const priceCalc = calculateOrderPrice(order)
+                fee = priceCalc.digitalProcessingFee || priceCalc.serviceFee || 0
+              }
+            }
+            const printCost = Number(order.printingCost) || Math.max(0, Number(order.amount || 0) - fee)
+
             return {
               ...order,
+              digitalProcessingFee: fee,
+              serviceFee: fee,
+              printingCost: printCost,
               pdfExpiresAt: derivedExpiry,
               hasPdf,
               pdfStorage: isExpired ? 'none' : (order.pdfStorage || (hasPdf ? 'gridfs' : 'none')),

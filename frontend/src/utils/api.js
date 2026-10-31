@@ -284,6 +284,10 @@ export function getBoothAuthHeaders() {
       headers['X-Admin-Password'] = adminPass
     }
   }
+  const apiKey = import.meta.env?.VITE_API_KEY
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey
+  }
   return headers
 }
 

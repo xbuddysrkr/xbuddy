@@ -134,6 +134,9 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
             $set: {
               amount: authoritativeRupees,
               amountPaise: expectedPaise,
+              printingCost: priceResult.printingCost,
+              serviceFee: priceResult.serviceFee,
+              digitalProcessingFee: priceResult.digitalProcessingFee,
               currency: 'INR',
               paymentReference: cleanOrderId,
               payeeVpa: cfg.upiId,
@@ -156,6 +159,9 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
           printSide: printJob.duplex ? 'Double' : 'Single',
           amount: authoritativeRupees,
           amountPaise: expectedPaise,
+          printingCost: priceResult.printingCost,
+          serviceFee: priceResult.serviceFee,
+          digitalProcessingFee: priceResult.digitalProcessingFee,
           currency: 'INR',
           paymentReference: cleanOrderId,
           payeeVpa: cfg.upiId,
@@ -170,13 +176,16 @@ export async function directUpiPaymentHandler(req, res, actionOverride) {
         })
       }
 
-      console.log(`[DIRECT_UPI] Created checkout intent for Order ${cleanOrderId}: ₹${authoritativeRupees} (${expectedPaise} paise INR) to ${cfg.upiId}`)
+      console.log(`[DIRECT_UPI] Created checkout intent for Order ${cleanOrderId}: ₹${authoritativeRupees} (Fee: ₹${priceResult.digitalProcessingFee}) to ${cfg.upiId}`)
 
       return res.status(200).json({
         success: true,
         orderId: cleanOrderId,
         amount: authoritativeRupees,
         amountPaise: expectedPaise,
+        printingCost: priceResult.printingCost,
+        serviceFee: priceResult.serviceFee,
+        digitalProcessingFee: priceResult.digitalProcessingFee,
         currency: 'INR',
         paymentReference: cleanOrderId,
         payeeVpa: cfg.upiId,

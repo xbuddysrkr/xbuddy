@@ -271,7 +271,7 @@ export function isBoothAuthorized(req) {
   if (validateAgentAuth(req)) return true
 
   // 2. Admin key authentication
-  const adminKey = (process.env.ADMIN_KEY || '').trim()
+  const adminKey = (process.env.ADMIN_KEY || process.env.API_KEY || '').trim()
   const reqAdmin = req.headers?.['x-admin-key'] || req.headers?.['x-api-key']
   if (adminKey && reqAdmin && safeCompare(reqAdmin, adminKey)) return true
 

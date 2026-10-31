@@ -40,6 +40,7 @@ import {
   verifyAndApprovePayment,
   verifyAdsPassword,
 } from '../utils/api'
+import { calcDigitalProcessingFee } from '../utils/pricing'
 
 const STATUS_BADGES = {
   'Pending':               'bg-amber-100 text-amber-800 border border-amber-300',
@@ -158,18 +159,37 @@ export default function AdminDashboard() {
               (cleanOrderId === 'XB-TEST-01' || cleanOrderId.startsWith('XB-TEST-') ? 'TEST-01' : 'SRKR-XEROX-01')
             ).trim().toUpperCase()
 
+            const pages = Number(o.pages || o.totalPages || 1)
+            const copies = Number(o.copies || 1)
+            const isDouble = Boolean(o.duplex || o.printSide === 'Double')
+            const printablePages = Number(o.printableCount || o.selectedPageCount || pages)
+            const billablePages = (isDouble ? Math.ceil(printablePages / 2) : printablePages) * copies
+
+            let fee = Number(o.digitalProcessingFee ?? o.serviceFee ?? 0)
+            if (!fee || isNaN(fee) || fee <= 0) {
+              if (o.amount && o.printingCost && Number(o.amount) > Number(o.printingCost)) {
+                fee = Number(o.amount) - Number(o.printingCost)
+              } else {
+                const calculated = calcDigitalProcessingFee(billablePages)
+                fee = calculated?.fee || 1
+              }
+            }
+
+            const printCost = Number(o.printingCost) || Math.max(0, Number(o.amount || 0) - fee)
+
             return {
               id: cleanOrderId,
               studentName,
               phone,
               fileName: o.fileName || 'Document.pdf',
-              pages: Number(o.pages || o.totalPages || 1),
-              copies: Number(o.copies || 1),
+              pages,
+              copies,
               printType: o.printType || (o.colorMode === 'color' ? 'Color' : 'B&W'),
               printSide: o.printSide || 'Single',
               customPages: o.customPages || '',
               amount: Number(o.amount || 0),
-              digitalProcessingFee: Number(o.digitalProcessingFee ?? o.serviceFee ?? 0),
+              printingCost: printCost,
+              digitalProcessingFee: fee,
               stationId: dynamicStation,
               paymentStatus: o.paymentStatus || 'Pending',
               isPaid: ['paid', 'verified'].includes(String(o.paymentStatus || '').toLowerCase()) || Boolean(o.isPaid),
@@ -318,11 +338,12 @@ export default function AdminDashboard() {
   const queueStats = useMemo(() => {
     const total = orders.length
     const revenue = orders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0)
+    const processingFee = orders.reduce((sum, o) => sum + (Number(o.digitalProcessingFee) || 0), 0)
     const pending = orders.filter(o => o.status === 'Pending' || o.status === 'Payment Submitted' || o.status === 'Waiting' || o.status === 'Accepted' || o.status === 'Order Received').length
     const printing = orders.filter(o => o.status === 'Printing').length
     const ready = orders.filter(o => o.status === 'Ready for Collection' || o.status === 'Ready' || o.status === 'Printed').length
     const collected = orders.filter(o => o.status === 'Collected').length
-    return { total, revenue, pending, printing, ready, collected }
+    return { total, revenue, processingFee, pending, printing, ready, collected }
   }, [orders])
 
   // Filtered & Searched Orders for the Queue view
@@ -859,10 +880,11 @@ export default function AdminDashboard() {
               </div>
 
               {/* Metric Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
                 {[
                   { label: 'Total Orders', value: queueStats.total, icon: <Layers className="w-4 h-4" />, color: 'text-[#EA580C]' },
                   { label: 'Revenue', value: formatCurrency(queueStats.revenue), icon: <DollarSign className="w-4 h-4" />, color: 'text-emerald-600' },
+                  { label: 'Digital Fee', value: formatCurrency(queueStats.processingFee), icon: <Receipt className="w-4 h-4" />, color: 'text-[#EA580C]' },
                   { label: 'Pending / Intake', value: queueStats.pending, icon: <Clock3 className="w-4 h-4" />, color: 'text-amber-600' },
                   { label: 'Printing Queue', value: queueStats.printing, icon: <Printer className="w-4 h-4" />, color: 'text-purple-600' },
                   { label: 'Ready for Pickup', value: queueStats.ready, icon: <Store className="w-4 h-4" />, color: 'text-emerald-600' },
@@ -1043,8 +1065,13 @@ export default function AdminDashboard() {
                               </td>
 
                               <td className="py-3 px-4 font-bold text-[#18181B]">
-                                <span className="block">{formatCurrency(order.amount)}</span>
-                                <span className={`text-[10px] font-semibold block ${order.isPaid || order.paymentStatus === 'verified' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                <span className="block text-sm font-black">{formatCurrency(order.amount)}</span>
+                                <div className="text-[10px] text-[#71717A] font-medium flex items-center gap-1 mt-0.5 whitespace-nowrap">
+                                  <span>₹{Math.max(0, order.amount - order.digitalProcessingFee)} print</span>
+                                  <span>+</span>
+                                  <span className="text-[#EA580C] font-bold">₹{order.digitalProcessingFee} fee</span>
+                                </div>
+                                <span className={`text-[10px] font-semibold block mt-0.5 ${order.isPaid || order.paymentStatus === 'verified' ? 'text-emerald-600' : 'text-amber-600'}`}>
                                   {order.isPaid || order.paymentStatus === 'verified' ? '✓ Verified' : '⏳ Pending'}
                                 </span>
                               </td>
@@ -1267,6 +1294,10 @@ export default function AdminDashboard() {
                   <div className="flex justify-between">
                     <span className="text-[#71717A]">Print Station:</span>
                     <span className="font-mono font-bold text-[#EA580C]">{selectedOrder.stationId}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#71717A]">Printing Cost:</span>
+                    <span className="font-bold text-[#18181B]">{formatCurrency(Math.max(0, selectedOrder.amount - selectedOrder.digitalProcessingFee))}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#71717A]">Digital Processing Fee:</span>
